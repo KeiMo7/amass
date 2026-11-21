@@ -11,6 +11,7 @@ import (
 
 	"github.com/owasp-amass/amass/v5/internal/graph"
 	"github.com/owasp-amass/amass/v5/internal/graph/graphtest"
+	"github.com/owasp-amass/amass/v5/internal/lens"
 )
 
 // The re-check finds evidence past the first page, and never declares
@@ -36,5 +37,25 @@ func TestMissingWitnessReadsPastOnePage(t *testing.T) {
 	// counts as present.
 	if missing, _ := missingWitness(context.Background(), graphtest.BusyColgate(n), gone); missing != "" {
 		t.Errorf("unread evidence was declared gone: %q", missing)
+	}
+}
+
+// A matched value (two assets that share a value) is not a stored
+// relationship, so the re-check never looks for it as an edge: it is gone only
+// when one of its assets is.
+func TestMissingWitnessMatchedValue(t *testing.T) {
+	g := graphtest.BusyColgate(3)
+	shared := []graph.WitnessEdge{{FromID: "colgate.edu", FromType: "FQDN", From: "colgate.edu",
+		ToID: "h1.colgate.edu", ToType: "FQDN", To: "h1.colgate.edu", Label: "same_email_domain",
+		RelationType: lens.MatchedValueRelation}}
+	if missing, err := missingWitness(context.Background(), g, shared); err != nil || missing != "" {
+		t.Errorf("a matched value between present assets reported missing: %q, %v", missing, err)
+	}
+
+	gone := []graph.WitnessEdge{{FromID: "colgate.edu", FromType: "FQDN", From: "colgate.edu",
+		ToID: "nowhere.colgate.edu", ToType: "FQDN", To: "nowhere.colgate.edu", Label: "same_email_domain",
+		RelationType: lens.MatchedValueRelation}}
+	if missing, _ := missingWitness(context.Background(), g, gone); missing == "" {
+		t.Error("a matched value whose asset is gone was not reported missing")
 	}
 }

@@ -36,6 +36,10 @@ type SessionHTTPClients struct {
 	General *http.Client
 	Probe   *http.Client
 	Crawl   *http.Client
+	// Bulk is for data sources that take long to start answering a large
+	// query, such as a web archive's index for a whole domain. It is paced like
+	// General but waits minutes, not seconds, for the reply.
+	Bulk *http.Client
 }
 
 type Session interface {

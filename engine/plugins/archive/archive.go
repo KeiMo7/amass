@@ -237,7 +237,7 @@ func request(e *et.Event, lim *rate.Limiter, backoff []time.Duration, timeout ti
 		_ = support.WaitLimit(e.Session.Ctx(), lim)
 		e.Session.NetSem().Acquire()
 		ctx, cancel := context.WithTimeout(e.Session.Ctx(), timeout)
-		resp, err := amasshttp.RequestWebPage(ctx, e.Session.Clients().General, &amasshttp.Request{URL: u})
+		resp, err := amasshttp.RequestWebPage(ctx, bulkClient(e), &amasshttp.Request{URL: u})
 		cancel()
 		e.Session.NetSem().Release()
 
@@ -251,4 +251,14 @@ func request(e *et.Event, lim *rate.Limiter, backoff []time.Duration, timeout ti
 		case <-time.After(backoff[attempt]):
 		}
 	}
+}
+
+// bulkClient is the session's client for slow bulk queries: an archive's
+// index for a whole domain can take minutes to start answering, longer than
+// the General client waits.
+func bulkClient(e *et.Event) *http.Client {
+	if c := e.Session.Clients(); c.Bulk != nil {
+		return c.Bulk
+	}
+	return e.Session.Clients().General
 }

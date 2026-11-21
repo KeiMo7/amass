@@ -217,11 +217,16 @@ func (g *gapSearch) txtRecords(a graph.Asset) ([]string, error) {
 	return graph.TXTValues(g.w.ctx, g.w.graph, a.ID)
 }
 
+// MatchedValueRelation is the relation type of a witness that records two
+// assets found to share a value (an email domain, a name token), as opposed to
+// a stored relationship.
+const MatchedValueRelation = "MatchedValue"
+
 // matched is a witness for two assets that carry the same value. It is
 // derived from stored values, not a stored relationship, so it has no edge
 // ID.
 func matched(from, to graph.Asset, label, detail string) graph.WitnessEdge {
-	return graph.WitnessEdge{Label: label, RelationType: "MatchedValue", FromID: from.ID, FromType: from.Type,
+	return graph.WitnessEdge{Label: label, RelationType: MatchedValueRelation, FromID: from.ID, FromType: from.Type,
 		From: graph.AssetLabel(from), ToID: to.ID, ToType: to.Type, To: graph.AssetLabel(to), Detail: detail}
 }
 

@@ -64,7 +64,7 @@ func NewSession(t testing.TB) *Session {
 	client := &http.Client{Timeout: 10 * time.Second}
 	s := &Session{id: uuid.New(), ctx: ctx, cfg: config.NewConfig(), db: db,
 		log: slog.New(slog.NewTextHandler(io.Discard, nil)), stats: &et.SessionStats{},
-		http:   &et.SessionHTTPClients{General: client, Probe: client, Crawl: client},
+		http:   &et.SessionHTTPClients{General: client, Probe: client, Crawl: client, Bulk: client},
 		ranger: cidranger.NewPCTrieRanger()}
 	s.scope = scope.New(s)
 

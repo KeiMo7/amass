@@ -14,14 +14,16 @@ import (
 	"github.com/owasp-amass/amass/v5/internal/net/pacer"
 )
 
-// Clients bundles the three clients + transports so you can close idle conns.
+// Clients bundles the clients + transports so you can close idle conns.
 type Clients struct {
 	General *http.Client
 	Probe   *http.Client
 	Crawl   *http.Client
+	Bulk    *http.Client
 	genTr   *http.Transport
 	probTr  *http.Transport
 	crwlTr  *http.Transport
+	bulkTr  *http.Transport
 }
 
 // CloseIdleConnections is useful on session/engine shutdown.
@@ -36,13 +38,26 @@ func (c *Clients) CloseIdleConnections() {
 	if c.crwlTr != nil {
 		c.crwlTr.CloseIdleConnections()
 	}
+	if c.bulkTr != nil {
+		c.bulkTr.CloseIdleConnections()
+	}
 }
 
-// NewClients returns three tuned clients: API, Probe, Crawl.
+// bulkHeaderTimeout and bulkTimeout bound the Bulk client: a web archive's
+// index for a whole domain often takes well over a minute to send its first
+// byte, longer than the General client waits for a reply.
+const (
+	bulkHeaderTimeout = 3 * time.Minute
+	bulkTimeout       = 4 * time.Minute
+)
+
+// NewClients returns four tuned clients: API, Probe, Crawl and Bulk.
 func NewClients(perHost int) (*Clients, error) {
 	genTr := newGeneralTransport()
 	probTr := newProbeTransport(perHost)
 	crwlTr := newCrawlTransport()
+	bulkTr := newGeneralTransport()
+	bulkTr.ResponseHeaderTimeout = bulkHeaderTimeout
 
 	gjar, err := cookiejar.New(nil)
 	if err != nil {
@@ -72,9 +87,15 @@ func NewClients(perHost int) (*Clients, error) {
 			Timeout:   2 * time.Minute,
 			Jar:       cjar,
 		},
+		// paced on the same per-host pacer as General
+		Bulk: &http.Client{
+			Transport: pacer.Default.Transport(bulkTr),
+			Timeout:   bulkTimeout,
+		},
 		genTr:  genTr,
 		probTr: probTr,
 		crwlTr: crwlTr,
+		bulkTr: bulkTr,
 	}, nil
 }
 

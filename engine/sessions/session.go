@@ -200,6 +200,7 @@ func (s *Session) Clients() *et.SessionHTTPClients {
 		General: s.clients.General,
 		Probe:   s.clients.Probe,
 		Crawl:   s.clients.Crawl,
+		Bulk:    s.clients.Bulk,
 	}
 }
 

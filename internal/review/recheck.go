@@ -90,15 +90,26 @@ func RecheckAttributions(ctx context.Context, graph graph.Graph, r OwnershipRetr
 // read a page at a time until the relationship is found or none are left,
 // up to lensMaxPerLabel edges; a relationship that still cannot be
 // confirmed counts as present, so evidence is never declared gone unread.
-func missingWitness(ctx context.Context, graph graph.Graph, witness []graph.WitnessEdge) (string, error) {
+// A matched value (two assets found to share a value, such as an email
+// domain) is a comparison, not a stored relationship: it is gone only when
+// one of its two assets is.
+func missingWitness(ctx context.Context, g graph.Graph, witness []graph.WitnessEdge) (string, error) {
 	for _, w := range witness {
 		if w.FromID == "" || w.ToID == "" || w.Label == "" {
 			continue
 		}
+		if w.RelationType == lens.MatchedValueRelation {
+			for _, end := range []struct{ id, typ, name string }{{w.FromID, w.FromType, w.From}, {w.ToID, w.ToType, w.To}} {
+				if _, err := g.GetAsset(ctx, end.id); err != nil {
+					return fmt.Sprintf("%s %s", end.typ, end.name), nil
+				}
+			}
+			continue
+		}
 
-		found, complete, err := findEdge(ctx, graph, w.FromID, w.Label, w.ToID)
+		found, complete, err := findEdge(ctx, g, w.FromID, w.Label, w.ToID)
 		if err != nil {
-			if _, gerr := graph.GetAsset(ctx, w.FromID); gerr != nil {
+			if _, gerr := g.GetAsset(ctx, w.FromID); gerr != nil {
 				// The source asset is gone.
 				return fmt.Sprintf("%s %s", w.FromType, w.From), nil
 			}

@@ -37,6 +37,7 @@ const maxLeads = 500
 // leads tallies what a document contributed, for its log line.
 type leads struct {
 	people, orgs, products, accounts, names, urls, emails, addrs, phones int
+	images, places, serials                                              int
 }
 
 // author is a person the document's metadata names, with the name parts a
@@ -381,5 +382,5 @@ func (d *documents) dispatch(e *et.Event, ent *dbt.Entity, name string) {
 func (d *documents) logLeads(e *et.Event, u *oamurl.URL, n leads) {
 	e.Session.Log().Info("document leads", "url", u.Raw, "people", n.people, "organizations", n.orgs,
 		"products", n.products, "accounts", n.accounts, "names", n.names, "urls", n.urls, "emails", n.emails, "addresses", n.addrs,
-		"phones", n.phones, slog.Group("plugin", "name", d.name, "handler", d.name+"-Handler"))
+		"phones", n.phones, "images", n.images, "places", n.places, "serials", n.serials, slog.Group("plugin", "name", d.name, "handler", d.name+"-Handler"))
 }

@@ -864,6 +864,7 @@ func (Catalog) SearchFields() []graph.AssetSearchSchema {
 			"country",
 			"postal_code",
 		},
+		"GeoLocation":    {"unique_id", "latitude", "longitude"},
 		"Netblock":       {"cidr"},
 		"Organization":   {"unique_id", "name", "legal_name", "registration_id", "jurisdiction"},
 		"Person":         {"unique_id", "full_name", "first_name", "family_name"},

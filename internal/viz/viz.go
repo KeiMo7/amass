@@ -105,6 +105,8 @@ func VizData(domains []string, since time.Time, db repository.Repository) ([]Nod
 				}
 			case oam.FundsTransfer:
 				out = true
+			case oam.GeoLocation:
+				out = true
 			case oam.Identifier:
 				out = true
 			case oam.IPAddress:
@@ -129,6 +131,8 @@ func VizData(domains []string, since time.Time, db repository.Repository) ([]Nod
 			case oam.Phone:
 				out = true
 			case oam.Service:
+				out = true
+			case oam.StorageBucket:
 				out = true
 			case oam.TLSCertificate:
 				out = true

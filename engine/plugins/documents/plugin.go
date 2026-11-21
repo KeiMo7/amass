@@ -379,6 +379,7 @@ func (d *documents) store(e *et.Event, urlent *dbt.Entity, u *oamurl.URL, dt sem
 	// observed before a username is compared with it
 	usernames := d.contentLeads(e, fent, u, dt, data, &n)
 	d.accountLeads(e, fent, u, append(meta.Usernames, usernames...), authors, &n)
+	d.imageLeads(e, fent, dt, data, &n)
 	d.logLeads(e, u, n)
 }
 

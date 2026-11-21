@@ -183,6 +183,10 @@ func parseAsset(atype string, raw json.RawMessage) (oam.Asset, error) {
 		var a oamfin.FundsTransfer
 		err := json.Unmarshal(raw, &a)
 		return &a, err
+	case strings.ToLower(string(oam.GeoLocation)):
+		var a oamcon.GeoLocation
+		err := json.Unmarshal(raw, &a)
+		return &a, err
 	case strings.ToLower(string(oam.Identifier)):
 		var a oamgen.Identifier
 		err := json.Unmarshal(raw, &a)
@@ -227,6 +231,10 @@ func parseAsset(atype string, raw json.RawMessage) (oam.Asset, error) {
 		var a oamplat.Service
 		err := json.Unmarshal(raw, &a)
 		return &a, err
+	case strings.ToLower(string(oam.StorageBucket)):
+		var a oamplat.StorageBucket
+		err := json.Unmarshal(raw, &a)
+		return &a, err
 	case strings.ToLower(string(oam.TLSCertificate)):
 		var a oamcert.TLSCertificate
 		err := json.Unmarshal(raw, &a)
@@ -257,6 +265,8 @@ func defaultContentFilter(asset oam.Asset) (dbt.ContentFilters, error) {
 		return dbt.ContentFilters{"name": asset.Key()}, nil
 	case oam.FundsTransfer:
 		return dbt.ContentFilters{"unique_id": asset.Key()}, nil
+	case oam.GeoLocation:
+		return dbt.ContentFilters{"unique_id": asset.Key()}, nil
 	case oam.Identifier:
 		return dbt.ContentFilters{"unique_id": asset.Key()}, nil
 	case oam.IPAddress:
@@ -278,6 +288,8 @@ func defaultContentFilter(asset oam.Asset) (dbt.ContentFilters, error) {
 	case oam.ProductRelease:
 		return dbt.ContentFilters{"name": asset.Key()}, nil
 	case oam.Service:
+		return dbt.ContentFilters{"unique_id": asset.Key()}, nil
+	case oam.StorageBucket:
 		return dbt.ContentFilters{"unique_id": asset.Key()}, nil
 	case oam.URL:
 		return dbt.ContentFilters{"url": asset.Key()}, nil

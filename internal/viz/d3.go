@@ -320,6 +320,7 @@ func WriteD3Data(output io.Writer, nodes []Node, edges []Edge) error {
 		string(oam.File):             "azure",
 		string(oam.FQDN):             "green",
 		string(oam.FundsTransfer):    "red",
+		string(oam.GeoLocation):      "darkgray",
 		string(oam.Identifier):       "chocolate",
 		string(oam.IPAddress):        "orange",
 		string(oam.IPNetRecord):      "yellow",
@@ -331,6 +332,7 @@ func WriteD3Data(output io.Writer, nodes []Node, edges []Edge) error {
 		string(oam.Product):          "darkslategrey",
 		string(oam.ProductRelease):   "darkslategrey",
 		string(oam.Service):          "darkslategrey",
+		string(oam.StorageBucket):    "darkslategrey",
 		string(oam.TLSCertificate):   "deeppink",
 		string(oam.URL):              "azure",
 	}

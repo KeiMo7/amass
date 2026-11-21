@@ -109,6 +109,16 @@ func DecodeAssetsForScopeEndpoint(atype oam.AssetType, data io.ReadCloser) ([]oa
 		for _, a := range scope.Data {
 			results = append(results, &a)
 		}
+	case oam.GeoLocation:
+		var scope struct {
+			Data []oamcon.GeoLocation `json:"data"`
+		}
+		if err := json.NewDecoder(data).Decode(&scope); err != nil {
+			return nil, err
+		}
+		for _, a := range scope.Data {
+			results = append(results, &a)
+		}
 	case oam.Identifier:
 		var scope struct {
 			Data []oamgen.Identifier `json:"data"`
@@ -212,6 +222,16 @@ func DecodeAssetsForScopeEndpoint(atype oam.AssetType, data io.ReadCloser) ([]oa
 	case oam.Service:
 		var scope struct {
 			Data []oamplat.Service `json:"data"`
+		}
+		if err := json.NewDecoder(data).Decode(&scope); err != nil {
+			return nil, err
+		}
+		for _, a := range scope.Data {
+			results = append(results, &a)
+		}
+	case oam.StorageBucket:
+		var scope struct {
+			Data []oamplat.StorageBucket `json:"data"`
 		}
 		if err := json.NewDecoder(data).Decode(&scope); err != nil {
 			return nil, err

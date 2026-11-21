@@ -42,6 +42,7 @@ const (
 	propDocCreated       = "doc_created"
 	propDocModified      = "doc_modified"
 	propDocRetrievedFrom = "doc_retrieved_from"
+	propDocImageCamera   = "doc_image_camera"
 )
 
 // Document is one stored File the subject publishes.
@@ -67,6 +68,13 @@ type Document struct {
 	Mentions map[string]int `json:"mentions,omitempty"`
 	Emails   []string       `json:"emails,omitempty"`
 	Names    []string       `json:"names,omitempty"`
+	// Places are the GPS positions recorded in its embedded photos
+	// ("lat,lon", with "±N m" when the receiver wrote its error);
+	// Photographers the people their EXIF names; Cameras the camera models
+	// and serial numbers.
+	Places        []string `json:"places,omitempty"`
+	Photographers []string `json:"photographers,omitempty"`
+	Cameras       []string `json:"cameras,omitempty"`
 	// Copies are the other URLs serving the same bytes (the same content
 	// hash).
 	Copies []string `json:"copies,omitempty"`
@@ -84,6 +92,10 @@ type DocumentsReport struct {
 	Authors  map[string]int `json:"authors,omitempty"`
 	Software map[string]int `json:"software,omitempty"`
 	Accounts map[string]int `json:"accounts,omitempty"`
+	// Places and Cameras are the photo positions and cameras across all the
+	// documents, with how many documents record each.
+	Places   map[string]int `json:"places,omitempty"`
+	Cameras  map[string]int `json:"cameras,omitempty"`
 	Archived int            `json:"archived,omitempty"`
 }
 
@@ -93,7 +105,7 @@ func FindDocuments(ctx context.Context, g graph.Graph, schema graph.SchemaCatalo
 	limits LensLimits) (DocumentsReport, error) {
 	g = graph.Cached(g)
 	out := DocumentsReport{ByType: map[string]int{}, Authors: map[string]int{}, Software: map[string]int{},
-		Accounts: map[string]int{}}
+		Accounts: map[string]int{}, Places: map[string]int{}, Cameras: map[string]int{}}
 	s, err := newScope(ctx, g, schema, root, limits, LensDocuments)
 	if err != nil {
 		return out, err
@@ -157,6 +169,12 @@ func FindDocuments(ctx context.Context, g graph.Graph, schema graph.SchemaCatalo
 		for _, a := range d.Accounts {
 			out.Accounts[a]++
 		}
+		for _, p := range d.Places {
+			out.Places[p]++
+		}
+		for _, c := range d.Cameras {
+			out.Cameras[c]++
+		}
 	}
 
 	// documents that reveal the most come first
@@ -182,7 +200,8 @@ func (d Document) revealing() int {
 	for _, c := range d.Mentions {
 		n += c
 	}
-	return 100*len(d.Accounts) + 50*len(d.Authors) + 10*len(d.Emails) + n
+	return 100*len(d.Accounts) + 50*(len(d.Authors)+len(d.Places)+len(d.Photographers)) +
+		20*len(d.Cameras) + 10*len(d.Emails) + n
 }
 
 // document reads one stored File: its content, properties and the assets it
@@ -206,6 +225,12 @@ func (s *scope) document(f graph.Asset) (Document, string, error) {
 		d.Modified = firstValue(propertyValues(ev, propDocModified))
 		if from := firstValue(propertyValues(ev, propDocRetrievedFrom)); from != "" && from != d.URL {
 			d.Archived = true
+		}
+		for _, v := range propertyValues(ev, propDocImageCamera) {
+			// "word/media/image1.jpeg: Canon EOS 5D"
+			if _, camera, ok := strings.Cut(v, ": "); ok && camera != "" {
+				graph.AddUnique(&d.Cameras, camera)
+			}
 		}
 	}
 
@@ -242,10 +267,22 @@ func (s *scope) document(f graph.Asset) (Document, string, error) {
 				}
 				graph.AddUnique(&d.Accounts, user)
 			case "Identifier":
-				if graph.ContentString(st.other, "id_type") == "email" {
+				switch graph.ContentString(st.other, "id_type") {
+				case "email":
 					graph.AddUnique(&d.Emails, graph.ContentString(st.other, "id"))
+					d.Mentions[st.other.Type]++
+				case "serial":
+					// a camera body's serial, from an embedded photo
+					graph.AddUnique(&d.Cameras, "serial "+graph.ContentString(st.other, "id"))
+				default:
+					d.Mentions[st.other.Type]++
 				}
-				d.Mentions[st.other.Type]++
+			case "GeoLocation":
+				graph.AddUnique(&d.Places, geoPointLabel(st.other))
+			case "Person":
+				// a document's people come from its metadata as author;
+				// the people it contains are named by its photos' EXIF
+				graph.AddUnique(&d.Photographers, label)
 			case "FQDN":
 				if s.ownDomains[graph.RegisteredDomain(label)] {
 					graph.AddUnique(&d.Names, label)
@@ -257,13 +294,25 @@ func (s *scope) document(f graph.Asset) (Document, string, error) {
 		}
 	}
 
-	for _, l := range [][]string{d.Authors, d.Software, d.Accounts, d.Emails, d.Names} {
+	for _, l := range [][]string{d.Authors, d.Software, d.Accounts, d.Emails, d.Names, d.Places,
+		d.Photographers, d.Cameras} {
 		sort.Strings(l)
 	}
 	if len(d.Mentions) == 0 {
 		d.Mentions = nil
 	}
 	return d, hash, nil
+}
+
+// geoPointLabel renders a GeoLocation as "lat,lon", with its uncertainty when
+// known ("42.468644,-75.064000 ±12 m").
+func geoPointLabel(a graph.Asset) string {
+	lat, lon := contentFloat(a, "latitude"), contentFloat(a, "longitude")
+	label := fmt.Sprintf("%.6f,%.6f", lat, lon)
+	if u := contentFloat(a, "uncertainty"); u > 0 {
+		label += fmt.Sprintf(" ±%.0f m", u)
+	}
+	return label
 }
 
 func firstValue(values []string) string {
@@ -297,6 +346,8 @@ func (r DocumentsReport) Text() string {
 	writeCounts(&b, "Authors named in metadata", r.Authors)
 	writeCounts(&b, "Software that made them", r.Software)
 	writeCounts(&b, "User accounts the documents reveal", r.Accounts)
+	writeCounts(&b, "Places recorded in embedded photos (GPS)", r.Places)
+	writeCounts(&b, "Cameras that took embedded photos", r.Cameras)
 
 	b.WriteString("\nDocuments (most revealing first):\n")
 	for _, d := range r.Documents {
@@ -326,6 +377,9 @@ func (r DocumentsReport) Text() string {
 		writeDocList(&b, "accounts", d.Accounts)
 		writeDocList(&b, "emails", d.Emails)
 		writeDocList(&b, "own names", d.Names)
+		writeDocList(&b, "photo locations", d.Places)
+		writeDocList(&b, "photographers", d.Photographers)
+		writeDocList(&b, "cameras", d.Cameras)
 		if len(d.Mentions) > 0 {
 			keys := make([]string, 0, len(d.Mentions))
 			for k := range d.Mentions {
@@ -393,6 +447,12 @@ func (r DocumentsReport) Facts() []string {
 	}
 	for a := range r.Authors {
 		out = append(out, "author "+a)
+	}
+	for p := range r.Places {
+		out = append(out, "photo location "+p)
+	}
+	for c := range r.Cameras {
+		out = append(out, "camera "+c)
 	}
 	sort.Strings(out)
 	return out

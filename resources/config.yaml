@@ -99,6 +99,7 @@ transformations:
     ttl: 43200 # 30 days
   FundsTransfer->ALL:
     ttl: 10800 # 7 days
+  GeoLocation->ALL:
   Identifier->ALL:
   Identifier->GLEIF:
     ttl: 43200 # 30 days

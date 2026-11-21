@@ -48,6 +48,7 @@ func TestFindDocuments(t *testing.T) {
 		graphtest.SimpleProp(propDocTitle, "IT Strategic Plan"),
 		graphtest.SimpleProp(propDocCreated, "2024-01-02T03:04:05Z"),
 		graphtest.SimpleProp(propDocRetrievedFrom, "https://web.archive.org/web/2id_/https://www.colgate.edu/it/plan.pdf"),
+		graphtest.SimpleProp(propDocImageCamera, "word/media/image1.jpeg: Canon EOS 5D Mark IV"),
 	}
 
 	asset("p-jsmith", "Person", "John Smith", map[string]any{"full_name": "John Smith"})
@@ -60,6 +61,16 @@ func TestFindDocuments(t *testing.T) {
 	asset("vpn.colgate.edu", "FQDN", "vpn.colgate.edu", map[string]any{"name": "vpn.colgate.edu"})
 	asset("id-hash", "Identifier", "file_sha256:abc", map[string]any{
 		"unique_id": "file_sha256:abc", "id": "abc", "id_type": "file_sha256"})
+
+	// an embedded photo's EXIF: where it was taken, by whom, with which body
+	asset("geo-hall", "GeoLocation", "42.818900,-75.535100", map[string]any{
+		"latitude": 42.8189, "longitude": -75.5351, "uncertainty": 12.5})
+	asset("p-jdoe", "Person", "Jane Doe", map[string]any{"full_name": "Jane Doe"})
+	asset("id-serial", "Identifier", "serial:canon:032021001234", map[string]any{
+		"unique_id": "serial:canon:032021001234", "id": "032021001234", "id_type": "serial"})
+	link("f-plan", "contains", "geo-hall")
+	link("f-plan", "contains", "p-jdoe")
+	link("f-plan", "contains", "id-serial")
 
 	link("f-plan", "author", "p-jsmith")
 	link("f-plan", "created_with", "prod-word")
@@ -95,13 +106,22 @@ func TestFindDocuments(t *testing.T) {
 	if !slices.Equal(top.Copies, []string{"https://www.colgate.edu/old/plan.pdf"}) {
 		t.Errorf("copies %v", top.Copies)
 	}
+	if !slices.Equal(top.Places, []string{"42.818900,-75.535100 ±12 m"}) ||
+		!slices.Equal(top.Photographers, []string{"Jane Doe"}) ||
+		!slices.Equal(top.Cameras, []string{"Canon EOS 5D Mark IV", "serial 032021001234"}) {
+		t.Errorf("places %v, photographers %v, cameras %v", top.Places, top.Photographers, top.Cameras)
+	}
+	if top.Mentions["Identifier"] != 1 {
+		t.Errorf("a camera serial is not a mention: %v", top.Mentions)
+	}
 	if r.Accounts["jsmith"] != 1 || r.Software["Microsoft Word"] != 1 {
 		t.Errorf("rollups: accounts %v, software %v", r.Accounts, r.Software)
 	}
 
 	text := r.Text()
 	for _, want := range []string{"Documents published by", "User accounts the documents reveal", "jsmith",
-		"IT Strategic Plan", "archive copy", "same file at"} {
+		"IT Strategic Plan", "archive copy", "same file at", "Places recorded in embedded photos",
+		"photo locations: 42.818900,-75.535100", "photographers: Jane Doe"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("report lacks %q:\n%s", want, text)
 		}

@@ -41,7 +41,7 @@ const Description = "Ask questions with a language model, MCP tools, and model-a
 // review (package internal/lens/cli); amass ai still runs them by their old
 // names, with a note.
 var operations = []string{"ask", "plan", "eval", "mcp", "infer", "scan", "search", "collect-plan", "collect",
-	"train-attribution", "attribution-status", "review", "config"}
+	"train-attribution", "attribution-status", "review", "config", "read-documents"}
 
 func CLIWorkflow(_ string, args []string) {
 	if err := Run(os.Stdin, os.Stdout, os.Stderr, args); err != nil {
@@ -81,6 +81,9 @@ func run(group string, in io.Reader, out, errout io.Writer, args []string) error
 	var temperatureFlag string
 	var think, showTrace, narrate, mcpOperator bool
 	var classifierReview, allowHTTP, applyConfig bool
+	var docDomain, docOrg, docUndo string
+	var docMax int
+	var docReread, docDryRun bool
 	fs.StringVar(&dir, "dir", "", "Amass data directory")
 	fs.StringVar(&configPath, "config", "", "Amass configuration file")
 	fs.StringVar(&endpoint, "endpoint", "", "Provider endpoint (defaults depend on provider)")
@@ -145,6 +148,15 @@ func run(group string, in io.Reader, out, errout io.Writer, args []string) error
 			"you are asked at an interactive terminal)")
 	fs.BoolVar(&narrate, "narrate", false,
 		"After ask, have the model write a short cited summary, verified against the answer's evidence")
+	fs.StringVar(&docDomain, "domain", "", "read-documents: the domain whose stored documents are read")
+	fs.StringVar(&docDomain, "d", "", "read-documents: the domain whose stored documents are read (same as -domain)")
+	fs.StringVar(&docOrg, "org", "", "read-documents: the organization whose stored documents are read")
+	fs.IntVar(&docMax, "max-documents", 25, "read-documents: most documents the document model reads in one run")
+	fs.BoolVar(&docReread, "reread", false,
+		"read-documents: read documents that already have statements again, undoing their earlier readings")
+	fs.BoolVar(&docDryRun, "dry-run", false, "read-documents: read and validate, but store nothing")
+	fs.StringVar(&docUndo, "undo", "",
+		"read-documents: undo a stored reading by its journal ID (doc:...), removing its statements")
 	fs.DurationVar(&modelTimeout, "model-timeout", 3*time.Minute,
 		"Maximum time per model request (e.g., 4m for local Ollama)")
 	fs.DurationVar(&investigationTimeout, "investigation-timeout", 8*time.Minute,
@@ -381,6 +393,31 @@ func run(group string, in io.Reader, out, errout io.Writer, args []string) error
 	// models served here read document text only when the user shares it
 	g := oamrepo.Adapter{Repo: repo, Aliases: aliases, Neo4jDatabase: oamrepo.Neo4jDatabaseName(cfg),
 		WithholdDocumentText: !cfg.AI.DocumentsShared()}
+	if operation == "read-documents" {
+		// The document model reads the passages as stored, so it gets a graph
+		// that does not withhold them; no other model is given this graph.
+		dg := oamrepo.Adapter{Repo: repo, Aliases: aliases, Neo4jDatabase: oamrepo.Neo4jDatabaseName(cfg)}
+		j := &review.Journal{Path: journalPath}
+		if docUndo != "" {
+			if err := review.UndoDocumentStatements(context.Background(), repo, j, docUndo, "cli"); err != nil {
+				return err
+			}
+			_, err := fmt.Fprintf(out, "undid %s\n", docUndo)
+			return err
+		}
+
+		dm, modelID, timeout, err := documentModel(effective.Documents)
+		if err != nil {
+			return err
+		}
+		root, err := documentRoot(context.Background(), dg, docDomain, docOrg)
+		if err != nil {
+			return err
+		}
+		_, err = readDocuments(context.Background(), out, dg, repo, j, root, documentOptions{Model: dm,
+			ModelID: modelID, ModelTimeout: timeout, Max: docMax, Reread: docReread, DryRun: docDryRun})
+		return err
+	}
 	runner := ai.ToolRunner{Graph: g, Limits: graph.DefaultLimits(), Catalog: oamrepo.Catalog{},
 		KnownVerification: dnssd.IsVerificationRecord}
 	// The ownership-gap answer uses the trained attribution model when one has

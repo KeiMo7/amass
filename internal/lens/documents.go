@@ -79,6 +79,9 @@ type Document struct {
 	// Passages counts the sentences kept for the statement model: those that
 	// name something the document links and state a relationship.
 	Passages int `json:"passages,omitempty"`
+	// Statements counts what the document model read from the passages
+	// (amass ai read-documents).
+	Statements int `json:"statements,omitempty"`
 	// Copies are the other URLs serving the same bytes (the same content
 	// hash).
 	Copies []string `json:"copies,omitempty"`
@@ -223,7 +226,7 @@ func (s *scope) document(f graph.Asset) (Document, string, error) {
 		d.URL = graph.AssetLabel(f)
 	}
 
-	if ev, err := s.w.graph.Evidence(s.w.ctx, f.ID, 100); err == nil {
+	if ev, err := s.w.graph.Evidence(s.w.ctx, f.ID, documentEvidenceLimit); err == nil {
 		d.Title = firstValue(propertyValues(ev, propDocTitle))
 		d.Created = firstValue(propertyValues(ev, propDocCreated))
 		d.Modified = firstValue(propertyValues(ev, propDocModified))
@@ -231,6 +234,7 @@ func (s *scope) document(f graph.Asset) (Document, string, error) {
 			d.Archived = true
 		}
 		d.Passages = len(propertyValues(ev, propDocPassage))
+		d.Statements = len(propertyValues(ev, propDocStatement))
 		for _, v := range propertyValues(ev, propDocImageCamera) {
 			// "word/media/image1.jpeg: Canon EOS 5D"
 			if _, camera, ok := strings.Cut(v, ": "); ok && camera != "" {
@@ -387,6 +391,9 @@ func (r DocumentsReport) Text() string {
 		writeDocList(&b, "cameras", d.Cameras)
 		if d.Passages > 0 {
 			fmt.Fprintf(&b, "    passages stating relationships: %d\n", d.Passages)
+		}
+		if d.Statements > 0 {
+			fmt.Fprintf(&b, "    statements read by the document model: %d\n", d.Statements)
 		}
 		if len(d.Mentions) > 0 {
 			keys := make([]string, 0, len(d.Mentions))

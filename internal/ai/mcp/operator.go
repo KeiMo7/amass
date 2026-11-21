@@ -57,7 +57,7 @@ type Operator struct {
 	// RequireConfirmation refuses actions when the client cannot show an
 	// approval dialog.
 	RequireConfirmation bool
-	// Documents is the document model the user named (ai.documents); nil
+	// Documents is the document model the user named (options.ai.documents); nil
 	// means no model reads documents. ShareDocuments lets read_documents
 	// return the statements it stored, quotes included.
 	Documents      *config.DocumentModelSettings
@@ -98,7 +98,7 @@ Operator mode: this connection can also collect data and change the database, ea
 - A finished run also reports applied_by_ai (counts by kind) for the changes the classifier applied automatically during the run (ownership edges, organization merges, identity corrections, scope expansions). Tell the user what the AI decided on its own and explain the evidence with get_evidence and walk_relations; list_proposals with applied true lists them. These are already applied, so the only action is review_proposal retract to undo one — ask the user first, and never retract on their behalf.
 - To keep the user aware in near real time, offer to watch a run the user starts or points you at. Call watch_decisions once without a cursor to start from now, then call it again with the cursor it returned, in a loop: each call waits until a new proposal or an AI-applied change is written to the review journal (or up to its wait time) and returns those items with the next cursor. Surface each item at once — explain its evidence with get_evidence and walk_relations, ask the user before any decision, and never approve or retract on their behalf — and check enumeration_status between calls to stop when the run finishes or the user says so. This is user-initiated, so watch when asked.
 - watch_target re-runs a planned enumeration on a schedule (at most every 6 hours) after the user approves it once; list_watches shows each watch with what its last run found, and stop_watch removes one.
-- When the configuration names a document model (ai.documents), read_documents has it read the passages Amass kept from a domain's or organization's documents and stores the statements that pass validation, with the user's approval; call it again while it reports remaining documents. The document text goes only to that model; you see counts unless documents are shared with assistants.
+- When the configuration names a document model (options.ai.documents), read_documents has it read the passages Amass kept from a domain's or organization's documents and stores the statements that pass validation, with the user's approval; call it again while it reports remaining documents. The document text goes only to that model; you see counts unless documents are shared with assistants.
 - data_sources lists which data sources have credentials. data_source_key_link gives the user a one-time local link to enter a key; never ask the user to type a key into the chat.
 - To change how enumerations run, draft a complete configuration (describe_config gives the schema, current settings and a template), check it with validate_config, then call apply_config with the same content; the user approves the exact change and sees a masked diff. Never put data source credentials in a configuration; the operator adds keys through data_source_key_link.`
 
@@ -437,7 +437,7 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 		})
 
 	approveAction(ToolReadDocuments, "Read documents with the document model",
-		"Have the document model named in the ai.documents configuration read the passages Amass kept from the "+
+		"Have the document model named in the options.ai.documents configuration read the passages Amass kept from the "+
 			"documents a domain or organization publishes, and store the statements it finds that pass "+
 			"validation (each quotes a passage word for word, uses a catalog relationship and names both sides "+
 			"in that passage) on the documents as amass-ai observations, undoable. Reads at most max_documents "+

@@ -5,11 +5,15 @@
 package config
 
 import (
+	"bytes"
+	"errors"
 	"fmt"
 	"slices"
 	"strconv"
 	"strings"
 	"time"
+
+	"gopkg.in/yaml.v3"
 )
 
 // AISettings is an opt-in set of model and investigation defaults. No model
@@ -91,15 +95,15 @@ func (d *DocumentModelSettings) Validate() error {
 		return nil
 	}
 	if !slices.Contains(DocumentModelProviders, strings.ToLower(strings.TrimSpace(d.Provider))) {
-		return fmt.Errorf("ai.documents.provider must be one of %s", strings.Join(DocumentModelProviders, ", "))
+		return fmt.Errorf("options.ai.documents.provider must be one of %s", strings.Join(DocumentModelProviders, ", "))
 	}
 	if strings.TrimSpace(d.Model) == "" {
-		return fmt.Errorf("ai.documents.model is required when the document model is enabled")
+		return fmt.Errorf("options.ai.documents.model is required when the document model is enabled")
 	}
 	if d.ModelTimeout != "" {
 		v, err := time.ParseDuration(d.ModelTimeout)
 		if err != nil || v < 5*time.Second || v > 15*time.Minute {
-			return fmt.Errorf("ai.documents.model_timeout must be 5s..15m")
+			return fmt.Errorf("options.ai.documents.model_timeout must be 5s..15m")
 		}
 	}
 	return nil
@@ -114,6 +118,46 @@ func (a *AISettings) DocumentModelEnabled() bool {
 // read document passages and the statements quoting them.
 func (a *AISettings) DocumentsShared() bool {
 	return a.DocumentModelEnabled() && a.Documents.ShareWithAssistants
+}
+
+// loadAISettings reads options.ai into AI. Unknown keys are refused, so a
+// mistyped setting never silently leaves a model off or on.
+func (c *Config) loadAISettings(cfg *Config) error {
+	raw, ok := c.Options["ai"]
+	if !ok || raw == nil {
+		return nil
+	}
+
+	data, err := yaml.Marshal(raw)
+	if err != nil {
+		return fmt.Errorf("options.ai: %w", err)
+	}
+
+	var s AISettings
+	dec := yaml.NewDecoder(bytes.NewReader(data))
+	dec.KnownFields(true)
+	if err := dec.Decode(&s); err != nil {
+		return fmt.Errorf("options.ai: %w", err)
+	}
+	if err := s.Documents.Validate(); err != nil {
+		return err
+	}
+
+	c.AI = &s
+	return nil
+}
+
+// refuseTopLevelAI stops a configuration that still has the ai section at the
+// top level, where it is no longer read, so its settings are not lost
+// silently.
+func refuseTopLevelAI(data []byte) error {
+	var top struct {
+		AI any `yaml:"ai"`
+	}
+	if yaml.Unmarshal(data, &top) == nil && top.AI != nil {
+		return errors.New("the ai section moved to options.ai: indent it under options")
+	}
+	return nil
 }
 
 // Attribution modes.

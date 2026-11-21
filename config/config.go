@@ -62,8 +62,9 @@ type Config struct {
 	// Defines options like datasources config path and stuff like that
 	Options map[string]interface{} `yaml:"options,omitempty" json:"options,omitempty"`
 
-	// Optional inference and classifier configuration; never enables AI by itself.
-	AI *AISettings `yaml:"ai,omitempty" json:"ai,omitempty"`
+	// Optional inference and classifier configuration, read from options.ai;
+	// never enables AI by itself.
+	AI *AISettings `yaml:"-" json:"-"`
 
 	// The global transformation settings
 	DefaultTransformations *Transformation `yaml:"-" json:"-"`
@@ -347,12 +348,16 @@ func (c *Config) LoadSettings(path string) error {
 		_ = c.LoadEngineEnvSettings()
 		return fmt.Errorf("error mapping configuration settings to internal values: %v", err)
 	}
+	if err := refuseTopLevelAI(data); err != nil {
+		return err
+	}
 
 	if err := c.loadSeedandScopeSettings(); err != nil {
 		return err
 	}
 
 	loads := []func(cfg *Config) error{
+		c.loadAISettings,
 		c.loadAlterationSettings,
 		c.loadBruteForceSettings,
 		c.loadDatabaseSettings,

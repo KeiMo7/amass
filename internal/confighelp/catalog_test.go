@@ -25,7 +25,7 @@ func yamlFields(t reflect.Type) []string {
 	return out
 }
 
-// Every scope/seed, transformation and data source field, and every
+// Every scope/seed, transformation, data source and AI field, and every
 // documented option, must be described in the catalog, so the assistant
 // never meets a setting it cannot explain. A new config field fails this
 // until it is cataloged.
@@ -50,6 +50,14 @@ func TestCatalogCoversTheConfig(t *testing.T) {
 	}
 	for _, name := range yamlFields(reflect.TypeOf(config.DataSource{})) {
 		has("datasources." + name)
+	}
+	for _, name := range yamlFields(reflect.TypeOf(config.AISettings{})) {
+		if name != "documents" {
+			has("options.ai." + name)
+		}
+	}
+	for _, name := range yamlFields(reflect.TypeOf(config.DocumentModelSettings{})) {
+		has("options.ai.documents." + name)
 	}
 
 	// Options are parsed from a map, not struct fields, so the documented

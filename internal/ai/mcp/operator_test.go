@@ -728,7 +728,7 @@ func TestStartEnumerationWithMoreTargetsAndExpansion(t *testing.T) {
 	}
 }
 
-// read_documents is an operator tool, and without ai.documents it refuses
+// read_documents is an operator tool, and without options.ai.documents it refuses
 // before asking the user anything: the main model never reads documents.
 func TestReadDocumentsNeedsTheDocumentModel(t *testing.T) {
 	fx := newOperatorFixture(t)
@@ -741,7 +741,7 @@ func TestReadDocumentsNeedsTheDocumentModel(t *testing.T) {
 		t.Fatal("operators are not offered read_documents")
 	}
 	text, isErr := call(t, cs, ToolReadDocuments, map[string]any{"domain": "example.com"})
-	if !isErr || !strings.Contains(text, "ai.documents") {
+	if !isErr || !strings.Contains(text, "options.ai.documents") {
 		t.Errorf("read_documents without a document model = %q (error %v)", text, isErr)
 	}
 }

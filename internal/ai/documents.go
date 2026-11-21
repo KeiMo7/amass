@@ -52,11 +52,11 @@ type DocumentReading struct {
 // ReadDocument asks the document model for the statements a document's
 // passages make and keeps only those that pass validation. The passages are
 // the document's own sentences (doc_passage); the model is the one the user
-// named in ai.documents, and nothing it says is trusted until checked here.
+// named in options.ai.documents, and nothing it says is trusted until checked here.
 func ReadDocument(ctx context.Context, model llm.Model, modelID, url string, passages []string) (DocumentReading, error) {
 	var out DocumentReading
 	if model == nil {
-		return out, errors.New("no document model is configured (ai.documents)")
+		return out, errors.New("no document model is configured (options.ai.documents)")
 	}
 	if len(passages) == 0 {
 		return out, nil

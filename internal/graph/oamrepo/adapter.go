@@ -36,7 +36,7 @@ type Adapter struct {
 	// WithholdDocumentText replaces the text of document passages and the
 	// statements quoting them (graph.DocumentTextProperties) with a marker, for
 	// a graph served to models the user has not allowed to read documents
-	// (ai.documents.share_with_assistants). Counts stay visible.
+	// (options.ai.documents.share_with_assistants). Counts stay visible.
 	WithholdDocumentText bool
 }
 

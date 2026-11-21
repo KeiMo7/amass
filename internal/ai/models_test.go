@@ -12,12 +12,12 @@ import (
 	"github.com/owasp-amass/amass/v5/config"
 )
 
-// Without ai.documents no model reads documents: the main model is never a
+// Without options.ai.documents no model reads documents: the main model is never a
 // fallback.
 func TestDocumentModelHasNoFallback(t *testing.T) {
 	for _, d := range []*config.DocumentModelSettings{nil, {Provider: "ollama", Model: "qwen3:8b"}} {
-		if _, _, _, err := DocumentModel(d); err == nil || !strings.Contains(err.Error(), "ai.documents") {
-			t.Fatalf("DocumentModel(%+v) = %v, want an ai.documents error", d, err)
+		if _, _, _, err := DocumentModel(d); err == nil || !strings.Contains(err.Error(), "options.ai.documents") {
+			t.Fatalf("DocumentModel(%+v) = %v, want an options.ai.documents error", d, err)
 		}
 	}
 

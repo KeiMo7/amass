@@ -107,15 +107,15 @@ func ValidateModelEndpoint(endpoint string, allowHTTP bool) error {
 }
 
 // DefaultDocumentModelTimeout bounds one document model request when
-// ai.documents.model_timeout is not set.
+// options.ai.documents.model_timeout is not set.
 const DefaultDocumentModelTimeout = 3 * time.Minute
 
-// DocumentModel builds the model the user named in ai.documents, with its
+// DocumentModel builds the model the user named in options.ai.documents, with its
 // name for the statements it reads and its per-request timeout. There is no
-// fallback to the main model: without ai.documents no model reads documents.
+// fallback to the main model: without options.ai.documents no model reads documents.
 func DocumentModel(d *config.DocumentModelSettings) (llm.Model, string, time.Duration, error) {
 	if d == nil || !d.Enabled {
-		return nil, "", 0, errors.New("no document model is configured: enable ai.documents in the config " +
+		return nil, "", 0, errors.New("no document model is configured: enable options.ai.documents in the config " +
 			"(the main model is never used to read documents)")
 	}
 	if err := d.Validate(); err != nil {
@@ -140,7 +140,7 @@ func DocumentModel(d *config.DocumentModelSettings) (llm.Model, string, time.Dur
 	m, err := NewModel(ModelSettings{Provider: provider, Endpoint: d.Endpoint, Model: d.Model,
 		APIKey: key, AllowHTTP: d.AllowHTTP, Timeout: timeout, Temperature: &zero})
 	if err != nil {
-		return nil, "", 0, fmt.Errorf("ai.documents: %w", err)
+		return nil, "", 0, fmt.Errorf("options.ai.documents: %w", err)
 	}
 	return m, provider + "/" + d.Model, timeout, nil
 }

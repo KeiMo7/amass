@@ -93,7 +93,7 @@ roots: their footprints hold none of the enumerated domains.
 A pending pass counts as session work, so `amass enum` does not finish
 before it runs, and anything it adds is enumerated in the same session.
 
-| Setting | YAML (`ai:` section) | Environment | Default |
+| Setting | YAML (`options.ai`) | Environment | Default |
 | --- | --- | --- | --- |
 | Mode: `auto`, `journal` (write nothing automatically) or `off` | `attribution` | `AMASS_ATTRIBUTION` | `auto` |
 | Review journal | `journal` | `AMASS_REVIEW_JOURNAL` | `ai-review.jsonl` in the output directory |

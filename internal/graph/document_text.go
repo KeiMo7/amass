@@ -9,8 +9,8 @@ import "strings"
 // DocumentTextProperties are the properties that hold text from collected
 // documents: the passages the document collector keeps, and the statements a
 // document model finds, which quote them. Only the model the user named in
-// ai.documents reads them, unless the user shares them with other models
-// (ai.documents.share_with_assistants).
+// options.ai.documents reads them, unless the user shares them with other models
+// (options.ai.documents.share_with_assistants).
 var DocumentTextProperties = []string{"doc_passage", "doc_statement"}
 
 // IsDocumentTextProperty reports whether a property name holds document text.
@@ -26,5 +26,5 @@ func IsDocumentTextProperty(name string) bool {
 // WithheldDocumentText is the value shown in place of withheld document text,
 // naming its tag so each withheld value stays distinct and can be counted.
 func WithheldDocumentText(tagID string) string {
-	return "[document text withheld: " + tagID + "; see ai.documents.share_with_assistants]"
+	return "[document text withheld: " + tagID + "; see options.ai.documents.share_with_assistants]"
 }

@@ -111,7 +111,7 @@ func ReadDocuments(ctx context.Context, g graph.Graph, store review.DocumentStat
 	root graph.Asset, opts DocumentRunOptions) (DocumentRun, error) {
 	run := DocumentRun{DryRun: opts.DryRun}
 	if opts.Model == nil {
-		return run, errors.New("no document model is configured (ai.documents)")
+		return run, errors.New("no document model is configured (options.ai.documents)")
 	}
 	if opts.ModelTimeout <= 0 {
 		opts.ModelTimeout = DefaultDocumentModelTimeout

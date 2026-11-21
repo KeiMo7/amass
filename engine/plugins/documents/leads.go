@@ -156,6 +156,11 @@ func (d *documents) contentLeads(e *et.Event, fent *dbt.Entity, u *oamurl.URL, d
 		if x == nil || x.Host == "" || seenURL[x.Raw] || len(urls) >= maxLeads || static.IsStaticPath(x.Path) {
 			return
 		}
+		// a host must be an address or a real domain name: text broken across
+		// lines leaves fragments ("http://www.oneon") that are neither
+		if _, err := netip.ParseAddr(x.Host); err != nil && !isDomainName(strings.ToLower(x.Host)) {
+			return
+		}
 		seenURL[x.Raw] = true
 		urls = append(urls, x)
 		hosts[strings.ToLower(x.Host)] = true

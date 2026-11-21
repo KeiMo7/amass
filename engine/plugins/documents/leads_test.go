@@ -235,3 +235,22 @@ func TestSchemelessOutOfScopeIgnored(t *testing.T) {
 		}
 	}
 }
+
+// A URL whose host is a fragment of a name broken across lines is not taken,
+// even when written with its scheme.
+func TestBrokenHostIgnored(t *testing.T) {
+	doc := ooxmlDoc(t, "", "", "", "", "see http://www.examp and https://partner.other.org/x")
+	f := newFixture(t, http.StatusOK, doc)
+	raw := "https://www.example.com/b.docx"
+	if err := f.d.check(f.event(t, raw)); err != nil {
+		t.Fatal(err)
+	}
+	fent := f.file(t, raw)
+	if fent == nil {
+		t.Fatal("no File stored")
+	}
+	got := neighbors(t, f, fent, "contains")
+	if slices.Contains(got, "http://www.examp") || !slices.Contains(got, "https://partner.other.org/x") {
+		t.Errorf("contains %v", got)
+	}
+}

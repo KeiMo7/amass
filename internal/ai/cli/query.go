@@ -10,9 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"net/http"
 	"os"
-	"time"
 
 	"github.com/owasp-amass/amass/v5/internal/ai"
 	"github.com/owasp-amass/amass/v5/internal/ai/llm"
@@ -21,68 +19,11 @@ import (
 // maxQueryFileBytes bounds a -query file; real queries are a few KB.
 const maxQueryFileBytes = 1 << 20
 
-// providerSettings configures one model client.
-type providerSettings struct {
-	Provider, Endpoint, Model, APIKey string
-	AllowHTTP                         bool
-	Timeout                           time.Duration
-	MaxTokens, ContextTokens          int
-	Temperature                       *float64
-	Think                             bool
-}
+// providerSettings configures one model client (see ai.ModelSettings).
+type providerSettings = ai.ModelSettings
 
 // newProvider builds the configured model client and checks its endpoint.
-func newProvider(s providerSettings) (llm.Model, error) {
-	providerName, endpoint, modelName, apiKey := s.Provider, s.Endpoint, s.Model, s.APIKey
-	timeout, maxTokens, temperature, allowHTTP := s.Timeout, s.MaxTokens, s.Temperature, s.AllowHTTP
-	var provider llm.Model
-	switch providerName {
-	case "ollama":
-		if endpoint == "" {
-			endpoint = "http://127.0.0.1:11434"
-		}
-		if _, err := llm.OllamaChatURL(endpoint); err != nil {
-			return nil, err
-		}
-
-		m := llm.NewOllamaModel(endpoint, modelName, &http.Client{Timeout: timeout})
-		m.Think, m.ContextTokens, m.MaxTokens, m.Temperature = s.Think, s.ContextTokens, maxTokens, temperature
-		provider = m
-	case "compatible":
-		if endpoint == "" {
-			endpoint = "http://127.0.0.1:11434/v1/chat/completions"
-		}
-
-		provider = ai.CompatibleModel{
-			Endpoint:    endpoint,
-			ModelName:   modelName,
-			APIKey:      apiKey,
-			Client:      &http.Client{Timeout: timeout},
-			MaxTokens:   maxTokens,
-			Temperature: temperature,
-		}
-	case "anthropic":
-		if endpoint == "" {
-			endpoint = "https://api.anthropic.com/v1/messages"
-		}
-
-		provider = llm.AnthropicModel{
-			Endpoint:    endpoint,
-			ModelName:   modelName,
-			APIKey:      apiKey,
-			Client:      &http.Client{Timeout: timeout},
-			MaxTokens:   maxTokens,
-			Temperature: temperature,
-		}
-	default:
-		return nil, fmt.Errorf("unknown model provider %q", providerName)
-	}
-	if err := validateModelEndpoint(endpoint, allowHTTP); err != nil {
-		return nil, err
-	}
-
-	return provider, nil
-}
+func newProvider(s providerSettings) (llm.Model, error) { return ai.NewModel(s) }
 
 // readQuery loads a Query from path, or from stdin when path is "-". Unknown
 // fields are rejected so a mistyped key cannot silently widen a query.

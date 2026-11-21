@@ -17,12 +17,14 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+	"github.com/owasp-amass/amass/v5/config"
 	"github.com/owasp-amass/amass/v5/internal/ai"
 	"github.com/owasp-amass/amass/v5/internal/collect"
 	"github.com/owasp-amass/amass/v5/internal/graph"
 	"github.com/owasp-amass/amass/v5/internal/graph/oamrepo"
 	"github.com/owasp-amass/amass/v5/internal/lens"
 	lenscli "github.com/owasp-amass/amass/v5/internal/lens/cli"
+	"github.com/owasp-amass/amass/v5/internal/review"
 )
 
 // Operator holds what the operator tools act on. A server offers them only
@@ -55,6 +57,11 @@ type Operator struct {
 	// RequireConfirmation refuses actions when the client cannot show an
 	// approval dialog.
 	RequireConfirmation bool
+	// Documents is the document model the user named (ai.documents); nil
+	// means no model reads documents. ShareDocuments lets read_documents
+	// return the statements it stored, quotes included.
+	Documents      *config.DocumentModelSettings
+	ShareDocuments bool
 }
 
 // Operator tool names.
@@ -71,6 +78,14 @@ const (
 	ToolWatchTarget       = "watch_target"
 	ToolListWatches       = "list_watches"
 	ToolStopWatch         = "stop_watch"
+	ToolReadDocuments     = "read_documents"
+)
+
+// defaultDocumentsPerCall and maxDocumentsPerCall bound the documents one
+// read_documents call reads, so a call ends within a client's tool timeout.
+const (
+	defaultDocumentsPerCall = 5
+	maxDocumentsPerCall     = 10
 )
 
 const operatorInstructions = `
@@ -83,6 +98,7 @@ Operator mode: this connection can also collect data and change the database, ea
 - A finished run also reports applied_by_ai (counts by kind) for the changes the classifier applied automatically during the run (ownership edges, organization merges, identity corrections, scope expansions). Tell the user what the AI decided on its own and explain the evidence with get_evidence and walk_relations; list_proposals with applied true lists them. These are already applied, so the only action is review_proposal retract to undo one — ask the user first, and never retract on their behalf.
 - To keep the user aware in near real time, offer to watch a run the user starts or points you at. Call watch_decisions once without a cursor to start from now, then call it again with the cursor it returned, in a loop: each call waits until a new proposal or an AI-applied change is written to the review journal (or up to its wait time) and returns those items with the next cursor. Surface each item at once — explain its evidence with get_evidence and walk_relations, ask the user before any decision, and never approve or retract on their behalf — and check enumeration_status between calls to stop when the run finishes or the user says so. This is user-initiated, so watch when asked.
 - watch_target re-runs a planned enumeration on a schedule (at most every 6 hours) after the user approves it once; list_watches shows each watch with what its last run found, and stop_watch removes one.
+- When the configuration names a document model (ai.documents), read_documents has it read the passages Amass kept from a domain's or organization's documents and stores the statements that pass validation, with the user's approval; call it again while it reports remaining documents. The document text goes only to that model; you see counts unless documents are shared with assistants.
 - data_sources lists which data sources have credentials. data_source_key_link gives the user a one-time local link to enter a key; never ask the user to type a key into the chat.
 - To change how enumerations run, draft a complete configuration (describe_config gives the schema, current settings and a template), check it with validate_config, then call apply_config with the same content; the user approves the exact change and sees a masked diff. Never put data source credentials in a configuration; the operator adds keys through data_source_key_link.`
 
@@ -418,6 +434,92 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 			}
 
 			return jsonResult(map[string]any{"watches": op.Watches.List()}), nil
+		})
+
+	approveAction(ToolReadDocuments, "Read documents with the document model",
+		"Have the document model named in the ai.documents configuration read the passages Amass kept from the "+
+			"documents a domain or organization publishes, and store the statements it finds that pass "+
+			"validation (each quotes a passage word for word, uses a catalog relationship and names both sides "+
+			"in that passage) on the documents as amass-ai observations, undoable. Reads at most max_documents "+
+			"(default 5) per call, skipping documents already read; call again while remaining is above zero. "+
+			"The document text goes to that model only; the result holds counts unless the configuration shares "+
+			"documents with assistants.",
+		obj(nil, map[string]any{
+			"domain": map[string]any{"type": "string", "description": "The domain whose documents are read"},
+			"organization": map[string]any{"type": "string",
+				"description": "Instead of a domain, the exact name of a stored organization"},
+			"max_documents": map[string]any{"type": "integer", "minimum": 1, "maximum": maxDocumentsPerCall,
+				"description": "Most documents read in this call (default 5)"},
+			"dry_run": map[string]any{"type": "boolean",
+				"description": "Read and validate without storing anything"},
+			"reread": map[string]any{"type": "boolean",
+				"description": "Read documents that already have statements again, undoing their earlier statements"},
+		}),
+		&mcp.ToolAnnotations{DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(true)},
+		func(ctx context.Context, req *mcp.CallToolRequest, raw json.RawMessage) (string,
+			func(via string) (*mcp.CallToolResult, error), error) {
+			var a struct {
+				Domain       string
+				Organization string
+				MaxDocuments int  `json:"max_documents"`
+				DryRun       bool `json:"dry_run"`
+				Reread       bool
+			}
+			if err := json.Unmarshal(raw, &a); err != nil {
+				return "", nil, err
+			}
+
+			model, modelID, timeout, err := ai.DocumentModel(op.Documents)
+			if err != nil {
+				return "", nil, err
+			}
+			if op.Graph.Repo == nil {
+				return "", nil, errors.New("no Asset Database is open")
+			}
+			// the document model reads the passages as stored; this graph is
+			// never handed to the client
+			dg := op.Graph
+			dg.WithholdDocumentText = false
+			root, err := ai.DocumentRoot(ctx, dg, a.Domain, a.Organization)
+			if err != nil {
+				return "", nil, err
+			}
+			limit := a.MaxDocuments
+			if limit <= 0 {
+				limit = defaultDocumentsPerCall
+			}
+			limit = min(limit, maxDocumentsPerCall)
+
+			action := "store the statements it finds on them as amass-ai observations"
+			if a.DryRun {
+				action = "check the statements it finds without storing them"
+			}
+			msg := fmt.Sprintf("Send the passages of up to %d documents published by %s to the document model %s, "+
+				"and %s?", limit, graph.AssetLabel(root), modelID, action)
+			return msg, func(via string) (*mcp.CallToolResult, error) {
+				run, err := ai.ReadDocuments(ctx, dg, op.Graph.Repo, &review.Journal{Path: op.Journal}, root,
+					ai.DocumentRunOptions{Model: model, ModelID: modelID, ModelTimeout: timeout, Max: limit,
+						Reread: a.Reread, DryRun: a.DryRun, Actor: approver(req, via)})
+				if err != nil {
+					return nil, err
+				}
+
+				result := map[string]any{"run": run}
+				if op.ShareDocuments {
+					stored := map[string][]review.StoredStatement{}
+					for _, d := range run.Documents {
+						if len(d.Stored) > 0 {
+							stored[d.URL] = d.Stored
+						}
+					}
+					result["statements"] = stored
+				}
+				if run.Remaining > 0 {
+					result["next"] = fmt.Sprintf("%d documents remain; call read_documents again to read them.",
+						run.Remaining)
+				}
+				return jsonResult(result), nil
+			}, nil
 		})
 
 	add(ToolStopWatch, "Stop an Amass watch", "Remove a scheduled enumeration; a run it started finishes on its own.",

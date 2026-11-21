@@ -77,6 +77,9 @@ func NewOperator(cfg *config.Config, g oamrepo.Adapter, opts OperatorOptions) (*
 
 	op := &Operator{Collect: m, Graph: g, Journal: journal, RequireConfirmation: opts.RequireConfirmation,
 		AnnounceDecisions: cfg.AnnounceAIDecisions(os.LookupEnv)}
+	if cfg.AI != nil {
+		op.Documents, op.ShareDocuments = cfg.AI.Documents, cfg.AI.DocumentsShared()
+	}
 	stopWatches := func() {}
 	if opts.WatchFile != "" {
 		runner := ai.ToolRunner{Graph: g, Catalog: oamrepo.Catalog{}, Limits: graph.DefaultLimits()}

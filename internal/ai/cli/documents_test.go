@@ -5,34 +5,42 @@
 package cli
 
 import (
+	"bytes"
 	"strings"
 	"testing"
-	"time"
 
-	"github.com/owasp-amass/amass/v5/config"
+	"github.com/owasp-amass/amass/v5/internal/ai"
+	"github.com/owasp-amass/amass/v5/internal/review"
 )
 
-// Without ai.documents no model reads documents: the main model is never a
-// fallback.
-func TestDocumentModelHasNoFallback(t *testing.T) {
-	for _, d := range []*config.DocumentModelSettings{nil, {Provider: "ollama", Model: "qwen3:8b"}} {
-		if _, _, _, err := documentModel(d); err == nil || !strings.Contains(err.Error(), "ai.documents") {
-			t.Fatalf("documentModel(%+v) = %v, want an ai.documents error", d, err)
+// A run prints one line per document; a dry run also shows what it would
+// store, quotes included.
+func TestWriteDocumentRun(t *testing.T) {
+	run := ai.DocumentRun{Read: 1, Skipped: 2, Remaining: 3, Failed: 1, Statements: 2, Rejected: 1, DryRun: true,
+		Documents: []ai.DocumentResult{
+			{URL: "https://a.example/plan.pdf", Category: "annual_report", Statements: 2, Rejected: 1,
+				Stored: []review.StoredStatement{{Subject: "Foundation", Predicate: "unit_of", Object: "College",
+					Quote: "The Foundation is a division of the College."}}},
+			{URL: "https://a.example/b.pdf", Error: "model timed out"},
+		}}
+	var out bytes.Buffer
+	if err := writeDocumentRun(&out, "a.example", run); err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{
+		"https://a.example/plan.pdf: would store 2 statements (category annual_report), rejected 1",
+		`Foundation unit_of College: "The Foundation is a division of the College."`,
+		"https://a.example/b.pdf: model timed out",
+		"read 1 documents, skipped 2 already read, 3 remaining, failed 1",
+	} {
+		if !strings.Contains(out.String(), want) {
+			t.Errorf("missing %q in:\n%s", want, out.String())
 		}
 	}
 
-	m, id, timeout, err := documentModel(&config.DocumentModelSettings{Enabled: true, Provider: "Ollama",
-		Endpoint: "http://ollama:11434", Model: "qwen3:8b", AllowHTTP: true, ModelTimeout: "4m"})
-	if err != nil || m == nil {
-		t.Fatalf("documentModel: %v", err)
-	}
-	if id != "ollama/qwen3:8b" || timeout != 4*time.Minute {
-		t.Fatalf("model %q, timeout %v", id, timeout)
-	}
-
-	// a plain HTTP endpoint needs allow_http, as for the main model
-	if _, _, _, err := documentModel(&config.DocumentModelSettings{Enabled: true, Provider: "compatible",
-		Endpoint: "http://10.0.0.5:8000/v1/chat/completions", Model: "m"}); err == nil {
-		t.Fatal("plain HTTP endpoint accepted without allow_http")
+	out.Reset()
+	_ = writeDocumentRun(&out, "b.example", ai.DocumentRun{})
+	if !strings.Contains(out.String(), "no stored documents with passages for b.example") {
+		t.Errorf("empty run: %q", out.String())
 	}
 }

@@ -406,16 +406,19 @@ func run(group string, in io.Reader, out, errout io.Writer, args []string) error
 			return err
 		}
 
-		dm, modelID, timeout, err := documentModel(effective.Documents)
+		dm, modelID, timeout, err := ai.DocumentModel(effective.Documents)
 		if err != nil {
 			return err
 		}
-		root, err := documentRoot(context.Background(), dg, docDomain, docOrg)
+		root, err := ai.DocumentRoot(context.Background(), dg, docDomain, docOrg)
 		if err != nil {
 			return err
 		}
-		_, err = readDocuments(context.Background(), out, dg, repo, j, root, documentOptions{Model: dm,
+		docRun, err := ai.ReadDocuments(context.Background(), dg, repo, j, root, ai.DocumentRunOptions{Model: dm,
 			ModelID: modelID, ModelTimeout: timeout, Max: docMax, Reread: docReread, DryRun: docDryRun})
+		if werr := writeDocumentRun(out, graph.AssetLabel(root), docRun); werr != nil && err == nil {
+			err = werr
+		}
 		return err
 	}
 	runner := ai.ToolRunner{Graph: g, Limits: graph.DefaultLimits(), Catalog: oamrepo.Catalog{},
@@ -704,27 +707,7 @@ func run(group string, in io.Reader, out, errout io.Writer, args []string) error
 // validateModelEndpoint prevents accidental plaintext transmission of graph
 // evidence. In-container HTTP to Ollama requires explicit opt-in.
 func validateModelEndpoint(endpoint string, allowHTTP bool) error {
-	u, err := url.Parse(endpoint)
-	if err != nil {
-		return fmt.Errorf("invalid inference endpoint: %w", err)
-	}
-	if u.User != nil || u.Host == "" || u.Hostname() == "" || u.Fragment != "" {
-		return errors.New("inference endpoint must have a hostname and no URL credentials or fragment")
-	}
-	if u.Scheme == "https" {
-		return nil
-	}
-	if u.Scheme != "http" {
-		return errors.New("inference endpoint must use HTTPS or explicitly permitted HTTP")
-	}
-	if u.Hostname() == "localhost" || u.Hostname() == "127.0.0.1" || u.Hostname() == "::1" {
-		return nil
-	}
-	if !allowHTTP {
-		return errors.New("remote HTTP inference requires explicit -allow-http or AMASS_LLM_ALLOW_HTTP=true for a trusted internal endpoint")
-	}
-
-	return nil
+	return ai.ValidateModelEndpoint(endpoint, allowHTTP)
 }
 
 func validateClassifierEndpoint(endpoint string) error {

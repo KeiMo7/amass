@@ -727,3 +727,21 @@ func TestStartEnumerationWithMoreTargetsAndExpansion(t *testing.T) {
 		t.Errorf("session scope = %+v, rigid %v", cfg.Scope, cfg.Rigid)
 	}
 }
+
+// read_documents is an operator tool, and without ai.documents it refuses
+// before asking the user anything: the main model never reads documents.
+func TestReadDocumentsNeedsTheDocumentModel(t *testing.T) {
+	fx := newOperatorFixture(t)
+	if toolNames(t, connect(t, fx.url, readerToken, nil))[ToolReadDocuments] {
+		t.Error("readers are offered read_documents")
+	}
+
+	cs := connect(t, fx.url, operatorToken, nil)
+	if !toolNames(t, cs)[ToolReadDocuments] {
+		t.Fatal("operators are not offered read_documents")
+	}
+	text, isErr := call(t, cs, ToolReadDocuments, map[string]any{"domain": "example.com"})
+	if !isErr || !strings.Contains(text, "ai.documents") {
+		t.Errorf("read_documents without a document model = %q (error %v)", text, isErr)
+	}
+}

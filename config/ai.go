@@ -6,6 +6,7 @@ package config
 
 import (
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -50,6 +51,69 @@ type AISettings struct {
 	// assistant push). Nil means the default — on whenever attribution is not
 	// off; set false to silence the announcements without changing attribution.
 	AnnounceDecisions *bool `yaml:"announce_decisions,omitempty" json:"announce_decisions,omitempty"`
+	// Documents names the one model allowed to read the content of collected
+	// documents. It is separate from the model above and never falls back to
+	// it: without it, no model reads documents.
+	Documents *DocumentModelSettings `yaml:"documents,omitempty" json:"documents,omitempty"`
+}
+
+// DocumentModelSettings choose the model that reads the passages kept from
+// collected documents to find the statements they make (who runs what, which
+// organization a unit belongs to, who supplies a service). A document can
+// hold personal or internal details, so the user names this model explicitly,
+// and other models see the passages only when ShareWithAssistants is set.
+type DocumentModelSettings struct {
+	// Enabled turns the document model on; off by default.
+	Enabled bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
+	// Provider is ollama, compatible (an OpenAI-compatible chat API) or
+	// anthropic, as for the main model.
+	Provider  string `yaml:"provider,omitempty" json:"provider,omitempty"`
+	Endpoint  string `yaml:"endpoint,omitempty" json:"endpoint,omitempty"`
+	Model     string `yaml:"model,omitempty" json:"model,omitempty"`
+	APIKeyEnv string `yaml:"api_key_env,omitempty" json:"api_key_env,omitempty"`
+	// AllowHTTP permits a plain HTTP endpoint, for a model on a trusted
+	// private network only.
+	AllowHTTP    bool   `yaml:"allow_http,omitempty" json:"allow_http,omitempty"`
+	ModelTimeout string `yaml:"model_timeout,omitempty" json:"model_timeout,omitempty"`
+	// ShareWithAssistants lets other models (the main investigation model and
+	// MCP clients) read the passages and the statements quoting them. Off by
+	// default: they then see only counts.
+	ShareWithAssistants bool `yaml:"share_with_assistants,omitempty" json:"share_with_assistants,omitempty"`
+}
+
+// DocumentModelProviders are the providers the document model may use.
+var DocumentModelProviders = []string{"ollama", "compatible", "anthropic"}
+
+// Validate checks enabled document model settings; disabled ones are not
+// checked, so a commented or partial section never stops a run.
+func (d *DocumentModelSettings) Validate() error {
+	if d == nil || !d.Enabled {
+		return nil
+	}
+	if !slices.Contains(DocumentModelProviders, strings.ToLower(strings.TrimSpace(d.Provider))) {
+		return fmt.Errorf("ai.documents.provider must be one of %s", strings.Join(DocumentModelProviders, ", "))
+	}
+	if strings.TrimSpace(d.Model) == "" {
+		return fmt.Errorf("ai.documents.model is required when the document model is enabled")
+	}
+	if d.ModelTimeout != "" {
+		v, err := time.ParseDuration(d.ModelTimeout)
+		if err != nil || v < 5*time.Second || v > 15*time.Minute {
+			return fmt.Errorf("ai.documents.model_timeout must be 5s..15m")
+		}
+	}
+	return nil
+}
+
+// DocumentModelEnabled reports whether a document model is configured and on.
+func (a *AISettings) DocumentModelEnabled() bool {
+	return a != nil && a.Documents != nil && a.Documents.Enabled
+}
+
+// DocumentsShared reports whether models other than the document model may
+// read document passages and the statements quoting them.
+func (a *AISettings) DocumentsShared() bool {
+	return a.DocumentModelEnabled() && a.Documents.ShareWithAssistants
 }
 
 // Attribution modes.
@@ -164,6 +228,9 @@ func ResolveAISettings(base AISettings, lookup func(string) (string, bool)) (AIS
 		return c, fmt.Errorf("AI max_tokens must be 0..128000")
 	}
 	if _, err := ParseAITemperature(c.Temperature); err != nil {
+		return c, err
+	}
+	if err := c.Documents.Validate(); err != nil {
 		return c, err
 	}
 

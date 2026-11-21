@@ -129,3 +129,44 @@ transformations:
   TLSCertificate->ALL:
     ttl: 10800 # 7 days
   URL->ALL:
+
+# ─────────────────────────────────────────────────────────────────────────
+# ai: optional model settings for `amass ai` and the MCP server. Nothing
+# here turns AI on by itself; enumeration needs no model.
+# ─────────────────────────────────────────────────────────────────────────
+# ai:
+#   provider: ollama
+#   endpoint: http://127.0.0.1:11434
+#   model: qwen3:8b
+#
+#   # documents: the ONE model allowed to read the content of collected
+#   # documents (passages kept from PDFs and Office files), to find the
+#   # statements they make: who runs what, which organization a unit belongs
+#   # to, who supplies a service. Documents can hold personal or internal
+#   # details, so this model is named on its own and never falls back to the
+#   # model above; without it, no model reads documents. Uncomment ONE of the
+#   # three provider choices below.
+#   documents:
+#     enabled: true
+#     # 1) The containerized Ollama started by this Compose project:
+#     provider: ollama
+#     endpoint: http://ollama:11434
+#     model: qwen3:8b
+#     allow_http: true    # trusted private Compose network ONLY
+#     # 2) An Ollama running directly on the host machine (bare metal):
+#     # provider: ollama
+#     # endpoint: http://host.docker.internal:11434   # from a container
+#     # endpoint: http://127.0.0.1:11434              # outside a container
+#     # model: qwen3:8b
+#     # allow_http: true
+#     # 3) Another provider or model, if you are comfortable sending document
+#     #    passages to it (the key is read from the named variable, never
+#     #    written here):
+#     # provider: anthropic           # or compatible (OpenAI-compatible API)
+#     # model: claude-sonnet-5-5
+#     # api_key_env: ANTHROPIC_API_KEY
+#     # endpoint: https://api.anthropic.com/v1/messages
+#     model_timeout: 4m
+#     # Other models (the investigation model above, MCP clients) see only
+#     # counts of passages unless this is true:
+#     share_with_assistants: false

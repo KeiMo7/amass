@@ -44,6 +44,14 @@
 
     "datasources.name": {"section": "datasources", "type": "string", "description": "The data source the entry configures, matching a source Amass knows.", "example": "GLEIF"},
     "datasources.ttl": {"section": "datasources", "type": "integer minutes", "description": "How long this source's responses are reused before the source is queried again.", "example": "10080"},
-    "datasources.creds": {"section": "datasources", "type": "object of named credential sets {username, password, apikey, secret}", "description": "The source's credentials. Secrets are entered by the operator, never by a model.", "example": "apikey: YOUR_KEY"}
+    "datasources.creds": {"section": "datasources", "type": "object of named credential sets {username, password, apikey, secret}", "description": "The source's credentials. Secrets are entered by the operator, never by a model.", "example": "apikey: YOUR_KEY"},
+    "ai.documents.enabled": {"section": "ai", "type": "boolean", "default": "false", "description": "Turns on the one model allowed to read passages kept from collected documents, to find the statements they make (who runs what, which organization a unit belongs to, who supplies a service). The main ai model never reads documents; without this section no model does.", "example": "true"},
+    "ai.documents.provider": {"section": "ai", "type": "string: ollama, compatible or anthropic", "description": "The document model's provider: ollama (the containerized Ollama or one on the host), compatible (an OpenAI-compatible chat API) or anthropic.", "example": "ollama"},
+    "ai.documents.endpoint": {"section": "ai", "type": "URL", "description": "The document model's endpoint. The Compose Ollama is http://ollama:11434; an Ollama on the host machine is http://host.docker.internal:11434 from a container or http://127.0.0.1:11434 outside one.", "example": "http://ollama:11434"},
+    "ai.documents.model": {"section": "ai", "type": "string", "description": "The document model's name at the provider. Required when the document model is enabled.", "example": "qwen3:8b"},
+    "ai.documents.api_key_env": {"section": "ai", "type": "string", "description": "The environment variable holding the provider's API key, for a hosted provider. The key itself never goes in the config.", "example": "ANTHROPIC_API_KEY"},
+    "ai.documents.allow_http": {"section": "ai", "type": "boolean", "default": "false", "description": "Allows a plain HTTP endpoint, for a model on a trusted private network only (such as the Compose network).", "example": "true"},
+    "ai.documents.model_timeout": {"section": "ai", "type": "duration 5s..15m", "description": "How long one document model request may take.", "example": "4m"},
+    "ai.documents.share_with_assistants": {"section": "ai", "type": "boolean", "default": "false", "description": "Lets other models (the main investigation model and MCP clients) read the document passages and the statements quoting them. Off, they see only counts.", "example": "false"}
   }
 }

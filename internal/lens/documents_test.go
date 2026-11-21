@@ -49,6 +49,7 @@ func TestFindDocuments(t *testing.T) {
 		graphtest.SimpleProp(propDocCreated, "2024-01-02T03:04:05Z"),
 		graphtest.SimpleProp(propDocRetrievedFrom, "https://web.archive.org/web/2id_/https://www.colgate.edu/it/plan.pdf"),
 		graphtest.SimpleProp(propDocImageCamera, "word/media/image1.jpeg: Canon EOS 5D Mark IV"),
+		graphtest.SimpleProp(propDocPassage, "The Colgate Foundation is a division of Colgate University."),
 	}
 
 	asset("p-jsmith", "Person", "John Smith", map[string]any{"full_name": "John Smith"})
@@ -121,7 +122,8 @@ func TestFindDocuments(t *testing.T) {
 	text := r.Text()
 	for _, want := range []string{"Documents published by", "User accounts the documents reveal", "jsmith",
 		"IT Strategic Plan", "archive copy", "same file at", "Places recorded in embedded photos",
-		"photo locations: 42.818900,-75.535100", "photographers: Jane Doe"} {
+		"photo locations: 42.818900,-75.535100", "photographers: Jane Doe",
+		"passages stating relationships: 1"} {
 		if !strings.Contains(text, want) {
 			t.Errorf("report lacks %q:\n%s", want, text)
 		}

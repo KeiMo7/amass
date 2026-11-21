@@ -304,6 +304,11 @@ func (c *Config) CheckSettings() error {
 	if c.Passive && c.Active {
 		return errors.New("active enumeration cannot be performed without DNS resolution")
 	}
+	if c.AI != nil {
+		if err := c.AI.Documents.Validate(); err != nil {
+			return err
+		}
+	}
 
 	c.Wordlist, err = ExpandMaskWordlist(c.Wordlist)
 	if err != nil {

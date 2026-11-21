@@ -29,6 +29,10 @@ func (a Adapter) FindByTagValue(ctx context.Context, assetType, name, value stri
 	if !ok {
 		return nil, false, lens.ErrValueSearchUnsupported
 	}
+	// searching withheld document text by value would reveal it piece by piece
+	if a.WithholdDocumentText && graph.IsDocumentTextProperty(name) {
+		return nil, false, nil
+	}
 
 	ents, more, err := vf.FindEntitiesByTagValue(ctx, oam.AssetType(assetType), name, value, contains, time.Time{}, limit)
 	if err != nil {

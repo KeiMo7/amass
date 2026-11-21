@@ -52,7 +52,9 @@ func run() error {
 	}
 
 	defer func() { _ = repo.Close() }()
-	g := oamrepo.Adapter{Repo: repo, Neo4jDatabase: oamrepo.Neo4jDatabaseName(cfg)}
+	// models served here read document text only when the user shares it
+	g := oamrepo.Adapter{Repo: repo, Neo4jDatabase: oamrepo.Neo4jDatabaseName(cfg),
+		WithholdDocumentText: !cfg.AI.DocumentsShared()}
 	server := mcp.NewHTTPServer(ai.ToolRunner{
 		Graph:   g,
 		Catalog: oamrepo.Catalog{},

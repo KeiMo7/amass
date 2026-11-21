@@ -114,3 +114,46 @@ func TestResolveAISettingsOllamaOptions(t *testing.T) {
 		}
 	}
 }
+
+// The document model is off unless enabled, never borrows the main model, and
+// an enabled one needs a known provider and a model.
+func TestDocumentModelSettings(t *testing.T) {
+	var none *AISettings
+	if none.DocumentModelEnabled() || none.DocumentsShared() {
+		t.Error("no ai section enables the document model")
+	}
+
+	main := &AISettings{Provider: "ollama", Model: "qwen3:8b"}
+	if main.DocumentModelEnabled() {
+		t.Error("the main model must not read documents")
+	}
+
+	off := &AISettings{Documents: &DocumentModelSettings{Provider: "nonsense"}}
+	if off.DocumentModelEnabled() || off.Documents.Validate() != nil {
+		t.Error("a disabled document model is neither enabled nor checked")
+	}
+
+	on := &AISettings{Documents: &DocumentModelSettings{Enabled: true, Provider: "ollama", Model: "qwen3:8b"}}
+	if !on.DocumentModelEnabled() || on.DocumentsShared() || on.Documents.Validate() != nil {
+		t.Errorf("enabled document model %+v", on.Documents)
+	}
+	on.Documents.ShareWithAssistants = true
+	if !on.DocumentsShared() {
+		t.Error("share_with_assistants shares the passages")
+	}
+
+	for _, bad := range []DocumentModelSettings{
+		{Enabled: true, Provider: "other", Model: "m"},
+		{Enabled: true, Provider: "anthropic"},
+		{Enabled: true, Provider: "ollama", Model: "m", ModelTimeout: "1s"},
+	} {
+		if bad.Validate() == nil {
+			t.Errorf("%+v was accepted", bad)
+		}
+	}
+
+	if _, err := ResolveAISettings(AISettings{Documents: &DocumentModelSettings{Enabled: true}},
+		func(string) (string, bool) { return "", false }); err == nil {
+		t.Error("an enabled document model without a provider was accepted")
+	}
+}

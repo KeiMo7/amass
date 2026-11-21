@@ -43,6 +43,7 @@ const (
 	propDocModified      = "doc_modified"
 	propDocRetrievedFrom = "doc_retrieved_from"
 	propDocImageCamera   = "doc_image_camera"
+	propDocPassage       = "doc_passage"
 )
 
 // Document is one stored File the subject publishes.
@@ -75,6 +76,9 @@ type Document struct {
 	Places        []string `json:"places,omitempty"`
 	Photographers []string `json:"photographers,omitempty"`
 	Cameras       []string `json:"cameras,omitempty"`
+	// Passages counts the sentences kept for the statement model: those that
+	// name something the document links and state a relationship.
+	Passages int `json:"passages,omitempty"`
 	// Copies are the other URLs serving the same bytes (the same content
 	// hash).
 	Copies []string `json:"copies,omitempty"`
@@ -226,6 +230,7 @@ func (s *scope) document(f graph.Asset) (Document, string, error) {
 		if from := firstValue(propertyValues(ev, propDocRetrievedFrom)); from != "" && from != d.URL {
 			d.Archived = true
 		}
+		d.Passages = len(propertyValues(ev, propDocPassage))
 		for _, v := range propertyValues(ev, propDocImageCamera) {
 			// "word/media/image1.jpeg: Canon EOS 5D"
 			if _, camera, ok := strings.Cut(v, ": "); ok && camera != "" {
@@ -380,6 +385,9 @@ func (r DocumentsReport) Text() string {
 		writeDocList(&b, "photo locations", d.Places)
 		writeDocList(&b, "photographers", d.Photographers)
 		writeDocList(&b, "cameras", d.Cameras)
+		if d.Passages > 0 {
+			fmt.Fprintf(&b, "    passages stating relationships: %d\n", d.Passages)
+		}
 		if len(d.Mentions) > 0 {
 			keys := make([]string, 0, len(d.Mentions))
 			for k := range d.Mentions {

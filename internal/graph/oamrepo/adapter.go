@@ -21,6 +21,7 @@ import (
 	neo4jrepo "github.com/owasp-amass/asset-db/repository/neo4j"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
+	oamgen "github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 )
 
@@ -32,6 +33,11 @@ type Adapter struct {
 	Neo4jDatabase string
 	// Stats, when set, counts the reads lenses make and their time.
 	Stats *ReadStats
+	// WithholdDocumentText replaces the text of document passages and the
+	// statements quoting them (graph.DocumentTextProperties) with a marker, for
+	// a graph served to models the user has not allowed to read documents
+	// (ai.documents.share_with_assistants). Counts stay visible.
+	WithholdDocumentText bool
 }
 
 func (a Adapter) GetAsset(ctx context.Context, id string) (graph.Asset, error) {
@@ -167,7 +173,8 @@ func (a Adapter) Evidence(ctx context.Context, id string, limit int) ([]graph.Ev
 			}
 
 			out = append(out, graph.Evidence{ID: tag.ID, SubjectID: id, SourceID: source(tag.Property),
-				Kind: string(tag.Property.PropertyType()), Property: tag.Property, LastSeen: tag.LastSeen})
+				Kind: string(tag.Property.PropertyType()), Property: a.visible(tag.ID, tag.Property),
+				LastSeen: tag.LastSeen})
 		}
 
 		return out, nil
@@ -975,3 +982,17 @@ func (a Adapter) ResolveAsset(ctx context.Context, selector graph.AssetSelector,
 }
 
 var _ graph.AssetResolver = Adapter{}
+
+// visible is the property a reader may see: a document text property's value
+// is replaced by a marker naming the tag, so each stays distinct and countable,
+// when document text is withheld.
+func (a Adapter) visible(tagID string, p oam.Property) oam.Property {
+	if !a.WithholdDocumentText {
+		return p
+	}
+	sp, ok := p.(*oamgen.SimpleProperty)
+	if !ok || !graph.IsDocumentTextProperty(sp.PropertyName) {
+		return p
+	}
+	return &oamgen.SimpleProperty{PropertyName: sp.PropertyName, PropertyValue: graph.WithheldDocumentText(tagID)}
+}

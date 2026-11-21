@@ -378,7 +378,9 @@ func run(group string, in io.Reader, out, errout io.Writer, args []string) error
 		}
 	}
 
-	g := oamrepo.Adapter{Repo: repo, Aliases: aliases, Neo4jDatabase: oamrepo.Neo4jDatabaseName(cfg)}
+	// models served here read document text only when the user shares it
+	g := oamrepo.Adapter{Repo: repo, Aliases: aliases, Neo4jDatabase: oamrepo.Neo4jDatabaseName(cfg),
+		WithholdDocumentText: !cfg.AI.DocumentsShared()}
 	runner := ai.ToolRunner{Graph: g, Limits: graph.DefaultLimits(), Catalog: oamrepo.Catalog{},
 		KnownVerification: dnssd.IsVerificationRecord}
 	// The ownership-gap answer uses the trained attribution model when one has

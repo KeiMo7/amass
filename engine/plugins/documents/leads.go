@@ -37,7 +37,7 @@ const maxLeads = 500
 // leads tallies what a document contributed, for its log line.
 type leads struct {
 	people, orgs, products, accounts, names, urls, emails, addrs, phones int
-	images, places, serials                                              int
+	images, places, serials, passages                                    int
 }
 
 // author is a person the document's metadata names, with the name parts a
@@ -139,12 +139,13 @@ func companyNamesAuthor(rules semantics.DocumentRules, company string, vendors [
 // partner) without being enumerated.
 //
 // It returns the usernames the text shows in home-directory paths, for the
-// account leads.
+// account leads, with the text and the names and addresses it mentions, for
+// the passages.
 func (d *documents) contentLeads(e *et.Event, fent *dbt.Entity, u *oamurl.URL, dt semantics.DocumentType,
-	data []byte, n *leads) []string {
+	data []byte, n *leads) (usernames []string, text string, mentions []string) {
 	content, err := docmeta.ExtractContent(dt.Format, data)
 	if err != nil {
-		return nil
+		return nil, "", nil
 	}
 
 	body := content.Text + "\n" + strings.Join(content.Links, "\n")
@@ -257,7 +258,11 @@ func (d *documents) contentLeads(e *et.Event, fent *dbt.Entity, u *oamurl.URL, d
 		}
 	}
 
-	return docmeta.Usernames(content.Text)
+	mentions = append(mentions, emails...)
+	for name := range hosts {
+		mentions = append(mentions, name)
+	}
+	return docmeta.Usernames(content.Text), content.Text, mentions
 }
 
 // explicitURLRe finds URLs written with their web scheme.
@@ -382,5 +387,5 @@ func (d *documents) dispatch(e *et.Event, ent *dbt.Entity, name string) {
 func (d *documents) logLeads(e *et.Event, u *oamurl.URL, n leads) {
 	e.Session.Log().Info("document leads", "url", u.Raw, "people", n.people, "organizations", n.orgs,
 		"products", n.products, "accounts", n.accounts, "names", n.names, "urls", n.urls, "emails", n.emails, "addresses", n.addrs,
-		"phones", n.phones, "images", n.images, "places", n.places, "serials", n.serials, slog.Group("plugin", "name", d.name, "handler", d.name+"-Handler"))
+		"phones", n.phones, "images", n.images, "places", n.places, "serials", n.serials, "passages", n.passages, slog.Group("plugin", "name", d.name, "handler", d.name+"-Handler"))
 }

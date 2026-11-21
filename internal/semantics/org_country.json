@@ -14,7 +14,7 @@
     },
     {
       "name": "registration_location",
-      "path": ["in organization", "out location"],
+      "path": ["in organization", "out street_address"],
       "field": "country",
       "form": "iso2",
       "confidence": 75,

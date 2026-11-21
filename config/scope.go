@@ -163,7 +163,7 @@ func (s *Scope) isScopeEmpty(scopeSwitch bool) bool {
 	if len(s.Organizations) > 0 {
 		return false
 	}
-	if len(s.Phones) > 0 || len(s.Locations) > 0 {
+	if len(s.Phones) > 0 || len(s.StreetAddresses) > 0 {
 		return false
 	}
 	if len(s.Names) > 0 || s.NamesFile != "" {
@@ -310,17 +310,17 @@ func (c *Config) AddPhone(phone string) {
 	c.Scope.Phones = append(c.Scope.Phones, p)
 }
 
-// AddLocation records a street address as a seed the enumeration pivots from:
+// AddStreetAddress records a street address as a seed the enumeration pivots from:
 // the engine resolves the organizations at the address and their domains.
-func (c *Config) AddLocation(address string) {
+func (c *Config) AddStreetAddress(address string) {
 	c.Lock()
 	defer c.Unlock()
 
 	a := strings.TrimSpace(address)
-	if a == "" || slices.Contains(c.Scope.Locations, a) {
+	if a == "" || slices.Contains(c.Scope.StreetAddresses, a) {
 		return
 	}
-	c.Scope.Locations = append(c.Scope.Locations, a)
+	c.Scope.StreetAddresses = append(c.Scope.StreetAddresses, a)
 }
 
 // AddDomain appends the domain name provided in the parameter to the list in the configuration.

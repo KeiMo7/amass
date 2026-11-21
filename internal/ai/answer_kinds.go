@@ -359,7 +359,7 @@ func tableColumns(goal InvestigationGoal, mentioned []string) []lens.TableColumn
 
 // mentionedTypes lists, sorted, the catalog asset types the question names
 // through the vocabulary. Longer phrases claim their words first, so "IP
-// address" names IPAddress and not also Location ("address").
+// address" names IPAddress and not also StreetAddress ("address").
 func mentionedTypes(question string, schema graph.SchemaCatalog) []string {
 	pos := mentionedTypePositions(question, schema)
 	out := make([]string, 0, len(pos))

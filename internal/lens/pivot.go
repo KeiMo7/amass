@@ -53,7 +53,7 @@ type PivotOrg struct {
 	Principal bool `json:"principal,omitempty"`
 }
 
-// PivotResolution is the result of resolving a Phone or Location seed to the
+// PivotResolution is the result of resolving a Phone or StreetAddress seed to the
 // organizations tied to it and the domains those organizations control, so an
 // enumeration can start from a phone number or a street address. It is a
 // computed view of stored relations, never an authorization: the organizations
@@ -75,14 +75,14 @@ type PivotResolution struct {
 	Capped bool `json:"capped,omitempty"`
 }
 
-// ResolveSeedPivot resolves a Phone or Location seed to the organizations tied
+// ResolveSeedPivot resolves a Phone or StreetAddress seed to the organizations tied
 // to it and the domains they control, reading only. From a Phone it walks
-// Phone ← ContactRecord --organization--> Organization; from a Location it
+// Phone ← ContactRecord --organization--> Organization; from a StreetAddress it
 // walks both the organization's own address edges (legal_address / hq_address /
-// location) and Location ← ContactRecord --organization--> Organization. Each
+// location) and StreetAddress ← ContactRecord --organization--> Organization. Each
 // organization is resolved to its registered domains with the domains lens, so
 // a pivot produces the same domain portfolio a later enumeration would. A
-// Location that ties to more than PivotSharedAddressOrgs organizations is
+// StreetAddress that ties to more than PivotSharedAddressOrgs organizations is
 // reported as a shared address and left for review rather than seeded.
 func ResolveSeedPivot(ctx context.Context, g graph.Graph, schema graph.SchemaCatalog, seed graph.Asset,
 	limits LensLimits) (PivotResolution, error) {
@@ -91,7 +91,7 @@ func ResolveSeedPivot(ctx context.Context, g graph.Graph, schema graph.SchemaCat
 	switch seed.Type {
 	case "Phone":
 		out.SeedValue = graph.ContentString(seed, "e164", "raw")
-	case "Location":
+	case "StreetAddress":
 		out.SeedValue = graph.ContentString(seed, "address")
 	default:
 		return out, &pivotError{seed.Type}
@@ -106,10 +106,10 @@ func ResolveSeedPivot(ctx context.Context, g graph.Graph, schema graph.SchemaCat
 	for id := range found {
 		ids = append(ids, id)
 	}
-	// A Location shared by many organizations is an agent or shared-building
+	// A StreetAddress shared by many organizations is an agent or shared-building
 	// address: report its organizations for review, but do not resolve domains
 	// or let the pivot seed an enumeration from them.
-	if seed.Type == "Location" && len(ids) > PivotSharedAddressOrgs {
+	if seed.Type == "StreetAddress" && len(ids) > PivotSharedAddressOrgs {
 		out.SharedAddress = true
 	}
 	if len(ids) > PivotMaxOrgs {
@@ -149,7 +149,7 @@ func ResolveSeedPivot(ctx context.Context, g graph.Graph, schema graph.SchemaCat
 type pivotError struct{ typ string }
 
 func (e *pivotError) Error() string {
-	return "cannot pivot from a " + e.typ + " seed: only Phone and Location are supported"
+	return "cannot pivot from a " + e.typ + " seed: only Phone and StreetAddress are supported"
 }
 
 // pivotTie records how a seed reached an organization.
@@ -170,10 +170,10 @@ func pivotOrgIDs(ctx context.Context, g graph.Graph, seed graph.Asset) (map[stri
 		if err := orgsThroughContactRecords(ctx, g, seed.ID, "phone", out); err != nil {
 			return nil, err
 		}
-	case "Location":
+	case "StreetAddress":
 		// The organization's own address edges: its principal place of business
 		// (hq/legal) or another recorded location.
-		for _, label := range []string{"legal_address", "hq_address", "location"} {
+		for _, label := range []string{"legal_address", "hq_address", "street_address"} {
 			edges, err := boundedEdges(ctx, g, seed.ID, "in", label)
 			if err != nil {
 				return nil, err
@@ -183,8 +183,8 @@ func pivotOrgIDs(ctx context.Context, g graph.Graph, seed graph.Asset) (map[stri
 				record(out, e.FromID, pivotTie{via: "address_edge", principal: principal})
 			}
 		}
-		// Location ← ContactRecord --organization--> Organization.
-		if err := orgsThroughContactRecords(ctx, g, seed.ID, "location", out); err != nil {
+		// StreetAddress ← ContactRecord --organization--> Organization.
+		if err := orgsThroughContactRecords(ctx, g, seed.ID, "street_address", out); err != nil {
 			return nil, err
 		}
 	}

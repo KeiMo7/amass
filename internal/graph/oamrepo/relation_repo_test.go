@@ -102,7 +102,7 @@ func TestRecheckRelationSQLite(t *testing.T) {
 		FromID: parent, From: "State University of New York",
 		Label: "org_unit", ToID: unit, To: "SUNY Polytechnic Institute",
 		Confidence: 70, Status: review.ProposalPending,
-		Witness: []graph.WitnessEdge{{FromID: "ghost", Label: "location", ToID: "nowhere"}},
+		Witness: []graph.WitnessEdge{{FromID: "ghost", Label: "street_address", ToID: "nowhere"}},
 	}
 	if _, err := j.SubmitRelations([]review.RelationProposal{p}); err != nil {
 		t.Fatal(err)

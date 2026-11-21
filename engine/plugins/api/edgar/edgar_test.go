@@ -56,11 +56,11 @@ func TestParseSubmissions(t *testing.T) {
 		t.Errorf("filings = %+v", sub.Filings.Recent)
 	}
 
-	if loc := businessLocation(&sub.Addresses.Business); loc == nil || loc.City != "CUPERTINO" ||
+	if loc := businessAddress(&sub.Addresses.Business); loc == nil || loc.City != "CUPERTINO" ||
 		loc.Address != "ONE APPLE PARK WAY" {
 		t.Errorf("location = %+v", loc)
 	}
-	if businessLocation(&address{}) != nil {
+	if businessAddress(&address{}) != nil {
 		t.Error("empty address should yield no location")
 	}
 }
@@ -96,9 +96,9 @@ func TestParseFormDAmount(t *testing.T) {
 	}
 }
 
-func TestBusinessLocation(t *testing.T) {
+func TestBusinessAddress(t *testing.T) {
 	// Full address maps field for field.
-	loc := businessLocation(&address{Street1: "1 Infinite Loop", Street2: "Suite 100",
+	loc := businessAddress(&address{Street1: "1 Infinite Loop", Street2: "Suite 100",
 		City: "Cupertino", StateOrCountry: "CA", ZipCode: "95014"})
 	if loc == nil || loc.Address != "1 Infinite Loop Suite 100" || loc.City != "Cupertino" ||
 		loc.Province != "CA" || loc.PostalCode != "95014" {
@@ -106,13 +106,13 @@ func TestBusinessLocation(t *testing.T) {
 	}
 
 	// City but no street still yields a location (address empty).
-	if loc := businessLocation(&address{City: "Reno", StateOrCountry: "NV"}); loc == nil ||
+	if loc := businessAddress(&address{City: "Reno", StateOrCountry: "NV"}); loc == nil ||
 		loc.Address != "" || loc.City != "Reno" {
 		t.Errorf("city-only = %+v", loc)
 	}
 
 	// Nothing to locate → nil.
-	if loc := businessLocation(&address{StateOrCountry: "NY", ZipCode: "10001"}); loc != nil {
+	if loc := businessAddress(&address{StateOrCountry: "NY", ZipCode: "10001"}); loc != nil {
 		t.Errorf("no street or city should be nil, got %+v", loc)
 	}
 }

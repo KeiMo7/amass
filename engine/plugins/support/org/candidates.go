@@ -166,7 +166,7 @@ func orgsOnPhone(ctx context.Context, sess et.Session, ph *dbt.Entity, seen *str
 
 // OrgsSharingAddress returns the other organizations that share a street
 // address with orgent, reached through its locations and contact records
-// (Organization → legal_address/hq_address/location → Location and back, and
+// (Organization → legal_address/hq_address/location → StreetAddress and back, and
 // via a ContactRecord at the same location). A shared address is a supporting
 // signal — shared buildings and registered-agent addresses are reused by many
 // companies — so these candidates are scored, never merged on the address
@@ -181,10 +181,10 @@ func OrgsSharingAddress(sess et.Session, orgent *dbt.Entity) []*dbt.Entity {
 
 	var locs []*dbt.Entity
 	if edges, err := sess.DB().OutgoingEdges(ctx, orgent, time.Time{}, "legal_address", "hq_address",
-		"location"); err == nil {
+		"street_address"); err == nil {
 		for _, edge := range edges {
 			if a, err := sess.DB().FindEntityById(ctx, edge.ToEntity.ID); err == nil && a != nil {
-				if _, ok := a.Asset.(*oamcon.Location); ok {
+				if _, ok := a.Asset.(*oamcon.StreetAddress); ok {
 					locs = append(locs, a)
 				}
 			}
@@ -192,7 +192,7 @@ func OrgsSharingAddress(sess et.Session, orgent *dbt.Entity) []*dbt.Entity {
 	}
 
 	// expand to the stored locations that match these ones
-	locs = append(locs, matchingLocations(sess, locs)...)
+	locs = append(locs, matchingStreetAddresses(sess, locs)...)
 
 	seen := stringset.New()
 	defer seen.Close()
@@ -200,7 +200,7 @@ func OrgsSharingAddress(sess et.Session, orgent *dbt.Entity) []*dbt.Entity {
 
 	var out []*dbt.Entity
 	for _, loc := range locs {
-		edges, err := sess.DB().IncomingEdges(ctx, loc, time.Time{}, "legal_address", "hq_address", "location")
+		edges, err := sess.DB().IncomingEdges(ctx, loc, time.Time{}, "legal_address", "hq_address", "street_address")
 		if err != nil {
 			continue
 		}

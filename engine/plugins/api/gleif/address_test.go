@@ -11,7 +11,7 @@ import (
 )
 
 func TestRecordAtAddressConfirmsStreet(t *testing.T) {
-	seed := &contact.Location{StreetName: "Oak Drive", BuildingNumber: "13", City: "Hamilton"}
+	seed := &contact.StreetAddress{StreetName: "Oak Drive", BuildingNumber: "13", City: "Hamilton"}
 
 	rec := &LEIRecord{}
 	rec.Attributes.Entity.LegalAddress = LEIAddress{AddressLines: []string{"13 Oak Drive"}, City: "Hamilton"}
@@ -39,14 +39,14 @@ func TestRecordAtAddressConfirmsStreet(t *testing.T) {
 func TestAddressLineMatchesUsesHeadquartersAndNumberField(t *testing.T) {
 	// The street can sit in the address line while the number is in the
 	// dedicated AddressNumber field.
-	seed := &contact.Location{StreetName: "Main St", BuildingNumber: "7"}
+	seed := &contact.StreetAddress{StreetName: "Main St", BuildingNumber: "7"}
 	ad := &LEIAddress{AddressLines: []string{"Main St"}, AddressNumber: "7"}
 	if !addressLineMatches(seed, ad) {
 		t.Error("a split street/number address was not matched")
 	}
 
 	// With no street on the seed there is nothing to confirm.
-	if addressLineMatches(&contact.Location{}, ad) {
+	if addressLineMatches(&contact.StreetAddress{}, ad) {
 		t.Error("an empty seed street matched")
 	}
 }

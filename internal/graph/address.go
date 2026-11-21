@@ -130,9 +130,9 @@ func isPostalCode(w string) bool {
 	return true
 }
 
-// LocationAddressKey is addressKey for a stored Location asset.
-func LocationAddressKey(a Asset) string {
-	if a.Type != "Location" {
+// StreetAddressKey is addressKey for a stored StreetAddress asset.
+func StreetAddressKey(a Asset) string {
+	if a.Type != "StreetAddress" {
 		return ""
 	}
 

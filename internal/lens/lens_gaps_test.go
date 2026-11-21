@@ -20,7 +20,7 @@ func TestWidelySharedValuesGiveNoIdentitySignal(t *testing.T) {
 		g.Assets[id] = graph.Asset{ID: id, Type: "ContactRecord", Key: "https://rdap.example/" + id}
 		for _, v := range []string{"phone", "loc"} {
 			g.Links = append(g.Links, graph.Relation{ID: id + "-" + v, FromID: id, ToID: v,
-				Label: map[string]string{"phone": "phone", "loc": "location"}[v], Type: "SimpleRelation"})
+				Label: map[string]string{"phone": "phone", "loc": "street_address"}[v], Type: "SimpleRelation"})
 		}
 	}
 

@@ -46,7 +46,7 @@ func TestFeatureHasPhoneConfirmsOnDigits(t *testing.T) {
 }
 
 func TestFeatureAtAddressIsConservative(t *testing.T) {
-	loc := &contact.Location{StreetName: "Oak Drive", BuildingNumber: "13"}
+	loc := &contact.StreetAddress{StreetName: "Oak Drive", BuildingNumber: "13"}
 
 	same := &element{Tags: map[string]string{"addr:street": "Oak Drive", "addr:housenumber": "13"}}
 	if !featureAtAddress(same, loc) {
@@ -65,7 +65,7 @@ func TestFeatureAtAddressIsConservative(t *testing.T) {
 }
 
 func TestAddressQueryKeysOnStreetAndNumber(t *testing.T) {
-	q := addressQuery(&contact.Location{StreetName: "Oak Drive", BuildingNumber: "13", City: "Hamilton"})
+	q := addressQuery(&contact.StreetAddress{StreetName: "Oak Drive", BuildingNumber: "13", City: "Hamilton"})
 
 	for _, want := range []string{`"addr:street"`, "Oak Drive", `"addr:housenumber"="13"`, `"addr:city"`} {
 		if !strings.Contains(q, want) {

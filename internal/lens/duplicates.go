@@ -602,7 +602,7 @@ func (s *dupSearch) profile(o graph.Asset) (*orgProfile, error) {
 		p.addIdentifier(graph.ContentString(a, "id_type"), graph.ContentString(a, "id"))
 	}
 
-	addressLabels := []string{"legal_address", "hq_address", "location"}
+	addressLabels := []string{"legal_address", "hq_address", "street_address"}
 	byLabel, err := s.labelEdges(o.ID, "out", addressLabels)
 	if err != nil {
 		return nil, err
@@ -624,7 +624,7 @@ func (s *dupSearch) profile(o graph.Asset) (*orgProfile, error) {
 			continue
 		}
 
-		locs, err := s.edges(e.FromID, "out", "location")
+		locs, err := s.edges(e.FromID, "out", "street_address")
 		if err != nil {
 			return nil, err
 		}
@@ -645,7 +645,7 @@ func (s *dupSearch) profile(o graph.Asset) (*orgProfile, error) {
 		if err != nil {
 			return nil, err
 		}
-		if k := graph.LocationAddressKey(loc); k != "" {
+		if k := graph.StreetAddressKey(loc); k != "" {
 			p.addresses[k] = true
 		}
 	}

@@ -77,7 +77,7 @@ func (g *gleif) Start(r et.Registry) error {
 	}
 
 	// The reverse direction: from a street address to the organizations
-	// registered there, so an enumeration can pivot from a Location seed.
+	// registered there, so an enumeration can pivot from a StreetAddress seed.
 	g.address = &addresses{
 		name:   g.name + "-Address-Handler",
 		plugin: g,
@@ -89,7 +89,7 @@ func (g *gleif) Start(r et.Registry) error {
 		Exclusive:    true,
 		MaxInstances: support.MinHandlerInstances,
 		Transforms:   []string{string(oam.Organization), string(oam.ContactRecord), string(oam.Identifier)},
-		EventType:    oam.Location,
+		EventType:    oam.StreetAddress,
 		Callback:     g.address.check,
 	}); err != nil {
 		return err

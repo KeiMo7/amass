@@ -54,12 +54,12 @@ func TestIdentityReviewFlow(t *testing.T) {
 	lei, _ := repo.CreateAsset(ctx, &oamgen.Identifier{UniqueID: "lei:894500EDC64T52PGFL08",
 		ID: "894500EDC64T52PGFL08", Type: oamgen.LEICode})
 	cr, _ := repo.CreateAsset(ctx, &contact.ContactRecord{DiscoveredAt: "https://stripe.example"})
-	loc, _ := repo.CreateAsset(ctx, &contact.Location{Address: "354 Oyster Point Blvd South San Francisco CA US",
+	loc, _ := repo.CreateAsset(ctx, &contact.StreetAddress{Address: "354 Oyster Point Blvd South San Francisco CA US",
 		City: "South San Francisco", Country: "US"})
 	edge(stripe, name, "id", "TLSCert-Expansion")
 	edge(stripe, lei, "id", "GLEIF")
 	edge(cr, stripe, "organization", "TLSCert-Expansion")
-	edge(cr, loc, "location", "TLSCert-Expansion")
+	edge(cr, loc, "street_address", "TLSCert-Expansion")
 
 	graph := oamrepo.Adapter{Repo: repo}
 	journal := filepath.Join(t.TempDir(), "review.jsonl")

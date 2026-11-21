@@ -307,7 +307,7 @@ func scopeOf(target graph.AssetSelector, mode Mode) (string, string, string) {
 		}
 
 		return "phone", e164, ""
-	case target.Type == "Location" && target.Field == "address":
+	case target.Type == "StreetAddress" && target.Field == "address":
 		// Likewise an address resolves the organizations at it; passive only.
 		if mode == Active {
 			return "", "", "an address resolves organizations and is collected passively; it cannot be an " +
@@ -317,7 +317,7 @@ func scopeOf(target graph.AssetSelector, mode Mode) (string, string, string) {
 			return "", "", "invalid address"
 		}
 
-		return "location", value, ""
+		return "street_address", value, ""
 	}
 
 	return "", "", "this OAM selector has no approved direct enumeration adapter"

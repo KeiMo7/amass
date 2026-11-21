@@ -88,7 +88,7 @@ func (g *gleif) updateOrgFromLEIRecord(e *et.Event, orgent *dbt.Entity, lei *LEI
 
 	for _, a := range lei.Attributes.Entity.OtherAddresses {
 		addr = g.buildAddrFromLEIAddress(&a)
-		_ = g.addAddress(e, orgent, oamgen.SimpleRelation{Name: "location"}, addr, conf)
+		_ = g.addAddress(e, orgent, oamgen.SimpleRelation{Name: "street_address"}, addr, conf)
 	}
 
 	_ = g.addIdentifiersToOrg(e, orgent, oamgen.BankIDCode, lei.Attributes.BIC, conf)
@@ -107,7 +107,7 @@ func (g *gleif) updateOrgFromLEIRecord(e *et.Event, orgent *dbt.Entity, lei *LEI
 }
 
 func (g *gleif) addAddress(e *et.Event, orgent *dbt.Entity, rel oam.Relation, addr string, conf int) error {
-	loc := support.StreetAddressToLocation(addr)
+	loc := support.ParseStreetAddress(addr)
 	if loc == nil {
 		return errors.New("failed to create location")
 	}

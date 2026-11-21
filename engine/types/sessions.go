@@ -102,9 +102,9 @@ type Scope interface {
 	AddOrgByName(o string) bool
 	Organizations() []*oamorg.Organization
 
-	// Methods for adding and getting Locations
-	Locations() []*oamcon.Location
-	AddLocation(loc *oamcon.Location) bool
+	// Methods for adding and getting StreetAddresses
+	StreetAddresses() []*oamcon.StreetAddress
+	AddStreetAddress(loc *oamcon.StreetAddress) bool
 }
 
 // Backlog is the durable, per-session work backlog with claim/lease semantics.

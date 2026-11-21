@@ -28,6 +28,10 @@
 #    - 64496
 #  organizations: # company names to begin from; the engine resolves each to
 #    - Example Corporation   # its registered domains, networks and systems.
+#  phones: # phone numbers to begin from; each resolves to the organizations
+#    - +1-555-0100           # tied to the number (seed only)
+#  street_addresses: # street addresses to begin from; each resolves to the
+#    - 1 Main St, Anytown, CA 94000   # organizations at the address (seed only)
 
 # ─────────────────────────────────────────────────────────────────────────
 # scope: the BOUNDARY a discovered asset must fall within to be kept. Unless
@@ -107,7 +111,6 @@ transformations:
     ttl: 43200 # 30 days
   IPAddress->ALL:
   IPNetRecord->ALL:
-  Location->ALL:
   Netblock->ALL:
   Netblock->RDAP:
     ttl: 43200 # 30 days
@@ -122,6 +125,7 @@ transformations:
     ttl: 10800 # 7 days
   ProductRelease->ALL:
   Service->ALL:
+  StreetAddress->ALL:
   TLSCertificate->ALL:
     ttl: 10800 # 7 days
   URL->ALL:

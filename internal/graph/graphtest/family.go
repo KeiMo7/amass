@@ -94,9 +94,9 @@ func FamilyGraph() FakeGraph {
 	a("cr-person", "ContactRecord", nil)
 	g.Link("dr-reg", "cr-person", "registrant_contact")
 	g.Link("cr-person", "person", "organization")
-	a("loc-1", "Location", map[string]any{"address": "3400 north charles street baltimore md 21218"})
-	a("loc-2", "Location", map[string]any{"address": "3400 n. charles st., garland hall, baltimore, md 21218-2683"})
-	g.Link("cr-person", "loc-1", "location")
+	a("loc-1", "StreetAddress", map[string]any{"address": "3400 north charles street baltimore md 21218"})
+	a("loc-2", "StreetAddress", map[string]any{"address": "3400 n. charles st., garland hall, baltimore, md 21218-2683"})
+	g.Link("cr-person", "loc-1", "street_address")
 	g.Org("unspecified", "unspecified", "", "", "")
 	a("cert-u", "TLSCertificate", map[string]any{"subject_common_name": "x.jhu.edu"})
 	fqdn("x.jhu.edu")
@@ -120,7 +120,7 @@ func FamilyGraph() FakeGraph {
 	}
 
 	network("nb-jhu", "128.220.0.0/16", "jhu-arin")
-	g.Link("cr-nb-jhu", "loc-2", "location")
+	g.Link("cr-nb-jhu", "loc-2", "street_address")
 	network("nb-jhmi", "162.129.0.0/16", "jhmi")
 	network("nb-cloud", "52.0.0.0/8", "cloud")
 

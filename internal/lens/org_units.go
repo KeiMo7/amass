@@ -72,13 +72,13 @@ type orgUnitProfile struct {
 
 // orgUnitCohort is the set of organizations the org-unit sweep compares. When
 // the repository supports database-side grouping, it is the union of the
-// organizations that share an identifier or a Location with another — the only
+// organizations that share an identifier or a StreetAddress with another — the only
 // organizations the sweep can pair (a name match alone never proposes) — so the
 // sweep skips the full scan. Otherwise it falls back to the bounded scan.
 func orgUnitCohort(ctx context.Context, g graph.Graph) ([]graph.Asset, bool, error) {
 	if cg, ok := g.(CoKeyedGrouper); ok {
 		ids, full, err := coKeyedCohortIDs(ctx, cg, "Organization",
-			[]CoKeyKind{CoKeyIdentifier, CoKeyLocation}, dupMaxBucket, orgUnitMaxOrganizations)
+			[]CoKeyKind{CoKeyIdentifier, CoKeyStreetAddress}, dupMaxBucket, orgUnitMaxOrganizations)
 		if err == nil {
 			orgs := make([]graph.Asset, 0, len(ids))
 			for _, id := range ids {
@@ -262,8 +262,8 @@ func orgUnitStrongLink(a, b *orgUnitProfile) (string, []graph.WitnessEdge) {
 		if eb, ok := b.addrEdges[k]; ok {
 			ea := a.addrEdges[k]
 			return "shared address: " + k, []graph.WitnessEdge{
-				witnessOf(ea, "Organization", "Location"),
-				witnessOf(eb, "Organization", "Location"),
+				witnessOf(ea, "Organization", "StreetAddress"),
+				witnessOf(eb, "Organization", "StreetAddress"),
 			}
 		}
 	}
@@ -306,7 +306,7 @@ func newOrgUnitProfile(ctx context.Context, g graph.Graph, o graph.Asset, name s
 	}
 	p.acronym = abbreviation(p.brand, orgUnitStopWords)
 
-	for _, label := range []string{"legal_address", "hq_address", "location"} {
+	for _, label := range []string{"legal_address", "hq_address", "street_address"} {
 		edges, err := g.Edges(ctx, o.ID, "out", label, time.Time{})
 		if err != nil {
 			continue
@@ -319,7 +319,7 @@ func newOrgUnitProfile(ctx context.Context, g graph.Graph, o graph.Asset, name s
 			if err != nil {
 				continue
 			}
-			if k := graph.LocationAddressKey(loc); k != "" {
+			if k := graph.StreetAddressKey(loc); k != "" {
 				if _, ok := p.addrEdges[k]; !ok {
 					p.addrEdges[k] = e
 				}

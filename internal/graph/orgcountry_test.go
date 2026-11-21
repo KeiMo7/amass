@@ -18,7 +18,7 @@ func orgCountryFixture(name, jurisdiction, locCountry, phoneCountry string) (gra
 	og := graphtest.NewOrgGraph()
 	og.Org("org", name, "", jurisdiction, "")
 	if locCountry != "" {
-		og.Graph.Assets["loc"] = graph.Asset{ID: "loc", Type: "Location", Key: "loc",
+		og.Graph.Assets["loc"] = graph.Asset{ID: "loc", Type: "StreetAddress", Key: "loc",
 			Content: map[string]any{"country": locCountry, "city": "Somewhere"}}
 		og.Contact("org", "cr", "loc")
 	} else {

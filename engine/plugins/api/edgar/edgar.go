@@ -224,7 +224,7 @@ func (h *filings) storeCIK(e *et.Event, orgent *dbt.Entity, cik string) {
 
 func (h *filings) storeContact(e *et.Event, orgent *dbt.Entity, cik string, sub *submissions) {
 	phone := support.PhoneToOAMPhone(sub.Phone, "", "US")
-	loc := businessLocation(&sub.Addresses.Business)
+	loc := businessAddress(&sub.Addresses.Business)
 	if phone == nil && loc == nil {
 		return
 	}
@@ -263,7 +263,7 @@ func (h *filings) storeContact(e *et.Event, orgent *dbt.Entity, cik string, sub 
 				Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
 			})
 			_ = h.plugin.createRelation(ctx, e.Session, cr,
-				&general.SimpleRelation{Name: "location"}, a, h.plugin.source.Confidence)
+				&general.SimpleRelation{Name: "street_address"}, a, h.plugin.source.Confidence)
 		}
 	}
 }
@@ -372,14 +372,14 @@ func (h *filings) orgCheckingAccount(e *et.Event, orgent *dbt.Entity) *dbt.Entit
 	return accountent
 }
 
-// businessLocation builds a Location from a filer's business address, or nil
+// businessAddress builds a StreetAddress from a filer's business address, or nil
 // when the address is empty.
-func businessLocation(a *address) *contact.Location {
+func businessAddress(a *address) *contact.StreetAddress {
 	street := strings.TrimSpace(a.Street1 + " " + a.Street2)
 	if street == "" && a.City == "" {
 		return nil
 	}
-	return &contact.Location{
+	return &contact.StreetAddress{
 		Address:    street,
 		City:       a.City,
 		Province:   a.StateOrCountry,

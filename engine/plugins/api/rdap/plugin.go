@@ -124,7 +124,7 @@ func (rd *rdapPlugin) Start(r et.Registry) error {
 			string(oam.ContactRecord),
 			string(oam.Person),
 			string(oam.Organization),
-			string(oam.Location),
+			string(oam.StreetAddress),
 			string(oam.Identifier),
 			string(oam.Phone),
 		},
@@ -168,7 +168,7 @@ func (rd *rdapPlugin) Start(r et.Registry) error {
 			string(oam.ContactRecord),
 			string(oam.Person),
 			string(oam.Organization),
-			string(oam.Location),
+			string(oam.StreetAddress),
 			string(oam.Identifier),
 			string(oam.Phone),
 		},
@@ -215,7 +215,7 @@ func (rd *rdapPlugin) Start(r et.Registry) error {
 			string(oam.ContactRecord),
 			string(oam.Person),
 			string(oam.Organization),
-			string(oam.Location),
+			string(oam.StreetAddress),
 			string(oam.Identifier),
 			string(oam.Phone),
 		},
@@ -317,14 +317,14 @@ func (rd *rdapPlugin) storeEntity(e *et.Event, level int, entity *rdap.Entity, a
 		return
 	}
 
-	if adr := v.GetFirst("adr"); adr != nil && m.IsMatch(string(oam.Location)) {
+	if adr := v.GetFirst("adr"); adr != nil && m.IsMatch(string(oam.StreetAddress)) {
 		if label, ok := adr.Parameters["label"]; ok {
 			s := strings.Join(label, " ")
 
 			addr := strings.Join(strings.Split(s, "\n"), " ")
-			if loc := support.StreetAddressToLocation(addr); loc != nil {
+			if loc := support.ParseStreetAddress(addr); loc != nil {
 				if a, err := e.Session.DB().CreateAsset(ctx, loc); err == nil && a != nil {
-					_ = rd.createContactEdge(ctx, e.Session, cr, a, &general.SimpleRelation{Name: "location"}, src)
+					_ = rd.createContactEdge(ctx, e.Session, cr, a, &general.SimpleRelation{Name: "street_address"}, src)
 				}
 			}
 		}

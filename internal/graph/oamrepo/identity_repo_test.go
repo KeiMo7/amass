@@ -72,9 +72,9 @@ func identityConflicts(t *testing.T, repo repository.Repository) {
 	}
 	cr := f.asset(&contact.ContactRecord{DiscoveredAt: "https://apple.example"})
 	f.edge(cr, apple, "organization", "TLSCert-Expansion")
-	f.edge(cr, f.asset(&contact.Location{Address: "One Apple Park Way Cupertino CA US", City: "Cupertino",
-		Country: "US"}), "location", "TLSCert-Expansion")
-	paris := f.asset(&contact.Location{Address: "12 rue de Paris 75008 Paris FR", City: "Paris", Country: "FR"})
+	f.edge(cr, f.asset(&contact.StreetAddress{Address: "One Apple Park Way Cupertino CA US", City: "Cupertino",
+		Country: "US"}), "street_address", "TLSCert-Expansion")
+	paris := f.asset(&contact.StreetAddress{Address: "12 rue de Paris 75008 Paris FR", City: "Paris", Country: "FR"})
 	f.edge(apple, paris, "legal_address", "GLEIF")
 
 	// Colgate University: its legal identity agrees with its evidence.
@@ -84,8 +84,8 @@ func identityConflicts(t *testing.T, repo repository.Repository) {
 	f.edge(colgate, ident(oamgen.LegalName, "Colgate University"), "id", "GLEIF")
 	cr2 := f.asset(&contact.ContactRecord{DiscoveredAt: "https://rdap.example/colgate"})
 	f.edge(cr2, colgate, "organization", "RDAP")
-	f.edge(cr2, f.asset(&contact.Location{Address: "13 Oak Drive Hamilton NY US", City: "Hamilton", Country: "US"}),
-		"location", "RDAP")
+	f.edge(cr2, f.asset(&contact.StreetAddress{Address: "13 Oak Drive Hamilton NY US", City: "Hamilton", Country: "US"}),
+		"street_address", "RDAP")
 
 	adapter := Adapter{Repo: repo}
 	r, err := lens.FindIdentityConflicts(ctx, adapter)

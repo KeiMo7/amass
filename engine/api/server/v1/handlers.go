@@ -291,8 +291,8 @@ func (v *V1Handlers) GetScopeHandler(w http.ResponseWriter, r *http.Request) {
 		for _, a := range sess.Scope().Netblocks() {
 			assets = append(assets, a)
 		}
-	case strings.ToLower(string(oam.Location)):
-		for _, a := range sess.Scope().Locations() {
+	case strings.ToLower(string(oam.StreetAddress)):
+		for _, a := range sess.Scope().StreetAddresses() {
 			assets = append(assets, a)
 		}
 	case strings.ToLower(string(oam.Organization)):

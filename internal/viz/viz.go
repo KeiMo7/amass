@@ -115,7 +115,7 @@ func VizData(domains []string, since time.Time, db repository.Repository) ([]Nod
 				out = true
 			case oam.IPNetRecord:
 				out = true
-			case oam.Location:
+			case oam.StreetAddress:
 				out = true
 			case oam.Netblock:
 				in = true
@@ -233,7 +233,7 @@ func newNode(idx int, a *types.Entity) *Node {
 		key = "Found->" + key
 	case *oamreg.DomainRecord:
 		key = "WHOIS: " + key
-	case *contact.Location:
+	case *contact.StreetAddress:
 		parts := []string{v.BuildingNumber, v.StreetName, v.City, v.Province, v.Country}
 		key = strings.Join(parts, " ")
 	case *org.Organization:

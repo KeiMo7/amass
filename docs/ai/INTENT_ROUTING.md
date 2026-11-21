@@ -142,13 +142,13 @@ relation compiler and the semantic goal-planning prompt.
 | Subdomains, subdomain names | `FQDN` | **Hierarchy constraint:** stored `node` relationships; apex is excluded from subdomain-only inventory |
 | IPs, IP addresses, IPv4 addresses, IPv6 addresses | `IPAddress` | Network address asset |
 | Companies, businesses, corporations, firms, legal entities | `Organization` | Organization asset; not proof of corporate registration |
-| Physical, postal, street addresses | `Location` | Geographic/address asset |
+| Physical, postal, street addresses | `StreetAddress` | Street or postal address |
 | TLS, SSL or X.509 certificates | `TLSCertificate` | Certificate asset |
 | Networks, subnets, IP ranges | `Netblock` | Address range/block |
 | ASNs, autonomous systems | `AutonomousSystem` | Autonomous system asset |
 
 The bare word **"addresses"** is intentionally ambiguous: it can mean
-`IPAddress` or `Location`. The typed compiler evaluates candidates
+`IPAddress` or `StreetAddress`. The typed compiler evaluates candidates
 against the **requested OAM relationship labels and traversal topology**.
 It uses a deterministic mapping only if exactly one registered candidate
 type has exactly one valid route. If multiple meanings remain viable, the

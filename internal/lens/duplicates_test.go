@@ -110,9 +110,9 @@ func TestFindDuplicateOrganizations(t *testing.T) {
 	// address, and initials only in the department's name.
 	g.Org("38172", "university at albany, state university of new york", "", "", "")
 	g.Org("28909", "university at albany its", "", "", "")
-	g.Graph.Assets["loc-ua1"] = graph.Asset{ID: "loc-ua1", Type: "Location", Key: "a1",
+	g.Graph.Assets["loc-ua1"] = graph.Asset{ID: "loc-ua1", Type: "StreetAddress", Key: "a1",
 		Content: map[string]any{"address": "1400 washington ave room itb102 albany ny 12222 united states"}}
-	g.Graph.Assets["loc-ua2"] = graph.Asset{ID: "loc-ua2", Type: "Location", Key: "a2",
+	g.Graph.Assets["loc-ua2"] = graph.Asset{ID: "loc-ua2", Type: "StreetAddress", Key: "a2",
 		Content: map[string]any{"address": "1400 washington av, albany, ny 12222-1000, usa"}}
 	g.Contact("38172", "cr-ua1", "loc-ua1")
 	g.Contact("28909", "cr-ua2", "loc-ua2")

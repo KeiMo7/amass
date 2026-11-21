@@ -17,17 +17,17 @@ func TestContactOrganization(t *testing.T) {
 	// department, then the street address.
 	edu := &whoisparser.Contact{Name: "Eric Torgersen", Organization: "Information Technology Services",
 		Street: "1400 Washington Avenue", City: "Albany", Province: "NY", PostalCode: "12222", Country: "US"}
-	unavailable := func(string) *contact.Location { return nil }
-	building := func(addr string) *contact.Location {
-		return &contact.Location{Building: strings.ToLower("Information Technology Services")}
+	unavailable := func(string) *contact.StreetAddress { return nil }
+	building := func(addr string) *contact.StreetAddress {
+		return &contact.StreetAddress{Building: strings.ToLower("Information Technology Services")}
 	}
-	street := func(addr string) *contact.Location {
-		return &contact.Location{Building: "", StreetName: "washington avenue"}
+	street := func(addr string) *contact.StreetAddress {
+		return &contact.StreetAddress{Building: "", StreetName: "washington avenue"}
 	}
 
 	for name, tc := range map[string]struct {
 		contact  *whoisparser.Contact
-		parse    func(string) *contact.Location
+		parse    func(string) *contact.StreetAddress
 		org      string
 		person   bool
 		addrHead string

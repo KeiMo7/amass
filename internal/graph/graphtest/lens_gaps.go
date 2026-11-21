@@ -25,15 +25,15 @@ func CampusGapsFixture() VendorGraph {
 	named := func(id, typ, name string) { add(id, typ, name, map[string]any{"name": name}) }
 
 	add("phone", "Phone", "+1.3152287000", map[string]any{"e164": "+1.3152287000"})
-	add("loc", "Location", "13 Oak Drive, Hamilton NY", map[string]any{"address": "13 Oak Drive, Hamilton NY"})
+	add("loc", "StreetAddress", "13 Oak Drive, Hamilton NY", map[string]any{"address": "13 Oak Drive, Hamilton NY"})
 	link("cr-colgate", "phone", "phone", "SimpleRelation")
-	link("cr-colgate", "location", "loc", "SimpleRelation")
+	link("cr-colgate", "street_address", "loc", "SimpleRelation")
 
 	add("cr-alt", "ContactRecord", "https://rdap.example/alumni", nil)
 	add("dr-alt", "DomainRecord", "colgatealumni.org", map[string]any{"domain": "colgatealumni.org"})
 	named("colgatealumni.org", "FQDN", "colgatealumni.org")
 	link("cr-alt", "phone", "phone", "SimpleRelation")
-	link("cr-alt", "location", "loc", "SimpleRelation")
+	link("cr-alt", "street_address", "loc", "SimpleRelation")
 	link("dr-alt", "registrant_contact", "cr-alt", "SimpleRelation")
 	link("colgatealumni.org", "registration", "dr-alt", "SimpleRelation")
 

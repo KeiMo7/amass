@@ -178,7 +178,7 @@ func intersects(a, b map[string]bool) bool {
 	return false
 }
 
-func (ev *locEvidence) add(loc *contact.Location) {
+func (ev *locEvidence) add(loc *contact.StreetAddress) {
 	if p := normPostal(loc.PostalCode); p != "" {
 		ev.postal[p] = true
 	}
@@ -215,14 +215,14 @@ func orgLocEvidence(e *et.Event, orgent *dbt.Entity) locEvidence {
 	defer cancel()
 
 	db := e.Session.DB()
-	addLocations := func(from *dbt.Entity, labels ...string) {
+	addStreetAddresses := func(from *dbt.Entity, labels ...string) {
 		edges, err := db.OutgoingEdges(ctx, from, time.Time{}, labels...)
 		if err != nil {
 			return
 		}
 		for _, edge := range edges {
 			if a, err := db.FindEntityById(ctx, edge.ToEntity.ID); err == nil && a != nil {
-				if loc, ok := a.Asset.(*contact.Location); ok {
+				if loc, ok := a.Asset.(*contact.StreetAddress); ok {
 					ev.add(loc)
 				}
 			}
@@ -244,13 +244,13 @@ func orgLocEvidence(e *et.Event, orgent *dbt.Entity) locEvidence {
 		}
 	}
 
-	addLocations(orgent, "legal_address", "hq_address", "location")
+	addStreetAddresses(orgent, "legal_address", "hq_address", "street_address")
 	addPhones(orgent)
 	if edges, err := db.IncomingEdges(ctx, orgent, time.Time{}, "organization"); err == nil {
 		for _, edge := range edges {
 			if a, err := db.FindEntityById(ctx, edge.FromEntity.ID); err == nil && a != nil {
 				if _, ok := a.Asset.(*contact.ContactRecord); ok {
-					addLocations(a, "location")
+					addStreetAddresses(a, "street_address")
 					addPhones(a)
 				}
 			}

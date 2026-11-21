@@ -852,7 +852,7 @@ func (Catalog) SearchFields() []graph.AssetSearchSchema {
 		"Identifier":       {"unique_id", "id", "id_type"},
 		"IPAddress":        {"address"},
 		"IPNetRecord":      {"cidr", "handle", "name", "start_address", "end_address", "whois_server", "parent_handle"},
-		"Location": {
+		"StreetAddress": {
 			"address",
 			"building",
 			"building_number",

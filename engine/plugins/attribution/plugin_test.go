@@ -132,7 +132,7 @@ func seed(t *testing.T, db repository.Repository) map[string]*dbt.Entity {
 	create("colgate", &oamorg.Organization{ID: "colgate", Name: "Colgate University"})
 	create("cr-colgate", &oamcon.ContactRecord{DiscoveredAt: "https://rdap.example/colgate"})
 	create("phone", &oamcon.Phone{Raw: "+1.3152287000", E164: "+1.3152287000"})
-	create("loc", &oamcon.Location{Address: "13 Oak Drive, Hamilton NY", City: "Hamilton", Province: "NY", Country: "US"})
+	create("loc", &oamcon.StreetAddress{Address: "13 Oak Drive, Hamilton NY", City: "Hamilton", Province: "NY", Country: "US"})
 	create("dr", &oamreg.DomainRecord{Domain: "colgate.edu"})
 	create("colgate.edu", &oamdns.FQDN{Name: "colgate.edu"})
 	create("cr-alt", &oamcon.ContactRecord{DiscoveredAt: "https://rdap.example/alumni"})
@@ -141,11 +141,11 @@ func seed(t *testing.T, db repository.Repository) map[string]*dbt.Entity {
 
 	link("cr-colgate", "organization", "colgate")
 	link("cr-colgate", "phone", "phone")
-	link("cr-colgate", "location", "loc")
+	link("cr-colgate", "street_address", "loc")
 	link("dr", "registrant_contact", "cr-colgate")
 	link("colgate.edu", "registration", "dr")
 	link("cr-alt", "phone", "phone")
-	link("cr-alt", "location", "loc")
+	link("cr-alt", "street_address", "loc")
 	link("dr-alt", "registrant_contact", "cr-alt")
 	link("colgatealumni.org", "registration", "dr-alt")
 	return ents

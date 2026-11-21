@@ -190,11 +190,11 @@ type Scope struct {
 	// it does not bound the scope.
 	Phones []string `yaml:"phones,omitempty" json:"phones,omitempty"`
 
-	// Locations are street addresses that seed the enumeration: starting
+	// StreetAddresses are street addresses that seed the enumeration: starting
 	// points the engine resolves to the organizations at the address and their
 	// domains. Only meaningful in the seed; a shared or registered-agent
 	// address is held for review rather than enumerated.
-	Locations []string `yaml:"locations,omitempty" json:"locations,omitempty"`
+	StreetAddresses []string `yaml:"street_addresses,omitempty" json:"street_addresses,omitempty"`
 
 	// CIDR IPNET
 	CIDRs []*net.IPNet `yaml:"-" json:"cidrs,omitempty"`

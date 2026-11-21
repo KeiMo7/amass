@@ -86,7 +86,7 @@ func (o *openstreetmap) Start(r et.Registry) error {
 	}
 
 	// The reverse direction: from a phone or an address to the organizations
-	// tied to it, so an enumeration can pivot from a Phone or Location seed.
+	// tied to it, so an enumeration can pivot from a Phone or StreetAddress seed.
 	o.reverse = &reverse{name: o.name + "-Reverse-Handler", plugin: o}
 	if err := r.RegisterHandler(&et.Handler{
 		Plugin:       o,
@@ -102,12 +102,12 @@ func (o *openstreetmap) Start(r et.Registry) error {
 	}
 	if err := r.RegisterHandler(&et.Handler{
 		Plugin:       o,
-		Name:         o.reverse.name + "-Location",
+		Name:         o.reverse.name + "-StreetAddress",
 		Position:     42,
 		Exclusive:    false,
 		MaxInstances: support.MinHandlerInstances,
 		Transforms:   []string{string(oam.ContactRecord), string(oam.Organization)},
-		EventType:    oam.Location,
+		EventType:    oam.StreetAddress,
 		Callback:     o.reverse.checkAddress,
 	}); err != nil {
 		return err

@@ -86,7 +86,7 @@ func (ed *edgar) Start(r et.Registry) error {
 			string(oam.Identifier),
 			string(oam.ContactRecord),
 			string(oam.Phone),
-			string(oam.Location),
+			string(oam.StreetAddress),
 			string(oam.FundsTransfer),
 			string(oam.Account),
 		},

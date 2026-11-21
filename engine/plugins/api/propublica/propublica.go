@@ -186,13 +186,13 @@ func (h *filings) storeContact(e *et.Event, orgent *dbt.Entity, o *pubOrg) {
 		&general.SimpleRelation{Name: "organization"}, orgent, h.plugin.source.Confidence); err != nil {
 		return
 	}
-	loc := &contact.Location{Address: a.Address, City: a.City, Province: a.State, PostalCode: a.Zipcode}
+	loc := &contact.StreetAddress{Address: a.Address, City: a.City, Province: a.State, PostalCode: a.Zipcode}
 	if l, err := e.Session.DB().CreateAsset(ctx, loc); err == nil && l != nil {
 		_, _ = e.Session.DB().CreateEntityProperty(ctx, l, &general.SourceProperty{
 			Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
 		})
 		_ = h.plugin.createRelation(ctx, e.Session, cr,
-			&general.SimpleRelation{Name: "location"}, l, h.plugin.source.Confidence)
+			&general.SimpleRelation{Name: "street_address"}, l, h.plugin.source.Confidence)
 	}
 }
 

@@ -27,7 +27,7 @@ func sampleReport() lens.RelationReport {
 			Confidence: 70,
 			Signals:    []string{"acronym expansion", "shared address"},
 			Witness: []graph.WitnessEdge{{
-				EdgeID: "e1", Label: "location", FromID: "org-parent", ToID: "loc-1",
+				EdgeID: "e1", Label: "street_address", FromID: "org-parent", ToID: "loc-1",
 			}},
 		}},
 	}

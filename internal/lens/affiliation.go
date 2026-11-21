@@ -196,8 +196,8 @@ func (s *scope) orgAnchors(org graph.Asset) ([]anchor, error) {
 				switch cs.other.Type {
 				case "Phone":
 					out = append(out, anchor{cs.other, "shared_phone", phoneLabel(cs.other)})
-				case "Location":
-					out = append(out, anchor{cs.other, "shared_address", locationLabel(cs.other)})
+				case "StreetAddress":
+					out = append(out, anchor{cs.other, "shared_address", streetAddressLabel(cs.other)})
 				case "Person":
 					out = append(out, anchor{cs.other, "shared_person", personLabel(cs.other)})
 				}

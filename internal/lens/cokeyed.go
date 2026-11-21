@@ -39,8 +39,8 @@ const (
 	CoKeyRegistration
 	// CoKeyBrand groups organizations sharing a brand_key tag.
 	CoKeyBrand
-	// CoKeyLocation groups organizations sharing a Location (an address edge).
-	CoKeyLocation
+	// CoKeyStreetAddress groups organizations sharing a StreetAddress (an address edge).
+	CoKeyStreetAddress
 	// CoKeyPersonName groups persons sharing a person_name_key tag.
 	CoKeyPersonName
 )

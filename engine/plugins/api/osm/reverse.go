@@ -26,7 +26,7 @@ import (
 
 // reverse looks organizations up from a phone number or a street address: the
 // opposite direction of the phones handler, which starts from an organization.
-// It is what lets an enumeration pivot from a Phone or Location to the
+// It is what lets an enumeration pivot from a Phone or StreetAddress to the
 // organizations tied to it. A feature that carries the number or sits at the
 // address names a candidate organization; the name is not proof the
 // organization belongs there, so matching is conservative and the stored
@@ -69,15 +69,15 @@ func (h *reverse) checkPhone(e *et.Event) error {
 // ContactRecord. It needs a structured address (a street name at least); a
 // bare, unparsed address string cannot be matched reliably and is skipped.
 func (h *reverse) checkAddress(e *et.Event) error {
-	loc, ok := e.Entity.Asset.(*contact.Location)
+	loc, ok := e.Entity.Asset.(*contact.StreetAddress)
 	if !ok {
-		return errors.New("failed to extract the Location asset")
+		return errors.New("failed to extract the StreetAddress asset")
 	}
 	// A seeded freeform address (e.g. from a phone/address pivot) may carry only
 	// the Address string with no parsed components. Parse it so the reverse
 	// query can key on the street and house number.
 	if strings.TrimSpace(loc.StreetName) == "" && strings.TrimSpace(loc.Address) != "" {
-		if parsed := support.StreetAddressToLocation(loc.Address); parsed != nil && parsed.StreetName != "" {
+		if parsed := support.ParseStreetAddress(loc.Address); parsed != nil && parsed.StreetName != "" {
 			loc = parsed
 		}
 	}
@@ -86,7 +86,7 @@ func (h *reverse) checkAddress(e *et.Event) error {
 	}
 
 	since, err := support.TTLStartTime(e.Session.Config(),
-		string(oam.Location), string(oam.Organization), h.plugin.name)
+		string(oam.StreetAddress), string(oam.Organization), h.plugin.name)
 	if err != nil {
 		return err
 	}
@@ -128,7 +128,7 @@ func (h *reverse) queryPhone(e *et.Event, phoneent *dbt.Entity, ph *contact.Phon
 	}
 }
 
-func (h *reverse) queryAddress(e *et.Event, locent *dbt.Entity, loc *contact.Location) {
+func (h *reverse) queryAddress(e *et.Event, locent *dbt.Entity, loc *contact.StreetAddress) {
 	body, err := h.request(e, addressQuery(loc))
 	if err != nil {
 		h.logError(e, fmt.Sprintf("failed to query Overpass for %s: %s", loc.Address, err))
@@ -149,7 +149,7 @@ func (h *reverse) queryAddress(e *et.Event, locent *dbt.Entity, loc *contact.Loc
 		if !featureAtAddress(el, loc) {
 			continue
 		}
-		h.link(e, el, "location", locent)
+		h.link(e, el, "street_address", locent)
 	}
 }
 
@@ -252,8 +252,8 @@ func phoneRegex(e164 string) string {
 }
 
 // addressQuery returns an Overpass query for features at the location's street
-// address, keyed on the house number and street the OAM Location carries.
-func addressQuery(loc *contact.Location) string {
+// address, keyed on the house number and street the OAM StreetAddress carries.
+func addressQuery(loc *contact.StreetAddress) string {
 	var b strings.Builder
 	b.WriteString(`nwr["addr:street"~"^` + overpassString(loc.StreetName) + `$",i]`)
 	if n := strings.TrimSpace(loc.BuildingNumber); n != "" {
@@ -281,7 +281,7 @@ func featureHasPhone(el *element, wantDigits string) bool {
 // featureAtAddress reports whether the feature's address tags match the
 // location's street and, when known, house number: a conservative check so a
 // feature merely on the same street is not taken for the same address.
-func featureAtAddress(el *element, loc *contact.Location) bool {
+func featureAtAddress(el *element, loc *contact.StreetAddress) bool {
 	if !normEq(el.Tags["addr:street"], loc.StreetName) {
 		return false
 	}

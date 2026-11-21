@@ -32,7 +32,7 @@ func labels(ents []*dbt.Entity) string {
 
 func link(name string) *general.SimpleRelation { return &general.SimpleRelation{Name: name} }
 
-func TestContactRecordOrganizationsAndLocations(t *testing.T) {
+func TestContactRecordOrganizationsAndStreetAddresses(t *testing.T) {
 	sess := plugintest.NewSession(t)
 	sess.TTL(1440)
 	h := NewHorizontals().(*horizPlugin)
@@ -40,17 +40,17 @@ func TestContactRecordOrganizationsAndLocations(t *testing.T) {
 	dr := sess.Asset(t, &oamreg.DomainRecord{Domain: "example.com", Name: "example.com", ID: "D1"})
 	cr := sess.Asset(t, &contact.ContactRecord{DiscoveredAt: "https://rdap.example/domain/example.com"})
 	org := sess.Asset(t, &oamorg.Organization{ID: "org-1", Name: "Example Inc"})
-	hq := sess.Asset(t, &contact.Location{Address: "1 Main St Springfield IL 62701 US", StreetName: "Main St",
+	hq := sess.Asset(t, &contact.StreetAddress{Address: "1 Main St Springfield IL 62701 US", StreetName: "Main St",
 		BuildingNumber: "1", City: "Springfield", Province: "IL", PostalCode: "62701", Country: "US"})
-	branch := sess.Asset(t, &contact.Location{Address: "2 Side St Springfield IL 62701 US", StreetName: "Side St",
+	branch := sess.Asset(t, &contact.StreetAddress{Address: "2 Side St Springfield IL 62701 US", StreetName: "Side St",
 		BuildingNumber: "2", City: "Springfield", Province: "IL", PostalCode: "62701", Country: "US"})
 
 	sess.Edge(t, dr, link("registrant_contact"), cr)
 	sess.Edge(t, cr, link("organization"), org)
 	sess.Edge(t, org, link("hq_address"), hq)
 	// The same location through both the organization and the record.
-	sess.Edge(t, cr, link("location"), hq)
-	sess.Edge(t, cr, link("location"), branch)
+	sess.Edge(t, cr, link("street_address"), hq)
+	sess.Edge(t, cr, link("street_address"), branch)
 
 	got, err := h.getContactRecord(sess, dr, "registrant_contact")
 	if err != nil || got.ID != cr.ID {
@@ -60,7 +60,7 @@ func TestContactRecordOrganizationsAndLocations(t *testing.T) {
 		t.Error("a missing contact record was found")
 	}
 
-	orgs, locs := h.lookupContactRecordOrgsAndLocations(sess, cr)
+	orgs, locs := h.lookupContactRecordOrgsAndStreetAddresses(sess, cr)
 	if labels(orgs) != "org-1" {
 		t.Errorf("organizations = %q", labels(orgs))
 	}
@@ -85,7 +85,7 @@ func TestPrivacyProxyOrgSuppressed(t *testing.T) {
 
 	// A privacy-proxy registrant is shared by thousands of unrelated domains, so
 	// it must never be returned as a horizontal correlation anchor.
-	orgs, _ := h.lookupContactRecordOrgsAndLocations(sess, cr)
+	orgs, _ := h.lookupContactRecordOrgsAndStreetAddresses(sess, cr)
 	if labels(orgs) != "org-1" {
 		t.Errorf("privacy-proxy organization must be suppressed; organizations = %q", labels(orgs))
 	}

@@ -64,7 +64,7 @@ func TestTrainAttributionWritesALoadableModel(t *testing.T) {
 		p := review.OwnershipProposal{ID: review.ProposalID(edge), Edge: edge}
 		outcome := review.OwnershipOutcome{ProposalID: p.ID, Status: review.ProposalApplied, Reviewer: "jeff", EdgeID: "e"}
 		if i%2 == 0 {
-			p.Signals = []string{"identity via ContactRecord phone Phone", "identity via ContactRecord location Location"}
+			p.Signals = []string{"identity via ContactRecord phone Phone", "identity via ContactRecord street_address StreetAddress"}
 		} else {
 			p.Signals = []string{"hosting via FQDN dns_record IPAddress"}
 			outcome.Status, outcome.EdgeID = review.ProposalRejected, ""
@@ -135,7 +135,7 @@ func TestAttributionStatusReportsModelAndData(t *testing.T) {
 		p := review.OwnershipProposal{ID: review.ProposalID(edge), Edge: edge}
 		outcome := review.OwnershipOutcome{ProposalID: p.ID, Status: review.ProposalApplied, Reviewer: "jeff", EdgeID: "e"}
 		if i%2 == 0 {
-			p.Signals = []string{"identity via ContactRecord phone Phone", "identity via ContactRecord location Location"}
+			p.Signals = []string{"identity via ContactRecord phone Phone", "identity via ContactRecord street_address StreetAddress"}
 		} else {
 			p.Signals = []string{"hosting via FQDN dns_record IPAddress"}
 			outcome.Status, outcome.EdgeID = review.ProposalRejected, ""

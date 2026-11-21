@@ -14,7 +14,7 @@ import (
 
 func TestOAMIntentVocabularyCanonicalSynonyms(t *testing.T) {
 	selectors := append([]graph.AssetSearchSchema(nil), typedIntentTestCatalog.selectors...)
-	for _, kind := range []string{"Location", "TLSCertificate", "Netblock"} {
+	for _, kind := range []string{"StreetAddress", "TLSCertificate", "Netblock"} {
 		selectors = append(selectors, graph.AssetSearchSchema{Type: kind})
 	}
 
@@ -27,8 +27,8 @@ func TestOAMIntentVocabularyCanonicalSynonyms(t *testing.T) {
 		{"companies", "Organization"},
 		{"businesses", "Organization"},
 		{"legal entities", "Organization"},
-		{"physical addresses", "Location"},
-		{"postal addresses", "Location"},
+		{"physical addresses", "StreetAddress"},
+		{"postal addresses", "StreetAddress"},
 		{"SSL certificates", "TLSCertificate"},
 		{"network blocks", "Netblock"},
 	}
@@ -41,11 +41,11 @@ func TestOAMIntentVocabularyCanonicalSynonyms(t *testing.T) {
 }
 
 func TestOAMIntentVocabularyDoesNotGuessAmbiguousAddresses(t *testing.T) {
-	// Register Location explicitly as part of the production schema.
+	// Register StreetAddress explicitly as part of the production schema.
 	selectors := append(append([]graph.AssetSearchSchema(nil), typedIntentTestCatalog.selectors...),
-		graph.AssetSearchSchema{Type: "Location", Fields: []string{"address"}})
+		graph.AssetSearchSchema{Type: "StreetAddress", Fields: []string{"address"}})
 	candidates := intentTypeCandidates("addresses", selectors, typedIntentTestCatalog.rels)
-	if !reflect.DeepEqual(candidates, []string{"IPAddress", "Location"}) {
+	if !reflect.DeepEqual(candidates, []string{"IPAddress", "StreetAddress"}) {
 		t.Fatalf("address aliases must remain ambiguous: %+v", candidates)
 	}
 	if _, ok := intentTargetType("addresses", selectors, typedIntentTestCatalog.rels); ok {
@@ -56,7 +56,7 @@ func TestOAMIntentVocabularyDoesNotGuessAmbiguousAddresses(t *testing.T) {
 func TestOAMIntentAliasesCompileExactRelationshipRoutes(t *testing.T) {
 	cat := typedIntentTestCatalog
 	cat.selectors = append(append([]graph.AssetSearchSchema(nil), cat.selectors...),
-		graph.AssetSearchSchema{Type: "Location", Fields: []string{"address"}})
+		graph.AssetSearchSchema{Type: "StreetAddress", Fields: []string{"address"}})
 	cases := []struct{ question, target, direction, label string }{
 		{
 			"Which companies are connected to tech.acme.example via domain and website relationships?",
@@ -91,13 +91,13 @@ func TestOAMIntentAliasesCompileExactRelationshipRoutes(t *testing.T) {
 func TestOAMIntentVocabularyFailsClosedOnCompetingSchemaRoutes(t *testing.T) {
 	cat := typedIntentTestCatalog
 	cat.selectors = append(append([]graph.AssetSearchSchema(nil), cat.selectors...),
-		graph.AssetSearchSchema{Type: "Location", Fields: []string{"address"}})
+		graph.AssetSearchSchema{Type: "StreetAddress", Fields: []string{"address"}})
 	cat.rels = append(append([]graph.RelationshipSchema(nil), cat.rels...),
 		graph.RelationshipSchema{
 			SourceType:      "FQDN",
 			Label:           "dns_record",
 			RelationType:    "BasicDNSRelation",
-			DestinationType: "Location",
+			DestinationType: "StreetAddress",
 		})
 	if _, ok := deterministicTypedRelationIntent(
 		"Which addresses are connected to tech.acme.example via dns_record relationships?", cat); ok {

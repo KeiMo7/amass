@@ -15,19 +15,19 @@ import (
 	oamcon "github.com/owasp-amass/open-asset-model/contact"
 )
 
-type horLocation struct {
+type horStreetAddress struct {
 	name   string
 	plugin *horizPlugin
 }
 
-func (h *horLocation) Name() string {
+func (h *horStreetAddress) Name() string {
 	return h.name
 }
 
-func (h *horLocation) check(e *et.Event) error {
-	_, ok := e.Entity.Asset.(*oamcon.Location)
+func (h *horStreetAddress) check(e *et.Event) error {
+	_, ok := e.Entity.Asset.(*oamcon.StreetAddress)
 	if !ok {
-		return errors.New("failed to cast the Location asset")
+		return errors.New("failed to cast the StreetAddress asset")
 	}
 
 	// check if scope expansion is allowed
@@ -43,18 +43,18 @@ func (h *horLocation) check(e *et.Event) error {
 	return nil
 }
 
-func (h *horLocation) processInScope(e *et.Event) {
+func (h *horStreetAddress) processInScope(e *et.Event) {
 	ctx, cancel := context.WithTimeout(e.Session.Ctx(), time.Minute)
 	defer cancel()
 
 	since, err := support.TTLStartTime(e.Session.Config(),
-		string(oam.Location), string(oam.ContactRecord), h.plugin.name)
+		string(oam.StreetAddress), string(oam.ContactRecord), h.plugin.name)
 	if err != nil {
 		return
 	}
 
 	// get all the contact records that use this location
-	edges, err := e.Session.DB().IncomingEdges(ctx, e.Entity, since, "location")
+	edges, err := e.Session.DB().IncomingEdges(ctx, e.Entity, since, "street_address")
 	if err != nil || len(edges) == 0 {
 		return
 	}
@@ -71,7 +71,7 @@ func (h *horLocation) processInScope(e *et.Event) {
 		// Run the scored horizontal domain and infrastructure expansion for each
 		// organization at this location, and bring the organizations and
 		// locations into scope (replacing the old single-signal enqueues).
-		if orgs, locs := h.plugin.lookupContactRecordOrgsAndLocations(e.Session, from); len(orgs) > 0 || len(locs) > 0 {
+		if orgs, locs := h.plugin.lookupContactRecordOrgsAndStreetAddresses(e.Session, from); len(orgs) > 0 || len(locs) > 0 {
 			for _, o := range orgs {
 				h.plugin.expandRelatedDomains(e, o)
 				h.plugin.expandRelatedInfrastructure(e, o)
@@ -84,7 +84,7 @@ func (h *horLocation) processInScope(e *et.Event) {
 	}
 }
 
-func (h *horLocation) processOutOfScope(e *et.Event) {
+func (h *horStreetAddress) processOutOfScope(e *et.Event) {
 	assocs, err := e.Session.Scope().IsAssociated(&et.Association{
 		Submission:  e.Entity,
 		ScopeChange: true,

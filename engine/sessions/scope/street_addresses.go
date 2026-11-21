@@ -15,43 +15,43 @@ import (
 	oamcon "github.com/owasp-amass/open-asset-model/contact"
 )
 
-func (s *Scope) AddLocation(loc *oamcon.Location) bool {
+func (s *Scope) AddStreetAddress(loc *oamcon.StreetAddress) bool {
 	key := strings.ToLower(loc.Address)
 	if key == "" {
 		return false
 	}
 
-	s.locLock.Lock()
-	defer s.locLock.Unlock()
+	s.streetLock.Lock()
+	defer s.streetLock.Unlock()
 
-	if _, found := s.locations[key]; !found {
-		s.locations[key] = loc
+	if _, found := s.streetAddresses[key]; !found {
+		s.streetAddresses[key] = loc
 		return true
 	}
 	return false
 }
 
-func (s *Scope) Locations() []*oamcon.Location {
-	s.locLock.Lock()
-	defer s.locLock.Unlock()
+func (s *Scope) StreetAddresses() []*oamcon.StreetAddress {
+	s.streetLock.Lock()
+	defer s.streetLock.Unlock()
 
-	var results []*oamcon.Location
-	for _, v := range s.locations {
-		if loc, ok := v.(*oamcon.Location); ok {
+	var results []*oamcon.StreetAddress
+	for _, v := range s.streetAddresses {
+		if loc, ok := v.(*oamcon.StreetAddress); ok {
 			results = append(results, loc)
 		}
 	}
 	return results
 }
 
-func (s *Scope) matchesLocation(loc *oamcon.Location, conf int) (oam.Asset, int) {
+func (s *Scope) matchesStreetAddress(loc *oamcon.StreetAddress, conf int) (oam.Asset, int) {
 	if loc.BuildingNumber == "" {
 		return nil, 0
 	}
 
 	var bconf int
 	var best oam.Asset
-	for _, loc2 := range s.Locations() {
+	for _, loc2 := range s.StreetAddresses() {
 		if loc.BuildingNumber != loc2.BuildingNumber {
 			continue
 		}

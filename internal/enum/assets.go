@@ -91,10 +91,10 @@ func convertScopeToAssets(scope *config.Scope) []oam.Asset {
 		assets = append(assets, oamcontact.Phone{E164: phone, Raw: phone})
 	}
 
-	// Convert Locations to assets: seeds the reverse lookup resolves to the
+	// Convert StreetAddresses to assets: seeds the reverse lookup resolves to the
 	// organizations at the address.
-	for _, address := range scope.Locations {
-		assets = append(assets, oamcontact.Location{Address: address})
+	for _, address := range scope.StreetAddresses {
+		assets = append(assets, oamcontact.StreetAddress{Address: address})
 	}
 
 	return assets

@@ -26,13 +26,13 @@ func pivotGraph() graphtest.FakeGraph {
 	}
 
 	add("phone1", "Phone", map[string]any{"e164": "+15551234567"})
-	add("loc1", "Location", map[string]any{"address": "1 Campus Road"})
+	add("loc1", "StreetAddress", map[string]any{"address": "1 Campus Road"})
 	add("org1", "Organization", map[string]any{"name": "Example University"})
 	add("cr1", "ContactRecord", nil)
 
 	// phone1 <- cr1 --organization--> org1, and cr1 --location--> loc1.
 	link("cr1", "phone1", "phone")
-	link("cr1", "loc1", "location")
+	link("cr1", "loc1", "street_address")
 	link("cr1", "org1", "organization")
 	return g
 }
@@ -76,7 +76,7 @@ func TestResolveSeedPivotPrefersPrincipalAddress(t *testing.T) {
 
 func TestResolveSeedPivotSharedAddressHeldForReview(t *testing.T) {
 	g := graphtest.FakeGraph{Assets: map[string]graph.Asset{}}
-	g.Assets["agent"] = graph.Asset{ID: "agent", Type: "Location", Key: "agent",
+	g.Assets["agent"] = graph.Asset{ID: "agent", Type: "StreetAddress", Key: "agent",
 		Content: map[string]any{"address": "1209 N Orange St"}}
 	// More organizations than the shared-address threshold all claim the one
 	// address as their registered location.
@@ -109,7 +109,7 @@ func TestResolveSeedPivotRejectsUnsupportedSeed(t *testing.T) {
 	}}
 
 	if _, err := ResolveSeedPivot(context.Background(), g, nil, g.Assets["x"], LensLimits{}); err == nil {
-		t.Error("an FQDN seed was accepted; only Phone and Location pivot")
+		t.Error("an FQDN seed was accepted; only Phone and StreetAddress pivot")
 	}
 }
 

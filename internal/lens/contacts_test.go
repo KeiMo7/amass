@@ -26,10 +26,10 @@ func TestFindContacts(t *testing.T) {
 	// Attach contact attributes to Colgate's registrant contact record.
 	add("ph1", "Phone", map[string]any{"e164": "+13152281000", "raw": "+13152281000"})
 	add("em1", "Identifier", map[string]any{"id": "info@colgate.edu", "id_type": "email"})
-	add("loc1", "Location", map[string]any{"address": "13 Oak Drive", "city": "Hamilton", "province": "NY", "country": "US"})
+	add("loc1", "StreetAddress", map[string]any{"address": "13 Oak Drive", "city": "Hamilton", "province": "NY", "country": "US"})
 	link("cr-colgate", "phone", "ph1")
 	link("cr-colgate", "id", "em1")
-	link("cr-colgate", "location", "loc1")
+	link("cr-colgate", "street_address", "loc1")
 
 	r, err := FindContacts(context.Background(), g, graphtest.VendorCatalog{PlanCatalog: graphtest.TestOAMCatalog},
 		g.Assets["colgate.edu"], LensLimits{})

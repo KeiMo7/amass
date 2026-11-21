@@ -29,8 +29,8 @@ type Scope struct {
 	asLock     sync.Mutex
 	autsystems map[int]oam.Asset
 
-	locLock   sync.Mutex
-	locations map[string]oam.Asset
+	streetLock      sync.Mutex
+	streetAddresses map[string]oam.Asset
 
 	blLock    sync.Mutex
 	blacklist map[string]bool
@@ -41,15 +41,15 @@ type Scope struct {
 
 func New(sess et.Session) et.Scope {
 	return &Scope{
-		Session:      sess,
-		orgs:         make(map[string]oam.Asset),
-		domains:      make(map[string]oam.Asset),
-		addresses:    make(map[string]oam.Asset),
-		networks:     make(map[string]oam.Asset),
-		autsystems:   make(map[int]oam.Asset),
-		locations:    make(map[string]oam.Asset),
-		blacklist:    make(map[string]bool),
-		fingerprints: make(map[string]map[string]*Fingerprint),
+		Session:         sess,
+		orgs:            make(map[string]oam.Asset),
+		domains:         make(map[string]oam.Asset),
+		addresses:       make(map[string]oam.Asset),
+		networks:        make(map[string]oam.Asset),
+		autsystems:      make(map[int]oam.Asset),
+		streetAddresses: make(map[string]oam.Asset),
+		blacklist:       make(map[string]bool),
+		fingerprints:    make(map[string]map[string]*Fingerprint),
 	}
 }
 

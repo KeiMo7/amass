@@ -149,9 +149,9 @@ func DecodeAssetsForScopeEndpoint(atype oam.AssetType, data io.ReadCloser) ([]oa
 		for _, a := range scope.Data {
 			results = append(results, &a)
 		}
-	case oam.Location:
+	case oam.StreetAddress:
 		var scope struct {
-			Data []oamcon.Location `json:"data"`
+			Data []oamcon.StreetAddress `json:"data"`
 		}
 		if err := json.NewDecoder(data).Decode(&scope); err != nil {
 			return nil, err

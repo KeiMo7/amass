@@ -24,7 +24,7 @@ import (
 
 // addresses resolves the organizations registered at a street address, the
 // reverse of the model's organization -> address direction, so an enumeration
-// can pivot from a Location to the organizations there. GLEIF filters only to
+// can pivot from a StreetAddress to the organizations there. GLEIF filters only to
 // the city/country/postal level, so the handler confirms the street itself and
 // attaches only records whose registered address line matches the seed; a
 // city-level-only match is dropped to avoid attaching every company in a city.
@@ -34,14 +34,14 @@ type addresses struct {
 }
 
 func (a *addresses) check(e *et.Event) error {
-	loc, ok := e.Entity.Asset.(*contact.Location)
+	loc, ok := e.Entity.Asset.(*contact.StreetAddress)
 	if !ok {
-		return errors.New("failed to extract the Location asset")
+		return errors.New("failed to extract the StreetAddress asset")
 	}
 	// A seeded freeform address may carry only its Address string; parse it so
 	// the search has a city and the street can be confirmed.
 	if strings.TrimSpace(loc.City) == "" || strings.TrimSpace(loc.StreetName) == "" {
-		if parsed := support.StreetAddressToLocation(loc.Address); parsed != nil {
+		if parsed := support.ParseStreetAddress(loc.Address); parsed != nil {
 			loc = parsed
 		}
 	}
@@ -52,7 +52,7 @@ func (a *addresses) check(e *et.Event) error {
 	}
 
 	since, err := support.TTLStartTime(e.Session.Config(),
-		string(oam.Location), string(oam.Organization), a.plugin.name)
+		string(oam.StreetAddress), string(oam.Organization), a.plugin.name)
 	if err != nil {
 		return err
 	}
@@ -75,8 +75,8 @@ func (a *addresses) check(e *et.Event) error {
 
 // store creates (or reuses) the organization behind each record whose
 // registered address matches the seed's street, fills it from the record, and
-// ties it to the seed Location through a ContactRecord.
-func (a *addresses) store(e *et.Event, seedent *dbt.Entity, seed *contact.Location, recs []*LEIRecord) []*dbt.Entity {
+// ties it to the seed StreetAddress through a ContactRecord.
+func (a *addresses) store(e *et.Event, seedent *dbt.Entity, seed *contact.StreetAddress, recs []*LEIRecord) []*dbt.Entity {
 	var orgs []*dbt.Entity
 
 	for _, rec := range recs {
@@ -119,7 +119,7 @@ func (a *addresses) getOrganization(sess et.Session, o *oamorg.Organization, lei
 	return orgent, err
 }
 
-// linkSeed ties the organization to the seed Location through a ContactRecord
+// linkSeed ties the organization to the seed StreetAddress through a ContactRecord
 // (ContactRecord --organization--> org, --location--> seed), so the pivot can
 // walk from the address back to the organization.
 func (a *addresses) linkSeed(e *et.Event, seedent, orgent *dbt.Entity, rec *LEIRecord) {
@@ -136,7 +136,7 @@ func (a *addresses) linkSeed(e *et.Event, seedent, orgent *dbt.Entity, rec *LEIR
 
 	_ = a.plugin.createRelation(ctx, e.Session, cr, &oamgen.SimpleRelation{Name: "organization"},
 		orgent, a.plugin.source.Confidence)
-	_ = a.plugin.createRelation(ctx, e.Session, cr, &oamgen.SimpleRelation{Name: "location"},
+	_ = a.plugin.createRelation(ctx, e.Session, cr, &oamgen.SimpleRelation{Name: "street_address"},
 		seedent, a.plugin.source.Confidence)
 }
 
@@ -157,7 +157,7 @@ func (a *addresses) process(e *et.Event, orgs []*dbt.Entity) {
 // recordAtAddress reports whether a record's legal, headquarters or other
 // address matches the seed's street (and house number, when known), so a
 // record merely in the same city is not attached.
-func recordAtAddress(seed *contact.Location, rec *LEIRecord) bool {
+func recordAtAddress(seed *contact.StreetAddress, rec *LEIRecord) bool {
 	addrs := []*LEIAddress{&rec.Attributes.Entity.LegalAddress, &rec.Attributes.Entity.HeadquartersAddress}
 	for i := range rec.Attributes.Entity.OtherAddresses {
 		addrs = append(addrs, &rec.Attributes.Entity.OtherAddresses[i])
@@ -173,7 +173,7 @@ func recordAtAddress(seed *contact.Location, rec *LEIRecord) bool {
 
 // addressLineMatches reports whether the record address's street line contains
 // the seed's street, and its house number when the seed names one.
-func addressLineMatches(seed *contact.Location, ad *LEIAddress) bool {
+func addressLineMatches(seed *contact.StreetAddress, ad *LEIAddress) bool {
 	street := normText(seed.StreetName)
 	if street == "" {
 		return false

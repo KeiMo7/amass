@@ -44,7 +44,7 @@ func pivotSeedDomains(cfg *config.Config, args *Args, out io.Writer) bool {
 		phone = collect.NormalizePhone(phone)
 	}
 
-	seed := graph.AssetSelector{Type: "Location", Field: "address", Value: address}
+	seed := graph.AssetSelector{Type: "StreetAddress", Field: "address", Value: address}
 	if phone != "" {
 		seed = graph.AssetSelector{Type: "Phone", Field: "e164", Value: phone}
 	}
@@ -73,7 +73,7 @@ func pivotSeedDomains(cfg *config.Config, args *Args, out io.Writer) bool {
 		if phone != "" {
 			cfg.AddPhone(phone)
 		} else {
-			cfg.AddLocation(address)
+			cfg.AddStreetAddress(address)
 		}
 		cfg.Active, cfg.Passive = false, true
 		_, _ = afmt.Y.Fprintf(out, "%s %q is not in the database yet; running a passive resolution pass to find "+

@@ -377,7 +377,7 @@ func (s *identitySearch) contactCountries(o graph.Asset) (map[string]bool, error
 			break
 		}
 
-		locs, err := s.edges(e.FromID, "out", "location")
+		locs, err := s.edges(e.FromID, "out", "street_address")
 		if err != nil {
 			return nil, err
 		}

@@ -524,7 +524,7 @@ func TestMentionedTypesPreferLongestPhrase(t *testing.T) {
 	cat := graphtest.VendorCatalog{PlanCatalog: graphtest.TestOAMCatalog}
 	got := strings.Join(mentionedTypes("each website, it's IP address, and hosting provider", cat), ",")
 	if got != "IPAddress,URL" {
-		t.Errorf("mentioned = %q, want IPAddress and URL (website), not Location for \"address\"", got)
+		t.Errorf("mentioned = %q, want IPAddress and URL (website), not StreetAddress for \"address\"", got)
 	}
 	if got := strings.Join(mentionedTypes("list the netblocks and ASNs",
 		cat), ","); got != "AutonomousSystem,Netblock" {

@@ -54,8 +54,8 @@ func (s *Scope) Add(a oam.Asset) bool {
 		}
 	case *oamorg.Organization:
 		newentry = s.AddOrganization(v)
-	case *oamcon.Location:
-		newentry = s.AddLocation(v)
+	case *oamcon.StreetAddress:
+		newentry = s.AddStreetAddress(v)
 	}
 
 	return newentry
@@ -103,8 +103,8 @@ func (s *Scope) IsAssetInScope(a oam.Asset, conf int) (oam.Asset, int) {
 		match, accuracy = s.matchesDomain(&oamdns.FQDN{Name: v.Host})
 	case *oamorg.Organization:
 		match, accuracy = s.matchesOrg(v, conf)
-	case *oamcon.Location:
-		match, accuracy = s.matchesLocation(v, conf)
+	case *oamcon.StreetAddress:
+		match, accuracy = s.matchesStreetAddress(v, conf)
 	}
 
 	return match, accuracy

@@ -88,8 +88,8 @@ func FindContacts(ctx context.Context, g graph.Graph, schema graph.SchemaCatalog
 				if v, ok := emailValue(st.other); ok {
 					graph.AddUnique(&out.Emails, v)
 				}
-			case "Location":
-				graph.AddUnique(&out.Addresses, locationLabel(st.other))
+			case "StreetAddress":
+				graph.AddUnique(&out.Addresses, streetAddressLabel(st.other))
 			case "Person":
 				if n := personLabel(st.other); n != "" {
 					graph.AddUnique(&out.People, n)
@@ -134,8 +134,8 @@ func personLabel(a graph.Asset) string {
 	return graph.AssetLabel(a)
 }
 
-// locationLabel is a readable one-line postal address.
-func locationLabel(a graph.Asset) string {
+// streetAddressLabel is a readable one-line postal address.
+func streetAddressLabel(a graph.Asset) string {
 	var parts []string
 	for _, k := range []string{"address", "city", "province", "postal_code", "country"} {
 		if v := graph.ContentString(a, k); v != "" {

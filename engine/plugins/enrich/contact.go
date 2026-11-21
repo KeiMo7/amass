@@ -32,7 +32,7 @@ func NewContacts() et.Plugin {
 			string(oam.URL),
 			string(oam.Person),
 			string(oam.Organization),
-			string(oam.Location),
+			string(oam.StreetAddress),
 			string(oam.Identifier),
 			string(oam.Phone),
 		},
@@ -118,8 +118,8 @@ func (cr *contactrec) lookup(e *et.Event, entity *dbt.Entity, m *config.Matches)
 			rtypes = append(rtypes, "person")
 		case string(oam.Organization):
 			rtypes = append(rtypes, "organization")
-		case string(oam.Location):
-			rtypes = append(rtypes, "location")
+		case string(oam.StreetAddress):
+			rtypes = append(rtypes, "street_address")
 		case string(oam.Identifier):
 			rtypes = append(rtypes, "id")
 		case string(oam.Phone):

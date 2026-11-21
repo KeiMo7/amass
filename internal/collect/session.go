@@ -113,9 +113,9 @@ func addScope(cfg *config.Config, e ScopeEntry) (oam.Asset, error) {
 	case "phone":
 		cfg.Scope.Phones = append(cfg.Scope.Phones, e.Value)
 		return oamcontact.Phone{E164: e.Value, Raw: e.Value}, nil
-	case "location":
-		cfg.Scope.Locations = append(cfg.Scope.Locations, e.Value)
-		return oamcontact.Location{Address: e.Value}, nil
+	case "street_address":
+		cfg.Scope.StreetAddresses = append(cfg.Scope.StreetAddresses, e.Value)
+		return oamcontact.StreetAddress{Address: e.Value}, nil
 	}
 
 	return nil, errors.New("unsupported collection scope type")

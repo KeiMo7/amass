@@ -46,7 +46,7 @@ func (h *horRegRec) check(e *et.Event) error {
 		return nil
 	}
 
-	orgs, locs := h.plugin.lookupContactRecordOrgsAndLocations(e.Session, cr)
+	orgs, locs := h.plugin.lookupContactRecordOrgsAndStreetAddresses(e.Session, cr)
 	if len(orgs) == 0 && len(locs) == 0 {
 		return nil
 	}

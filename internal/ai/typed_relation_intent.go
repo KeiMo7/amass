@@ -257,7 +257,7 @@ func deterministicTypedRelationIntent(question string, catalog graph.SchemaCatal
 				continue
 			}
 		}
-		// A generic word such as "addresses" can mean a Location or an
+		// A generic word such as "addresses" can mean a StreetAddress or an
 		// IPAddress. Only a unique catalog path may disambiguate it.
 		if target != "" {
 			return zero, false

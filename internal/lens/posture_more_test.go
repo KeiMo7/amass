@@ -219,9 +219,9 @@ func TestFindCoverage(t *testing.T) {
 
 func TestFindGeography(t *testing.T) {
 	g := postureFixture()
-	g.Assets["loc"] = graph.Asset{ID: "loc", Type: "Location", Key: "13 Oak Dr",
+	g.Assets["loc"] = graph.Asset{ID: "loc", Type: "StreetAddress", Key: "13 Oak Dr",
 		Content: map[string]any{"address": "13 Oak Dr", "city": "Hamilton", "country": "us"}}
-	g.Links = append(g.Links, graph.Relation{ID: "colgate-loc", FromID: "colgate", ToID: "loc", Label: "location",
+	g.Links = append(g.Links, graph.Relation{ID: "colgate-loc", FromID: "colgate", ToID: "loc", Label: "street_address",
 		Type: "SimpleRelation"})
 
 	r, err := FindGeography(context.Background(), g, postureCatalog(), g.Assets["colgate.edu"], LensLimits{})
@@ -243,7 +243,7 @@ func TestFindGeography(t *testing.T) {
 	// A hosting party with no location of its own is placed by its
 	// registration's registrant.
 	g.Assets["cr-cdn"] = graph.Asset{ID: "cr-cdn", Type: "ContactRecord", Key: "cr-cdn"}
-	g.Assets["loc-cdn"] = graph.Asset{ID: "loc-cdn", Type: "Location", Key: "1 Market St",
+	g.Assets["loc-cdn"] = graph.Asset{ID: "loc-cdn", Type: "StreetAddress", Key: "1 Market St",
 		Content: map[string]any{"address": "1 Market St", "city": "San Francisco", "country": "us"}}
 	g.Links = append(g.Links,
 		graph.Relation{
@@ -253,7 +253,7 @@ func TestFindGeography(t *testing.T) {
 			Label:  "registrant",
 			Type:   "SimpleRelation",
 		},
-		graph.Relation{ID: "cdn-loc", FromID: "cr-cdn", ToID: "loc-cdn", Label: "location", Type: "SimpleRelation"})
+		graph.Relation{ID: "cdn-loc", FromID: "cr-cdn", ToID: "loc-cdn", Label: "street_address", Type: "SimpleRelation"})
 	r, err = FindGeography(context.Background(), g, postureCatalog(), g.Assets["colgate.edu"], LensLimits{})
 	if err != nil {
 		t.Fatal(err)

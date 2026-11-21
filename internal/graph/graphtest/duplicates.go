@@ -53,8 +53,8 @@ func (o *orgGraph) Contact(org, cr, loc string) {
 	o.Link(cr, org, "organization")
 	if loc != "" {
 		if _, ok := o.Graph.Assets[loc]; !ok {
-			o.Graph.Assets[loc] = graph.Asset{ID: loc, Type: "Location", Key: loc}
+			o.Graph.Assets[loc] = graph.Asset{ID: loc, Type: "StreetAddress", Key: loc}
 		}
-		o.Link(cr, loc, "location")
+		o.Link(cr, loc, "street_address")
 	}
 }

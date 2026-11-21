@@ -123,7 +123,7 @@ func (s *Scope) getMatchEntity(masset oam.Asset) (*dbt.Entity, error) {
 	switch masset.AssetType() {
 	case oam.FQDN:
 		filters["name"] = masset.Key()
-	case oam.Location:
+	case oam.StreetAddress:
 		filters["address"] = masset.Key()
 	case oam.Organization:
 		filters["unique_id"] = masset.Key()
@@ -157,7 +157,7 @@ func (s *Scope) assetsRelatedToAssetWithAssoc(assoc *dbt.Entity) []*dbt.Entity {
 				if cert, found := assoc.Asset.(*oamcert.TLSCertificate); !found || s.orgNameSimilarToCommon(v, cert) {
 					results = append(results, a)
 				}
-			case *oamcon.Location:
+			case *oamcon.StreetAddress:
 				found = true
 				results = append(results, a)
 			}
@@ -255,9 +255,9 @@ func (s *Scope) awayFromAssetsWithAssociation(assoc *dbt.Entity) ([]*dbt.Entity,
 		}
 	case oam.ContactRecord:
 		out = true
-		outRels = append(outRels, "organization", "location")
+		outRels = append(outRels, "organization", "street_address")
 		since1 := s.ttlStartTime(oam.ContactRecord, oam.Organization)
-		outSince = s.ttlStartTime(oam.ContactRecord, oam.Location)
+		outSince = s.ttlStartTime(oam.ContactRecord, oam.StreetAddress)
 		if !since1.IsZero() && since1.Before(outSince) {
 			outSince = since1
 		}
@@ -330,10 +330,10 @@ func (s *Scope) towardsAssetsWithAssociation(asset *dbt.Entity) ([]*dbt.Entity, 
 		in = true
 		inRels = append(inRels, "organization")
 		inSince = s.ttlStartTime(oam.Organization, oam.ContactRecord)
-	case oam.Location:
+	case oam.StreetAddress:
 		in = true
-		inRels = append(inRels, "location")
-		inSince = s.ttlStartTime(oam.Location, oam.ContactRecord)
+		inRels = append(inRels, "street_address")
+		inSince = s.ttlStartTime(oam.StreetAddress, oam.ContactRecord)
 	case oam.ContactRecord:
 		in = true
 		inRels = append(inRels, "registrant", "registrant_contact")

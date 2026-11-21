@@ -191,7 +191,7 @@ func (r *domrec) store(e *et.Event, resp *whoisparser.WhoisInfo, asset *dbt.Enti
 // be parsed, including when the parser is unavailable, the organization is
 // kept as the record gives it: replacing it with the contact's name would
 // record a person (an EDUCAUSE admin contact) as an organization.
-func contactOrganization(wc *whoisparser.Contact, parse func(string) *contact.Location) (string, string, bool) {
+func contactOrganization(wc *whoisparser.Contact, parse func(string) *contact.StreetAddress) (string, string, bool) {
 	orgName := strings.TrimSpace(wc.Organization)
 	rest := fmt.Sprintf("%s %s %s %s %s", wc.Street, wc.City, wc.Province, wc.PostalCode, wc.Country)
 	if orgName == "" {
@@ -226,7 +226,7 @@ func (r *domrec) storeContact(e *et.Event, c *domrecContact, dr *dbt.Entity, m *
 	}
 
 	wc := c.WhoisContact
-	orgName, addr, found := contactOrganization(wc, support.StreetAddressToLocation)
+	orgName, addr, found := contactOrganization(wc, support.ParseStreetAddress)
 	wc.Organization = orgName
 
 	if found {
@@ -235,9 +235,9 @@ func (r *domrec) storeContact(e *et.Event, c *domrecContact, dr *dbt.Entity, m *
 		}
 	}
 
-	if loc := support.StreetAddressToLocation(addr); loc != nil {
+	if loc := support.ParseStreetAddress(addr); loc != nil {
 		if a, err := e.Session.DB().CreateAsset(ctx, loc); err == nil && a != nil {
-			r.createSimpleEdge(e.Session, &general.SimpleRelation{Name: "location"}, cr, a)
+			r.createSimpleEdge(e.Session, &general.SimpleRelation{Name: "street_address"}, cr, a)
 		}
 	}
 	if email := strings.ToLower(wc.Email); m.IsMatch(string(oam.Identifier)) && email != "" {

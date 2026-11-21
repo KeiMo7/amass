@@ -22,7 +22,7 @@ func parts(s string) []parsedComponent {
 	return out
 }
 
-// The same place written different ways is one Location.
+// The same place written different ways is one StreetAddress.
 func TestLocationFromPartsSamePlace(t *testing.T) {
 	want := "110 8TH ST, TROY, NY 12180, US"
 	for address, p := range map[string]string{
@@ -39,7 +39,7 @@ func TestLocationFromPartsSamePlace(t *testing.T) {
 		"110 Eighth Street, Troy, New York 12180, USA": "house_number=110|road=eighth street|city=troy|" +
 			"state=new york|postcode=12180|country=usa",
 	} {
-		loc := locationFromParts(address, parts(p))
+		loc := streetAddressFromParts(address, parts(p))
 		if loc.Address != want {
 			t.Errorf("%q gave %q, want %q", address, loc.Address, want)
 		}
@@ -49,11 +49,11 @@ func TestLocationFromPartsSamePlace(t *testing.T) {
 	}
 }
 
-// Different places stay different Locations.
+// Different places stay different StreetAddresses.
 func TestLocationFromPartsDifferentPlaces(t *testing.T) {
-	a := locationFromParts("", parts("house=vcc|unit=room 308|house_number=110|road=8th street|city=troy|"+
+	a := streetAddressFromParts("", parts("house=vcc|unit=room 308|house_number=110|road=8th street|city=troy|"+
 		"state=ny|postcode=12180-3590|country=usa"))
-	b := locationFromParts("", parts("house=vcc|unit=room 314|house_number=110|road=8th street|city=troy|"+
+	b := streetAddressFromParts("", parts("house=vcc|unit=room 314|house_number=110|road=8th street|city=troy|"+
 		"state=ny|postcode=12180|country=usa"))
 	if a.Address != "110 8TH ST RM 308, TROY, NY 12180, US" {
 		t.Errorf("room 308 gave %q", a.Address)
@@ -63,7 +63,7 @@ func TestLocationFromPartsDifferentPlaces(t *testing.T) {
 	}
 
 	// Without a street, the building names the place.
-	c := locationFromParts("", parts("house=vcc|unit=room 314|city=troy|state=ny|country=usa"))
+	c := streetAddressFromParts("", parts("house=vcc|unit=room 314|city=troy|state=ny|country=usa"))
 	if c.Address != "VCC RM 314, TROY, NY, US" {
 		t.Errorf("a building without a street gave %q", c.Address)
 	}
@@ -131,7 +131,7 @@ func TestStandardPOBoxAndPostcode(t *testing.T) {
 
 // Without the parts that name a place, the address given is kept.
 func TestLocationFromPartsKeepsUnparsedAddress(t *testing.T) {
-	if loc := locationFromParts("Somewhere", parts("country=usa")); loc.Address != "Somewhere" {
+	if loc := streetAddressFromParts("Somewhere", parts("country=usa")); loc.Address != "Somewhere" {
 		t.Errorf("an address with only a country gave %q", loc.Address)
 	}
 }
@@ -221,11 +221,11 @@ func TestProvinceCode(t *testing.T) {
 }
 
 // The same place in another country, written different ways, is one
-// Location.
+// StreetAddress.
 func TestLocationFromPartsOtherCountries(t *testing.T) {
-	a := locationFromParts("", parts("road=Hauptstraße|house_number=5|postcode=80331|city=München|state=Bayern|"+
+	a := streetAddressFromParts("", parts("road=Hauptstraße|house_number=5|postcode=80331|city=München|state=Bayern|"+
 		"country=Germany"))
-	b := locationFromParts("", parts("road=hauptstr.|house_number=5|postcode=D-80331|city=munchen|state=by|"+
+	b := streetAddressFromParts("", parts("road=hauptstr.|house_number=5|postcode=D-80331|city=munchen|state=by|"+
 		"country=deutschland"))
 	if a.Address != b.Address || a.Address != "5 HAUPTSTR, MUNCHEN, BY 80331, DE" {
 		t.Errorf("the two German addresses gave %q and %q", a.Address, b.Address)

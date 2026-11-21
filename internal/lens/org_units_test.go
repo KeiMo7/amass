@@ -19,7 +19,7 @@ func orgUnitsGraph() graphtest.FakeGraph {
 			Content: map[string]any{"name": name}}
 	}
 	loc := func(id, addr, zip string) {
-		g.Assets[id] = graph.Asset{ID: id, Type: "Location", Key: addr,
+		g.Assets[id] = graph.Asset{ID: id, Type: "StreetAddress", Key: addr,
 			Content: map[string]any{"address": addr, "postal_code": zip}}
 	}
 	at := func(o, l string) {

@@ -111,7 +111,7 @@ func TestDomainRecordDetail(t *testing.T) {
 	rd := NewRDAP().(*rdapPlugin)
 	r := &domrec{name: "RDAP-Domain-Record-Handler", plugin: rd, transforms: []string{
 		string(oam.FQDN), string(oam.URL), string(oam.ContactRecord), string(oam.Person),
-		string(oam.Organization), string(oam.Location), string(oam.Identifier), string(oam.Phone),
+		string(oam.Organization), string(oam.StreetAddress), string(oam.Identifier), string(oam.Phone),
 	}}
 	drEntity := sess.Asset(t, &oamreg.DomainRecord{Domain: "example.com", WhoisServer: "whois.example.com"})
 	e := &et.Event{Session: sess, Entity: drEntity, Dispatcher: &plugintest.Dispatcher{}}

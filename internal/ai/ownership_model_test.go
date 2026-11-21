@@ -16,7 +16,7 @@ import (
 func TestOwnershipFeaturesFromSignals(t *testing.T) {
 	p := review.OwnershipProposals(gapReport(t))[0]
 	f := OwnershipFeatures(p)
-	want := map[string]float64{"identity": 1, "identity:Phone": 1, "identity:Location": 1, "kinds": 1.0 / 3,
+	want := map[string]float64{"identity": 1, "identity:Phone": 1, "identity:StreetAddress": 1, "kinds": 1.0 / 3,
 		"gains": 0.2}
 	for k, v := range want {
 		if f[k] != v {
@@ -59,7 +59,7 @@ func reviewedJournal(n int) []review.OwnershipEntry {
 		switch i % 3 {
 		case 0:
 			p.Signals = []string{"identity via ContactRecord phone Phone",
-				"identity via ContactRecord location Location"}
+				"identity via ContactRecord street_address StreetAddress"}
 		case 1:
 			p.Signals = []string{"identity via ContactRecord phone Phone", "hosting via FQDN dns_record IPAddress"}
 		default:
@@ -92,7 +92,7 @@ func trainedOwnershipModel(t *testing.T) *classify.LinearModel {
 func TestOwnershipModelLearnsFromReviews(t *testing.T) {
 	m := trainedOwnershipModel(t)
 	strong := review.OwnershipProposal{Signals: []string{"identity via ContactRecord phone Phone",
-		"identity via ContactRecord location Location"}}
+		"identity via ContactRecord street_address StreetAddress"}}
 	weak := review.OwnershipProposal{Signals: []string{"hosting via FQDN dns_record IPAddress"}}
 
 	ps, err := ownershipProbability(m, strong)

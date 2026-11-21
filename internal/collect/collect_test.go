@@ -76,9 +76,9 @@ func TestPhoneSeedScopeValueIsNormalized(t *testing.T) {
 	}
 }
 
-func TestPhoneAndLocationSeedsArePassiveOnly(t *testing.T) {
+func TestPhoneAndStreetAddressSeedsArePassiveOnly(t *testing.T) {
 	phone := graph.AssetSelector{Type: "Phone", Field: "e164", Value: "+1 315 228 1000"}
-	addr := graph.AssetSelector{Type: "Location", Field: "address", Value: "1 Campus Road, Hamilton NY"}
+	addr := graph.AssetSelector{Type: "StreetAddress", Field: "address", Value: "1 Campus Road, Hamilton NY"}
 
 	// Passive resolves the organizations tied to the seed; the plan is
 	// approvable and keeps the phone/location scope type.
@@ -86,7 +86,7 @@ func TestPhoneAndLocationSeedsArePassiveOnly(t *testing.T) {
 		p.Mode != Passive {
 		t.Errorf("phone passive plan = %+v", p)
 	}
-	if p := NewPlan(addr, Passive); p.Status != StatusApprovalRequired || p.ScopeType != "location" {
+	if p := NewPlan(addr, Passive); p.Status != StatusApprovalRequired || p.ScopeType != "street_address" {
 		t.Errorf("address passive plan = %+v", p)
 	}
 

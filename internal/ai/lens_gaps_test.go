@@ -109,7 +109,7 @@ func TestGapAnswerAndEvidence(t *testing.T) {
 
 func TestRedactedValuesGiveNoIdentitySignal(t *testing.T) {
 	g := graphtest.CampusGapsFixture()
-	g.Assets["loc"] = graph.Asset{ID: "loc", Type: "Location", Key: "REDACTED FOR PRIVACY",
+	g.Assets["loc"] = graph.Asset{ID: "loc", Type: "StreetAddress", Key: "REDACTED FOR PRIVACY",
 		Content: map[string]any{"address": "REDACTED FOR PRIVACY"}}
 	g.Assets["phone"] = graph.Asset{ID: "phone", Type: "Phone", Key: "REDACTED FOR PRIVACY",
 		Content: map[string]any{"e164": "REDACTED FOR PRIVACY"}}

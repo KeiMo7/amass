@@ -199,8 +199,8 @@ func parseAsset(atype string, raw json.RawMessage) (oam.Asset, error) {
 		var a oamreg.IPNetRecord
 		err := json.Unmarshal(raw, &a)
 		return &a, err
-	case strings.ToLower(string(oam.Location)):
-		var a oamcon.Location
+	case strings.ToLower(string(oam.StreetAddress)):
+		var a oamcon.StreetAddress
 		err := json.Unmarshal(raw, &a)
 		return &a, err
 	case strings.ToLower(string(oam.Netblock)):
@@ -273,7 +273,7 @@ func defaultContentFilter(asset oam.Asset) (dbt.ContentFilters, error) {
 		return dbt.ContentFilters{"address": asset.Key()}, nil
 	case oam.IPNetRecord:
 		return dbt.ContentFilters{"handle": asset.Key()}, nil
-	case oam.Location:
+	case oam.StreetAddress:
 		return dbt.ContentFilters{"address": asset.Key()}, nil
 	case oam.Netblock:
 		return dbt.ContentFilters{"cidr": asset.Key()}, nil

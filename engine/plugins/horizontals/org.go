@@ -84,7 +84,7 @@ func (h *horOrg) processInScope(e *et.Event) {
 		// Bring the contact record's other organizations and locations into
 		// scope; their own events drive the scored expansion for each. The
 		// netblocks and ASes are handled by expandRelatedInfrastructure above.
-		if orgs, locs := h.plugin.lookupContactRecordOrgsAndLocations(e.Session, from); len(orgs) > 0 || len(locs) > 0 {
+		if orgs, locs := h.plugin.lookupContactRecordOrgsAndStreetAddresses(e.Session, from); len(orgs) > 0 || len(locs) > 0 {
 			for _, o := range orgs {
 				h.plugin.enqueueIfOutOfScope(e.Session, o)
 			}

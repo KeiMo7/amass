@@ -124,7 +124,7 @@ func TestRegisteredRelationLabelsGeneratePluralNouns(t *testing.T) {
 }
 
 func TestEveryIndexedFieldHasDynamicNaturalSpelling(t *testing.T) {
-	selectors := []graph.AssetSearchSchema{{Type: "Location", Fields: []string{
+	selectors := []graph.AssetSearchSchema{{Type: "StreetAddress", Fields: []string{
 		"building_number", "street_name", "province", "custom_filter_key",
 	}}}
 	vocabulary := compactSearchVocabulary(selectors)

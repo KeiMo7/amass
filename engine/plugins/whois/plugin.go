@@ -72,7 +72,7 @@ func (w *whois) Start(r et.Registry) error {
 			string(oam.ContactRecord),
 			string(oam.Person),
 			string(oam.Organization),
-			string(oam.Location),
+			string(oam.StreetAddress),
 			string(oam.Identifier),
 			string(oam.Phone),
 		},

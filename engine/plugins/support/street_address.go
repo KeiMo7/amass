@@ -60,11 +60,11 @@ func CountryToAlpha2Code(country string) string {
 	return country
 }
 
-// StreetAddressToLocation parses an address with libpostal and returns the
-// Location it names, or nil when the address cannot be parsed. The same
-// place written different ways becomes the same Location: its Address is
+// ParseStreetAddress parses an address with libpostal and returns the
+// StreetAddress it names, or nil when the address cannot be parsed. The same
+// place written different ways becomes the same StreetAddress: its Address is
 // built from the parsed parts in standard form (see address_forms.json).
-func StreetAddressToLocation(address string) *contact.Location {
+func ParseStreetAddress(address string) *contact.StreetAddress {
 	address = strings.TrimSpace(address)
 	if address == "" {
 		return nil
@@ -75,17 +75,17 @@ func StreetAddressToLocation(address string) *contact.Location {
 		return nil
 	}
 
-	return locationFromParts(address, parts)
+	return streetAddressFromParts(address, parts)
 }
 
-// locationFromParts builds a Location from the parts libpostal found in an
+// streetAddressFromParts builds a StreetAddress from the parts libpostal found in an
 // address. The parts are put in standard form, and the Address is the
 // standard one-line form of the number, street, unit, PO box, city,
 // province, postal code and country; a building name is part of it only
 // when there is no street. Without any of those parts, the Address is the
 // one given.
-func locationFromParts(address string, parts []parsedComponent) *contact.Location {
-	loc := &contact.Location{}
+func streetAddressFromParts(address string, parts []parsedComponent) *contact.StreetAddress {
+	loc := &contact.StreetAddress{}
 	for _, part := range parts {
 		v := strings.TrimSpace(part.Value)
 		switch part.Label {
@@ -138,9 +138,9 @@ func locationFromParts(address string, parts []parsedComponent) *contact.Locatio
 	return loc
 }
 
-// standardAddress writes a Location's standard parts as one uppercase line,
+// standardAddress writes a StreetAddress's standard parts as one uppercase line,
 // as USPS Publication 28 writes addresses.
-func standardAddress(loc *contact.Location) string {
+func standardAddress(loc *contact.StreetAddress) string {
 	join := func(sep string, s ...string) string {
 		var out []string
 		for _, v := range s {

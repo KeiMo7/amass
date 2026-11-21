@@ -19,7 +19,7 @@ func sampleReport2() lens.RelationReport {
 		Candidates: []lens.RelationCandidate{{
 			FromID: "org-a", From: "A", Label: "org_unit", ToID: "org-b", To: "B", Confidence: 60,
 			Signals: []string{"x"},
-			Witness: []graph.WitnessEdge{{EdgeID: "e2", Label: "location", FromID: "org-a", ToID: "loc-2"}},
+			Witness: []graph.WitnessEdge{{EdgeID: "e2", Label: "street_address", FromID: "org-a", ToID: "loc-2"}},
 		}},
 	}
 }

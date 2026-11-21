@@ -49,8 +49,8 @@ func (a Adapter) CoKeyedGroups(ctx context.Context, assetType string, kind lens.
 		key = dbt.CoKeyRegistration
 	case lens.CoKeyBrand:
 		key, param = dbt.CoKeyTag, lens.BrandKeyProperty
-	case lens.CoKeyLocation:
-		key = dbt.CoKeyLocation
+	case lens.CoKeyStreetAddress:
+		key = dbt.CoKeyStreetAddress
 	case lens.CoKeyPersonName:
 		key, param = dbt.CoKeyTag, lens.PersonNameKeyProperty
 	default:

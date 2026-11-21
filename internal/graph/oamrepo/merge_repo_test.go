@@ -230,7 +230,7 @@ func mergeAndUnmerge(t *testing.T, repo repository.Repository) {
 	name := f.asset(&oamgen.Identifier{UniqueID: "org_name:GlobalSign, Inc.", ID: "GlobalSign, Inc.",
 		Type: oamgen.OrganizationName})
 	cr := f.asset(&contact.ContactRecord{DiscoveredAt: "https://globalsign.example"})
-	loc := f.asset(&contact.Location{Address: "Diestsevest 14 3000 Leuven BE", City: "Leuven", Country: "BE"})
+	loc := f.asset(&contact.StreetAddress{Address: "Diestsevest 14 3000 Leuven BE", City: "Leuven", Country: "BE"})
 
 	f.edge(surv, lei, "id", "GLEIF")
 	f.edge(dup, lei, "id", "GLEIF")

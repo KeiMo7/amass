@@ -46,7 +46,7 @@ func NewTLSCerts() et.Plugin {
 			string(oam.IPAddress),
 			string(oam.ContactRecord),
 			string(oam.Organization),
-			string(oam.Location),
+			string(oam.StreetAddress),
 			string(oam.Identifier),
 			string(oam.TLSCertificate),
 		},
@@ -357,7 +357,7 @@ func (te *tlsexpand) storeContact(e *et.Event, c *tlsContact, asset *dbt.Entity,
 		return
 	}
 
-	if foundaddr && m.IsMatch(string(oam.Location)) {
+	if foundaddr && m.IsMatch(string(oam.StreetAddress)) {
 		var addr string
 		fields := [][]string{
 			ct.Organization,
@@ -373,10 +373,10 @@ func (te *tlsexpand) storeContact(e *et.Event, c *tlsContact, asset *dbt.Entity,
 			}
 		}
 
-		if loc := support.StreetAddressToLocation(strings.TrimSpace(addr)); loc != nil {
+		if loc := support.ParseStreetAddress(strings.TrimSpace(addr)); loc != nil {
 			if a, err := e.Session.DB().CreateAsset(ctx, loc); err == nil && a != nil {
 				if edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-					Relation:   &general.SimpleRelation{Name: "location"},
+					Relation:   &general.SimpleRelation{Name: "street_address"},
 					FromEntity: cr,
 					ToEntity:   a,
 				}); err == nil && edge != nil {

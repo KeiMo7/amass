@@ -31,15 +31,15 @@ import (
 )
 
 type horizPlugin struct {
-	name        string
-	log         *slog.Logger
-	horfqdn     *horfqdn
-	horaddr     *horaddr
-	horOrg      *horOrg
-	horLocation *horLocation
-	horRegRec   *horRegRec
-	horTlsCert  *horTlsCert
-	source      *et.Source
+	name             string
+	log              *slog.Logger
+	horfqdn          *horfqdn
+	horaddr          *horaddr
+	horOrg           *horOrg
+	horStreetAddress *horStreetAddress
+	horRegRec        *horRegRec
+	horTlsCert       *horTlsCert
+	source           *et.Source
 	// infraSource marks organizations monitored by the scored netblock/AS
 	// expansion, separately from the domain pass (monitoring is per source), so
 	// both passes run for the same organization.
@@ -130,19 +130,19 @@ func (h *horizPlugin) Start(r et.Registry) error {
 		return err
 	}
 
-	h.horLocation = &horLocation{
-		name:   h.name + "-Location-Handler",
+	h.horStreetAddress = &horStreetAddress{
+		name:   h.name + "-StreetAddress-Handler",
 		plugin: h,
 	}
 	if err := r.RegisterHandler(&et.Handler{
 		Plugin:       h,
-		Name:         h.horLocation.name,
+		Name:         h.horStreetAddress.name,
 		Position:     10,
 		Exclusive:    true,
 		MaxInstances: support.MinHandlerInstances,
-		Transforms:   []string{string(oam.Location)},
-		EventType:    oam.Location,
-		Callback:     h.horLocation.check,
+		Transforms:   []string{string(oam.StreetAddress)},
+		EventType:    oam.StreetAddress,
+		Callback:     h.horStreetAddress.check,
 	}); err != nil {
 		return err
 	}
@@ -265,7 +265,7 @@ func (h *horizPlugin) getContactRecord(sess et.Session, ent *dbt.Entity, label s
 	return nil, errors.New("failed to cast the ContactRecord entity")
 }
 
-func (h *horizPlugin) lookupContactRecordOrgsAndLocations(sess et.Session, cr *dbt.Entity) ([]*dbt.Entity, []*dbt.Entity) {
+func (h *horizPlugin) lookupContactRecordOrgsAndStreetAddresses(sess et.Session, cr *dbt.Entity) ([]*dbt.Entity, []*dbt.Entity) {
 	var orgents []*dbt.Entity
 
 	if ents, err := h.getContactRecordOrganizations(sess, cr); err == nil && len(ents) > 0 {
@@ -281,12 +281,12 @@ func (h *horizPlugin) lookupContactRecordOrgsAndLocations(sess et.Session, cr *d
 
 	var locents []*dbt.Entity
 	for _, o := range orgents {
-		if ents, err := h.getOrganizationLocations(sess, o); err == nil && len(ents) > 0 {
+		if ents, err := h.getOrganizationStreetAddresses(sess, o); err == nil && len(ents) > 0 {
 			for _, ent := range ents {
 				if set.Has(ent.ID) {
 					continue
 				}
-				if _, valid := ent.Asset.(*oamcon.Location); valid {
+				if _, valid := ent.Asset.(*oamcon.StreetAddress); valid {
 					set.Insert(ent.ID)
 					locents = append(locents, ent)
 				}
@@ -294,12 +294,12 @@ func (h *horizPlugin) lookupContactRecordOrgsAndLocations(sess et.Session, cr *d
 		}
 	}
 
-	if ents, err := h.getContactRecordLocations(sess, cr); err == nil && len(ents) > 0 {
+	if ents, err := h.getContactRecordStreetAddresses(sess, cr); err == nil && len(ents) > 0 {
 		for _, ent := range ents {
 			if set.Has(ent.ID) {
 				continue
 			}
-			if _, valid := ent.Asset.(*oamcon.Location); valid {
+			if _, valid := ent.Asset.(*oamcon.StreetAddress); valid {
 				set.Insert(ent.ID)
 				locents = append(locents, ent)
 			}
@@ -371,9 +371,9 @@ func (h *horizPlugin) isPrivacyProxyOrg(ent *dbt.Entity) bool {
 	return registrant.IsPrivacyProxyName(o.Name)
 }
 
-func (h *horizPlugin) getContactRecordLocations(sess et.Session, cr *dbt.Entity) ([]*dbt.Entity, error) {
+func (h *horizPlugin) getContactRecordStreetAddresses(sess et.Session, cr *dbt.Entity) ([]*dbt.Entity, error) {
 	since, err := support.TTLStartTime(sess.Config(),
-		string(oam.ContactRecord), string(oam.Location), h.name)
+		string(oam.ContactRecord), string(oam.StreetAddress), h.name)
 	if err != nil {
 		return nil, err
 	}
@@ -381,7 +381,7 @@ func (h *horizPlugin) getContactRecordLocations(sess et.Session, cr *dbt.Entity)
 	ctx, cancel := context.WithTimeout(sess.Ctx(), 5*time.Second)
 	defer cancel()
 
-	edges, err := sess.DB().OutgoingEdges(ctx, cr, since, "location")
+	edges, err := sess.DB().OutgoingEdges(ctx, cr, since, "street_address")
 	if err != nil || len(edges) == 0 {
 		return nil, errors.New("zero locations found")
 	}
@@ -397,7 +397,7 @@ func (h *horizPlugin) getContactRecordLocations(sess et.Session, cr *dbt.Entity)
 			continue
 		}
 
-		if _, valid := to.Asset.(*oamcon.Location); valid {
+		if _, valid := to.Asset.(*oamcon.StreetAddress); valid {
 			results = append(results, to)
 		}
 	}
@@ -408,9 +408,9 @@ func (h *horizPlugin) getContactRecordLocations(sess et.Session, cr *dbt.Entity)
 	return results, nil
 }
 
-func (h *horizPlugin) getOrganizationLocations(sess et.Session, o *dbt.Entity) ([]*dbt.Entity, error) {
+func (h *horizPlugin) getOrganizationStreetAddresses(sess et.Session, o *dbt.Entity) ([]*dbt.Entity, error) {
 	since, err := support.TTLStartTime(sess.Config(),
-		string(oam.Organization), string(oam.Location), h.name)
+		string(oam.Organization), string(oam.StreetAddress), h.name)
 	if err != nil {
 		return nil, err
 	}
@@ -418,7 +418,7 @@ func (h *horizPlugin) getOrganizationLocations(sess et.Session, o *dbt.Entity) (
 	ctx, cancel := context.WithTimeout(sess.Ctx(), 5*time.Second)
 	defer cancel()
 
-	edges, err := sess.DB().OutgoingEdges(ctx, o, since, "hq_address", "location")
+	edges, err := sess.DB().OutgoingEdges(ctx, o, since, "hq_address", "street_address")
 	if err != nil || len(edges) == 0 {
 		return nil, errors.New("zero locations found")
 	}
@@ -434,7 +434,7 @@ func (h *horizPlugin) getOrganizationLocations(sess et.Session, o *dbt.Entity) (
 			continue
 		}
 
-		if _, valid := to.Asset.(*oamcon.Location); valid {
+		if _, valid := to.Asset.(*oamcon.StreetAddress); valid {
 			results = append(results, to)
 		}
 	}

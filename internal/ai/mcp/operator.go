@@ -775,7 +775,7 @@ func pivotSelector(phone, address string) (graph.AssetSelector, bool) {
 		// Normalize to E.164 so the warm lookup matches the stored Phone.
 		return graph.AssetSelector{Type: "Phone", Field: "e164", Value: collect.NormalizePhone(phone)}, true
 	case strings.TrimSpace(address) != "":
-		return graph.AssetSelector{Type: "Location", Field: "address", Value: strings.TrimSpace(address)}, true
+		return graph.AssetSelector{Type: "StreetAddress", Field: "address", Value: strings.TrimSpace(address)}, true
 	}
 	return graph.AssetSelector{}, false
 }

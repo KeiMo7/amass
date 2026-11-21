@@ -73,7 +73,7 @@ func (p *propublica) Start(r et.Registry) error {
 		Transforms: []string{
 			string(oam.Identifier),
 			string(oam.ContactRecord),
-			string(oam.Location),
+			string(oam.StreetAddress),
 			string(oam.FundsTransfer),
 			string(oam.Account),
 		},

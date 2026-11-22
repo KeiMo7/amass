@@ -44,6 +44,9 @@ type orgProfile struct {
 	// addresses are the locations' normalized street addresses.
 	addresses map[string]bool
 	related   map[string]bool
+	// docs are what documents state relates this organization, by the
+	// other organization's folded name (buildDocLinks).
+	docs map[string]*docLink
 	// evidence counts the facts recorded for the organization, to choose
 	// which of two duplicates survives a merge.
 	evidence int
@@ -78,6 +81,10 @@ type dupSearch struct {
 	report   DuplicateReport
 	profiles map[string]*orgProfile
 	batch    batchAssets
+	// links are what documents state relates organizations, read once per
+	// search (documentLinks).
+	links     docLinks
+	linksRead bool
 }
 
 var errDupReadLimit = errors.New("database read limit")
@@ -668,7 +675,60 @@ func (s *dupSearch) profile(o graph.Asset) (*orgProfile, error) {
 	}
 
 	p.evidence = len(ids) + len(crs) + len(p.locations) + len(p.related)
+	if err := s.attachDocuments(p); err != nil {
+		return nil, err
+	}
 	return p, nil
+}
+
+// documentLinks reads, once per search, what documents state relates
+// organizations: former names and mergers, parents and units.
+func (s *dupSearch) documentLinks() (docLinks, error) {
+	if s.linksRead {
+		return s.links, nil
+	}
+	s.linksRead = true
+	findings, truncated, err := documentFindings(s.ctx, s.graph,
+		append(append([]string{}, docFormerPredicates...), docParentPredicates...))
+	if err != nil {
+		return nil, err
+	}
+	if truncated {
+		s.truncate("document findings")
+	}
+	s.links = buildDocLinks(findings)
+	return s.links, nil
+}
+
+// attachDocuments records on a profile what documents state relates it to
+// other organizations, matched exactly by its names.
+func (s *dupSearch) attachDocuments(p *orgProfile) error {
+	links, err := s.documentLinks()
+	if err != nil || len(links) == 0 {
+		return err
+	}
+	for _, n := range p.names {
+		for other, l := range links[docFold(n)] {
+			if p.docs == nil {
+				p.docs = map[string]*docLink{}
+			}
+			p.docs[other] = l
+		}
+	}
+	return nil
+}
+
+// docLinkTo returns what documents state relates a to one of b's names.
+func docLinkTo(a, b *orgProfile) *docLink {
+	if len(a.docs) == 0 {
+		return nil
+	}
+	for _, n := range b.names {
+		if l, ok := a.docs[docFold(n)]; ok {
+			return l
+		}
+	}
+	return nil
 }
 
 func (p *orgProfile) addName(name string) {
@@ -941,6 +1001,15 @@ func pairSignals(a, b *orgProfile) []GapSignal {
 		case matchParentChild:
 			if a.related[b.asset.ID] || b.related[a.asset.ID] {
 				add(def, "linked in the corporate structure")
+			} else if l := docLinkTo(a, b); l != nil && l.parent {
+				// two organizations a document calls parent and unit or
+				// subsidiary are not one company
+				add(def, "a document states "+l.text+", in "+l.url)
+			}
+		case matchDocumentStatement:
+			if l := docLinkTo(a, b); l != nil && l.former {
+				out = append(out, GapSignal{Signal: def.ID, Kind: def.Kind, Via: l.text + ", in " + l.url,
+					Weight: DocumentWeight(false, len(l.versions))})
 			}
 		}
 	}

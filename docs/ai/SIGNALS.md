@@ -32,6 +32,7 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 | [Same DNS provider account](#shared_nameserver_set) | supporting | operation | 0.25 |
 | [Same TLS server fingerprint](#tls_fingerprint_match) | supporting (tiebreaker) | fingerprint | 0.10 |
 | [Organization name in the asset's name](#name_token) | supporting (tiebreaker) | lexical | 0.10 |
+| [A document states the organization operates it](#document_operator) | supporting | document | 0.25 |
 | [Parked or for sale](#parked_for_sale) | negative | negative | 0.30 |
 | [Same analytics or tag identifier](#shared_analytics_id) | supporting | fingerprint | 0.30 |
 | [Same favicon](#same_favicon) | supporting | fingerprint | 0.15 |
@@ -355,6 +356,26 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 **Can still mislead when:**
 
 - Fans, critics, resellers, squatters and unrelated organizations with similar names use the same words.
+
+<a id="document_operator"></a>
+## A document states the organization operates it
+
+`document_operator`: supporting document signal, weight 0.25.
+
+**Finds:** A finding the document model read from a stored document that a host name or URL is operated by the subject organization, named exactly by its name or legal name.
+
+**Why it counts:** Organizations name the systems they run in policies, reports and help pages (the VPN, the student portal), and the quote was checked against the text. It points at assets the network evidence has not yet tied to the organization.
+
+**Guards:**
+
+- Supporting only: it weighs 0.15, 0.05 more when the document is published on one of the organization's own domains and 0.05 more when two or more distinct document versions state it, never more than 0.25 (see semantics/document_signals.json).
+- The organization must be named exactly, and the host or URL must already be stored.
+- It never helps an ownership relationship be written automatically: a candidate qualifies for that only on its other evidence.
+
+**Can still mislead when:**
+
+- A document can name a service a vendor runs for the organization.
+- Old documents name systems since retired or handed to someone else.
 
 <a id="parked_for_sale"></a>
 ## Parked or for sale

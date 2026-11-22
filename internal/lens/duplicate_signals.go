@@ -33,7 +33,8 @@ const (
 
 var duplicateMatchers = map[string]bool{matchSharedIdentifier: true, matchSharedRegistration: true,
 	matchSharedContactRecord: true, matchSameBrand: true, matchSharedLocation: true, matchAbbreviation: true,
-	matchJurisdictionConflict: true, matchConflictingID: true, matchParentChild: true}
+	matchJurisdictionConflict: true, matchConflictingID: true, matchParentChild: true,
+	matchDocumentStatement: true}
 
 // duplicateNegative are the matchers that count against a merge.
 var duplicateNegative = map[string]bool{matchJurisdictionConflict: true, matchConflictingID: true,
@@ -112,6 +113,13 @@ func DuplicateSignal(id string) (OwnershipSignal, bool) {
 // for many entities, so on its own, or with only an address, it shows common
 // control rather than one company: such a pair waits for review.
 func AutoMergeable(signals []GapSignal) bool {
+	// document evidence never helps a merge be applied: the pair must be
+	// proposed on its other evidence alone
+	signals = WithoutDocumentSignals(signals)
+	if _, decision := scoreSignals(signals, true, DuplicateSignal); decision != GapPropose {
+		return false
+	}
+
 	contact, name := false, false
 	for _, gs := range signals {
 		s, ok := DuplicateSignal(gs.Signal)

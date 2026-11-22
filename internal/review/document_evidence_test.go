@@ -1,0 +1,31 @@
+// Copyright © by Jeff Foley 2017-2026. All rights reserved.
+// Use of this source code is governed by Apache 2 LICENSE that can be found in the LICENSE file.
+// SPDX-License-Identifier: Apache-2.0
+
+package review
+
+import (
+	"testing"
+
+	"github.com/owasp-amass/amass/v5/internal/lens"
+)
+
+// The ownership model scores a proposal without its document evidence, so a
+// document never helps an ownership edge be written automatically; the
+// proposal itself keeps everything for the reviewer.
+func TestWithoutDocumentEvidence(t *testing.T) {
+	p := OwnershipProposal{
+		Signals:   []string{"identity via shared registrant", lens.DocumentSignalKind + " via FQDN \"vpn\" is operated by"},
+		SignalIDs: []string{"shared_registrant_details", "document_operator"},
+	}
+	q := withoutDocumentEvidence(p)
+	if len(q.Signals) != 1 || q.Signals[0] != "identity via shared registrant" {
+		t.Errorf("signals %v", q.Signals)
+	}
+	if len(q.SignalIDs) != 1 || q.SignalIDs[0] != "shared_registrant_details" {
+		t.Errorf("signal IDs %v", q.SignalIDs)
+	}
+	if len(p.Signals) != 2 || len(p.SignalIDs) != 2 {
+		t.Error("the proposal lost its document evidence")
+	}
+}

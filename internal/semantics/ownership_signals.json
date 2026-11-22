@@ -490,6 +490,25 @@
       "tiebreaker": true
     },
     {
+      "id": "document_operator",
+      "title": "A document states the organization operates it",
+      "kind": "document",
+      "strength": "supporting",
+      "weight": 0.25,
+      "matcher": "document_statement",
+      "finds": "A finding the document model read from a stored document that a host name or URL is operated by the subject organization, named exactly by its name or legal name.",
+      "rationale": "Organizations name the systems they run in policies, reports and help pages (the VPN, the student portal), and the quote was checked against the text. It points at assets the network evidence has not yet tied to the organization.",
+      "guards": [
+        "Supporting only: it weighs 0.15, 0.05 more when the document is published on one of the organization's own domains and 0.05 more when two or more distinct document versions state it, never more than 0.25 (see semantics/document_signals.json).",
+        "The organization must be named exactly, and the host or URL must already be stored.",
+        "It never helps an ownership relationship be written automatically: a candidate qualifies for that only on its other evidence."
+      ],
+      "counter_indications": [
+        "A document can name a service a vendor runs for the organization.",
+        "Old documents name systems since retired or handed to someone else."
+      ]
+    },
+    {
       "id": "parked_for_sale",
       "title": "Parked or for sale",
       "kind": "negative",

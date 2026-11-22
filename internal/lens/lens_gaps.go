@@ -72,6 +72,10 @@ type GapSignal struct {
 	Kind    string              `json:"kind"`
 	Via     string              `json:"via"`
 	Witness []graph.WitnessEdge `json:"witness"`
+	// Weight, when set, is this signal's weight, below its catalog weight:
+	// a document signal weighs less when it is not first-party or
+	// corroborated (DocumentWeight).
+	Weight float64 `json:"weight,omitempty"`
 }
 
 // ProposedEdge is an OAM relationship that would record the subject as an
@@ -95,13 +99,16 @@ func (p ProposedEdge) String() string {
 // GapCandidate is an unattributed asset with the signals linking it to the
 // subject.
 type GapCandidate struct {
-	AssetID    string        `json:"asset_id"`
-	Type       string        `json:"type"`
-	Asset      string        `json:"asset"`
-	Signals    []GapSignal   `json:"signals"`
-	Score      float64       `json:"score"`
-	Decision   string        `json:"decision"`
-	Attachment *ProposedEdge `json:"attachment,omitempty"`
+	AssetID  string      `json:"asset_id"`
+	Type     string      `json:"type"`
+	Asset    string      `json:"asset"`
+	Signals  []GapSignal `json:"signals"`
+	Score    float64     `json:"score"`
+	Decision string      `json:"decision"`
+	// AutoDecision is the decision without document signals: what may be
+	// written without review is decided on it (WithoutDocumentSignals).
+	AutoDecision string        `json:"auto_decision,omitempty"`
+	Attachment   *ProposedEdge `json:"attachment,omitempty"`
 	// Alternatives are other relationships that could record the owner; a
 	// reviewer chooses, so such a candidate is never proposed outright.
 	Alternatives []ProposedEdge `json:"alternatives,omitempty"`
@@ -215,6 +222,9 @@ func SearchOwnershipGaps(ctx context.Context, gr graph.Graph, schema graph.Schem
 		}
 	}
 	if err := g.valueSignals(order); err != nil {
+		return report, err
+	}
+	if err := g.documentSignals(); err != nil {
 		return report, err
 	}
 	for _, c := range g.found {
@@ -493,6 +503,7 @@ func (g *gapSearch) finish(c *GapCandidate) error {
 
 	// Only one unambiguous relationship can be proposed outright.
 	c.Score, c.Decision = ScoreGap(c.Signals, len(edges) == 1)
+	_, c.AutoDecision = ScoreGap(WithoutDocumentSignals(c.Signals), len(edges) == 1)
 	return nil
 }
 
@@ -536,7 +547,11 @@ func scoreSignals(signals []GapSignal, attachable bool, lookup func(string) (Own
 			strong++
 		}
 		if count[s.Signal] <= 2 {
-			score += def.Weight
+			w := def.Weight
+			if s.Weight > 0 && s.Weight < w {
+				w = s.Weight
+			}
+			score += w
 		}
 	}
 

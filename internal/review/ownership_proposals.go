@@ -58,7 +58,12 @@ type OwnershipProposal struct {
 	Edge      lens.ProposedEdge `json:"edge"`
 	Score     float64           `json:"score"`
 	Decision  string            `json:"decision"`
-	Signals   []string          `json:"signals"`
+	// AutoDecision is the decision without document evidence; automatic
+	// attribution acts on it (lens.WithoutDocumentSignals). Empty in
+	// proposals recorded before it existed, which carry no document
+	// evidence.
+	AutoDecision string   `json:"auto_decision,omitempty"`
+	Signals      []string `json:"signals"`
 	// SignalIDs are the catalog signals behind Signals, each once; `amass
 	// review signals` explains them.
 	SignalIDs []string `json:"signal_ids,omitempty"`
@@ -102,7 +107,7 @@ func OwnershipProposals(r lens.OwnershipGapReport) []OwnershipProposal {
 
 		p := OwnershipProposal{ID: ProposalID(*c.Attachment), Owner: graph.AssetLabel(r.Owner), OwnerID: r.Owner.ID,
 			Asset: c.Asset, AssetID: c.AssetID, AssetType: c.Type, Edge: *c.Attachment, Score: c.Score,
-			Decision: c.Decision, Gains: c.Gains, CreatedAt: now}
+			Decision: c.Decision, AutoDecision: c.AutoDecision, Gains: c.Gains, CreatedAt: now}
 		seen := map[string]bool{}
 		for _, s := range c.Signals {
 			p.Signals = append(p.Signals, s.Kind+" via "+s.Via)

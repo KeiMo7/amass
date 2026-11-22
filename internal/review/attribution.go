@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"math"
 	"slices"
+	"strings"
 
 	"github.com/owasp-amass/amass/v5/internal/graph"
 	"github.com/owasp-amass/amass/v5/internal/lens"
@@ -159,9 +160,15 @@ func AttributeOwnership(ctx context.Context, g graph.Graph, schema graph.SchemaC
 			return res, err
 		}
 
-		qualifies := p.Decision == lens.GapPropose
+		// document evidence never helps an ownership edge be written: the
+		// proposal qualifies on its other evidence alone
+		decision := p.Decision
+		if p.AutoDecision != "" {
+			decision = p.AutoDecision
+		}
+		qualifies := decision == lens.GapPropose
 		if policy.Model != nil {
-			prob, err := policy.Model.Probability(p)
+			prob, err := policy.Model.Probability(withoutDocumentEvidence(p))
 			if err != nil {
 				return res, err
 			}
@@ -285,4 +292,25 @@ func (m mergePairs) supersedeDuplicates(j *Journal, org, asset string, state map
 		e.Status = ProposalRetracted
 	}
 	return nil
+}
+
+// withoutDocumentEvidence returns the proposal without the signals that came
+// from documents, for the ownership model to score: what is written
+// automatically is decided without document evidence.
+func withoutDocumentEvidence(p OwnershipProposal) OwnershipProposal {
+	prefix := lens.DocumentSignalKind + " via "
+	signals := make([]string, 0, len(p.Signals))
+	for _, s := range p.Signals {
+		if !strings.HasPrefix(s, prefix) {
+			signals = append(signals, s)
+		}
+	}
+	ids := make([]string, 0, len(p.SignalIDs))
+	for _, id := range p.SignalIDs {
+		if def, ok := lens.LookupOwnershipSignal(id); !ok || def.Kind != lens.DocumentSignalKind {
+			ids = append(ids, id)
+		}
+	}
+	p.Signals, p.SignalIDs = signals, ids
+	return p
 }

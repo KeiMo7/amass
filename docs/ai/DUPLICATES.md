@@ -21,6 +21,7 @@ Sources record one company several times: a certificate, an RDAP lookup and GLEI
 | [Same name](#same_brand_name) | supporting | name | 0.20 |
 | [Same address](#shared_location) | supporting | location | 0.15 |
 | [Name is the other's abbreviation](#name_abbreviation) | supporting (tiebreaker) | name | 0.10 |
+| [A document states one was formerly known as, or merged with, the other](#document_former_name) | supporting | document | 0.25 |
 | [Different jurisdictions or registrations](#jurisdiction_conflict) | negative | conflict | 0.50 |
 | [Different Legal Entity Identifiers](#conflicting_registry_identifier) | negative | conflict | 0.50 |
 | [Recorded as parent and subsidiary](#parent_or_subsidiary) | negative | conflict | 0.50 |
@@ -149,6 +150,26 @@ Sources record one company several times: a certificate, an RDAP lookup and GLEI
 **Can still mislead when:**
 
 - Unrelated organizations with the same initials.
+
+<a id="document_former_name"></a>
+## A document states one was formerly known as, or merged with, the other
+
+`document_former_name`: supporting document signal, weight 0.25.
+
+**Finds:** A finding the document model read from a stored document that one organization was formerly known as, or merged with, the other, each named exactly as one of the pair's names.
+
+**Why it counts:** Organizations announce renames and mergers in their own reports and press releases, often long before the registries catch up, and the quote was checked against the text. A stated former name ties two records of the same company together when nothing else does.
+
+**Guards:**
+
+- Supporting only: it weighs 0.15, 0.05 more when two or more distinct document versions state it, never more than 0.25 (see semantics/document_signals.json).
+- The names must match the pair's names exactly (case and spacing aside); a fuzzy match gives nothing.
+- It never helps a merge be applied automatically: a pair qualifies for that only on its other evidence.
+
+**Can still mislead when:**
+
+- A merger can create a new company rather than continue an old one, so the two records may be predecessor and successor rather than one company.
+- A document can be wrong or out of date.
 
 <a id="jurisdiction_conflict"></a>
 ## Different jurisdictions or registrations

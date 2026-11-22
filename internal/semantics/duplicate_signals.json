@@ -133,6 +133,25 @@
       ]
     },
     {
+      "id": "document_former_name",
+      "title": "A document states one was formerly known as, or merged with, the other",
+      "kind": "document",
+      "strength": "supporting",
+      "weight": 0.25,
+      "matcher": "document_statement",
+      "finds": "A finding the document model read from a stored document that one organization was formerly known as, or merged with, the other, each named exactly as one of the pair's names.",
+      "rationale": "Organizations announce renames and mergers in their own reports and press releases, often long before the registries catch up, and the quote was checked against the text. A stated former name ties two records of the same company together when nothing else does.",
+      "guards": [
+        "Supporting only: it weighs 0.15, 0.05 more when two or more distinct document versions state it, never more than 0.25 (see semantics/document_signals.json).",
+        "The names must match the pair's names exactly (case and spacing aside); a fuzzy match gives nothing.",
+        "It never helps a merge be applied automatically: a pair qualifies for that only on its other evidence."
+      ],
+      "counter_indications": [
+        "A merger can create a new company rather than continue an old one, so the two records may be predecessor and successor rather than one company.",
+        "A document can be wrong or out of date."
+      ]
+    },
+    {
       "id": "jurisdiction_conflict",
       "title": "Different jurisdictions or registrations",
       "kind": "conflict",

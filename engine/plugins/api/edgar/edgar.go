@@ -177,6 +177,18 @@ func (h *filings) collect(e *et.Event, orgent *dbt.Entity, cik string) {
 	h.storeCIK(e, orgent, cik)
 	h.storeContact(e, orgent, cik, sub)
 	h.storeFormD(e, orgent, cik, sub)
+
+	// Every subsidiary goes to the engine; each collector's monitoring TTL
+	// keeps a later run from looking the same subsidiaries up again.
+	for _, child := range h.storeSubsidiaries(e, orgent, cik, sub) {
+		if o, ok := child.Asset.(*oamorg.Organization); ok {
+			_ = e.Dispatcher.DispatchEvent(&et.Event{
+				Name:    fmt.Sprintf("%s:%s", o.Name, o.ID),
+				Entity:  child,
+				Session: e.Session,
+			})
+		}
+	}
 }
 
 // get performs a rate-limited GET with the SEC-required User-Agent.

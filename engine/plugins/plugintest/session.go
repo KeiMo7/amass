@@ -9,6 +9,7 @@ package plugintest
 
 import (
 	"context"
+	"fmt"
 	"io"
 	"log/slog"
 	"net/http"
@@ -309,3 +310,19 @@ func (s *Session) TTL(minutes int) {
 // WrapDB replaces the session's repository with wrap(repository), such as a
 // wrapper that counts calls.
 func (s *Session) WrapDB(wrap func(repository.Repository) repository.Repository) { s.db = wrap(s.db) }
+
+// APIKeys configures the data source with the API keys, as an operator's
+// datasources file would, so plugin code that reads its keys finds them.
+func (s *Session) APIKeys(source string, keys ...string) {
+	creds := map[string]*config.Credentials{}
+	for i, k := range keys {
+		name := fmt.Sprintf("account%d", i)
+		creds[name] = &config.Credentials{Name: name, Apikey: k}
+	}
+
+	if s.cfg.DataSrcConfigs == nil {
+		s.cfg.DataSrcConfigs = &config.DataSourceConfig{}
+	}
+	s.cfg.DataSrcConfigs.Datasources = append(s.cfg.DataSrcConfigs.Datasources,
+		&config.DataSource{Name: source, Creds: creds})
+}

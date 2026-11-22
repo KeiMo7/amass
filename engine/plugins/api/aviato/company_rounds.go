@@ -135,7 +135,7 @@ func (cr *companyRounds) lookup(e *et.Event, ident *dbt.Entity, since time.Time)
 func (cr *companyRounds) query(e *et.Event, ident *dbt.Entity, apikey []string) []*dbt.Entity {
 	oamid := e.Entity.Asset.(*oamgen.Identifier)
 
-	orgent := cr.getAssociatedOrg(e, ident)
+	orgent := cr.plugin.identOrg(e, ident)
 	if orgent == nil {
 		msg := fmt.Sprintf("failed to find the Organization asset for %s", oamid.UniqueID)
 		e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
@@ -204,26 +204,6 @@ loop:
 		}
 	}
 	return fundents
-}
-
-func (cr *companyRounds) getAssociatedOrg(e *et.Event, ident *dbt.Entity) *dbt.Entity {
-	var orgent *dbt.Entity
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	if edges, err := e.Session.DB().IncomingEdges(ctx, ident, time.Time{}, "id"); err == nil {
-		for _, edge := range edges {
-			if a, err := e.Session.DB().FindEntityById(ctx, edge.FromEntity.ID); err == nil && a != nil {
-				if _, ok := a.Asset.(*oamorg.Organization); ok {
-					orgent = a
-					break
-				}
-			}
-		}
-	}
-
-	return orgent
 }
 
 func (cr *companyRounds) store(e *et.Event, ident, orgent *dbt.Entity, funds *companyRoundsResult) []*dbt.Entity {

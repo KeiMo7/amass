@@ -14,6 +14,7 @@ import (
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamgen "github.com/owasp-amass/open-asset-model/general"
+	oamorg "github.com/owasp-amass/open-asset-model/org"
 	"golang.org/x/time/rate"
 )
 
@@ -139,4 +140,21 @@ func (a *aviato) createRelation(ctx context.Context, session et.Session, obj *db
 		Confidence: conf,
 	})
 	return err
+}
+
+// identOrg returns the organization that links to the Aviato identifier.
+func (a *aviato) identOrg(e *et.Event, ident *dbt.Entity) *dbt.Entity {
+	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
+	defer cancel()
+
+	if edges, err := e.Session.DB().IncomingEdges(ctx, ident, time.Time{}, "id"); err == nil {
+		for _, edge := range edges {
+			if ent, err := e.Session.DB().FindEntityById(ctx, edge.FromEntity.ID); err == nil && ent != nil {
+				if _, ok := ent.Asset.(*oamorg.Organization); ok {
+					return ent
+				}
+			}
+		}
+	}
+	return nil
 }

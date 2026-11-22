@@ -5,6 +5,7 @@
 package aviato
 
 import (
+	"context"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -15,9 +16,12 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/plugintest"
 	et "github.com/owasp-amass/amass/v5/engine/types"
+	dbt "github.com/owasp-amass/asset-db/types"
+	oamfin "github.com/owasp-amass/open-asset-model/financial"
 	oamgen "github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 	"golang.org/x/time/rate"
@@ -29,6 +33,7 @@ type api struct {
 	mu       sync.Mutex
 	requests []string
 	pages    map[string][]string
+	bodies   map[string]string
 }
 
 func (a *api) ServeHTTP(w http.ResponseWriter, r *http.Request) {
@@ -51,6 +56,11 @@ func (a *api) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		}
 
 		_, _ = fmt.Fprint(w, `{"items":[{"id":"co-1","name":"Example"}]}`)
+		return
+	}
+
+	if body, ok := a.bodies[r.URL.Path]; ok {
+		_, _ = fmt.Fprint(w, body)
 		return
 	}
 
@@ -84,6 +94,8 @@ func newAviato(t *testing.T, a *api) (*aviato, *plugintest.Session, *plugintest.
 	p.log = slog.New(slog.NewTextHandler(io.Discard, nil))
 	p.employees = &employees{name: p.name + "-Employees-Handler", plugin: p}
 	p.companySearch = &companySearch{name: p.name + "-Company-Search-Handler", plugin: p}
+	p.companyEnrich = &companyEnrich{name: p.name + "-Company-Enrich-Handler", plugin: p}
+	p.companyRounds = &companyRounds{name: p.name + "-Company-Rounds-Handler", plugin: p}
 
 	sess := plugintest.NewSession(t)
 	sess.TTL(60)
@@ -157,5 +169,137 @@ func TestCompanySearchLinksTheID(t *testing.T) {
 	if got := p.companySearch.query(&et.Event{Entity: other, Session: sess, Dispatcher: disp}, other,
 		[]string{"good"}); got != nil {
 		t.Errorf("an unknown organization got %v", got.Asset)
+	}
+}
+
+// linkedCompany stores an organization with the Aviato company ID co-1, as the
+// company search links it, and configures the keys "bad" and "good".
+func linkedCompany(t *testing.T, p *aviato, sess *plugintest.Session, disp *plugintest.Dispatcher) (*dbt.Entity, *dbt.Entity) {
+	t.Helper()
+
+	sess.APIKeys(p.name, "bad", "good")
+	org := sess.Asset(t, &oamorg.Organization{ID: "example", Name: "Example"})
+	ident := p.companySearch.store(&et.Event{Entity: org, Session: sess, Dispatcher: disp}, org, "co-1")
+	if ident == nil {
+		t.Fatal("the company ID was not linked")
+	}
+	return org, ident
+}
+
+// The enrichment fills in the organization behind a company ID, and within
+// the TTL answers from the database.
+func TestCompanyEnrichUpdatesTheOrganization(t *testing.T) {
+	a := &api{bodies: map[string]string{"/company/enrich": `{"id":"co-1","name":"Example",` +
+		`"legalName":"Example Holdings, Inc.","status":"Active","headcount":250,"isNonProfit":true}`}}
+	p, sess, disp := newAviato(t, a)
+	org, ident := linkedCompany(t, p, sess, disp)
+
+	if err := p.companyEnrich.check(&et.Event{Entity: ident, Session: sess, Dispatcher: disp}); err != nil {
+		t.Fatal(err)
+	}
+	if !slices.Contains(disp.Names(), "Example:example") {
+		t.Fatalf("the organization was not dispatched: %v; requests %v", disp.Names(), a.sent())
+	}
+
+	ctx := context.Background()
+	stored, err := sess.DB().FindEntityById(ctx, org.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	o := stored.Asset.(*oamorg.Organization)
+	if o.LegalName != "Example Holdings, Inc." || o.Headcount != 250 || !o.Active || !o.NonProfit {
+		t.Errorf("the organization was not enriched: %+v", o)
+	}
+
+	var legal bool
+	if edges, err := sess.DB().OutgoingEdges(ctx, org, time.Time{}, "id"); err == nil {
+		for _, edge := range edges {
+			if ent, err := sess.DB().FindEntityById(ctx, edge.ToEntity.ID); err == nil {
+				if id, ok := ent.Asset.(*oamgen.Identifier); ok && id.Type == oamgen.LegalName {
+					legal = id.ID == "Example Holdings, Inc."
+				}
+			}
+		}
+	}
+	if !legal {
+		t.Error("the legal name Identifier was not linked")
+	}
+
+	sent := len(a.sent())
+	disp2 := &plugintest.Dispatcher{}
+	if err := p.companyEnrich.check(&et.Event{Entity: ident, Session: sess, Dispatcher: disp2}); err != nil {
+		t.Fatal(err)
+	}
+	if len(a.sent()) != sent {
+		t.Errorf("the API was asked again within the TTL: %v", a.sent()[sent:])
+	}
+	if !slices.Contains(disp2.Names(), "Example:example") {
+		t.Errorf("the organization was not dispatched within the TTL: %v", disp2.Names())
+	}
+}
+
+// A funding round becomes a funds transfer from an account the investors
+// hold to the organization's account, and the investors' IDs are dispatched.
+func TestCompanyRoundsRecordsTheRoundAndItsInvestors(t *testing.T) {
+	round := `{"fundingRounds":[{"id":1,"announcedOn":"2024-03-01","moneyRaised":5000000,` +
+		`"name":"Example Series A","stage":"series_a",` +
+		`"personInvestorList":[{"id":"p-1","fullName":"Ada Lovelace"}],` +
+		`"companyInvestorList":[{"id":"co-9","name":"Analytical Ventures"}]}],"pages":1}`
+	a := &api{pages: map[string][]string{"/company/co-1/funding-rounds": {round}}}
+	p, sess, disp := newAviato(t, a)
+	org, ident := linkedCompany(t, p, sess, disp)
+
+	if err := p.companyRounds.check(&et.Event{Entity: ident, Session: sess, Dispatcher: disp}); err != nil {
+		t.Fatal(err)
+	}
+
+	var fund *dbt.Entity
+	for _, ev := range disp.Events() {
+		if _, ok := ev.Entity.Asset.(*oamfin.FundsTransfer); ok {
+			fund = ev.Entity
+		}
+	}
+	if fund == nil {
+		t.Fatalf("no funds transfer was dispatched: %v; requests %v", disp.Names(), a.sent())
+	}
+	if f := fund.Asset.(*oamfin.FundsTransfer); f.Amount != 5000000 || f.Currency != "USD" {
+		t.Errorf("funds transfer = %+v", f)
+	}
+	for _, want := range []string{AviatoPersonID + ":p-1", AviatoCompanyID + ":co-9"} {
+		if !slices.Contains(disp.Names(), want) {
+			t.Errorf("the investor %s was not dispatched: %v", want, disp.Names())
+		}
+	}
+
+	// The recipient is the organization's account.
+	ctx := context.Background()
+	recv, err := sess.DB().OutgoingEdges(ctx, fund, time.Time{}, "recipient")
+	if err != nil || len(recv) != 1 {
+		t.Fatalf("recipient edges = %v, %v", recv, err)
+	}
+	accts, err := sess.DB().OutgoingEdges(ctx, org, time.Time{}, "account")
+	if err != nil || len(accts) != 1 || accts[0].ToEntity.ID != recv[0].ToEntity.ID {
+		t.Errorf("the recipient is not the organization's account: %v, %v", accts, err)
+	}
+
+	// The sender is an account both investors hold.
+	send, err := sess.DB().OutgoingEdges(ctx, fund, time.Time{}, "sender")
+	if err != nil || len(send) != 1 {
+		t.Fatalf("sender edges = %v, %v", send, err)
+	}
+	holders, err := sess.DB().IncomingEdges(ctx, send[0].ToEntity, time.Time{}, "account")
+	if err != nil || len(holders) != 2 {
+		t.Errorf("the seed account's holders = %v, %v", holders, err)
+	}
+
+	// One page was reported, so one page was read with the good key.
+	var good []string
+	for _, r := range a.sent() {
+		if strings.HasPrefix(r, "good ") {
+			good = append(good, r)
+		}
+	}
+	if !slices.Equal(good, []string{"good GET /company/co-1/funding-rounds 0"}) {
+		t.Errorf("the good key was sent %v", good)
 	}
 }

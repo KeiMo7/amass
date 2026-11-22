@@ -112,6 +112,12 @@ type chunkReply struct {
 // until checked here against the text itself.
 func ReadDocument(ctx context.Context, model llm.Model, modelID, url, text string, chunkChars int) (DocumentReading,
 	error) {
+	return readDocument(ctx, model, modelID, url, text, chunkChars, nil)
+}
+
+// readDocument is ReadDocument, calling onChunk after each chunk is read.
+func readDocument(ctx context.Context, model llm.Model, modelID, url, text string, chunkChars int,
+	onChunk func()) (DocumentReading, error) {
 	var out DocumentReading
 	if model == nil {
 		return out, errors.New("no document model is configured (options.ai.documents)")
@@ -143,6 +149,9 @@ func ReadDocument(ctx context.Context, model llm.Model, modelID, url, text strin
 			return out, fmt.Errorf("part %d of %d: %w", i+1, len(chunks), err)
 		}
 		out.Chunks++
+		if onChunk != nil {
+			onChunk()
+		}
 
 		var reply chunkReply
 		if err := json.NewDecoder(strings.NewReader(llm.ModelJSON(resp.Text))).Decode(&reply); err != nil {

@@ -78,6 +78,9 @@ type DocumentRunOptions struct {
 	// Schema gives the relationship semantics the documents are found by;
 	// nil uses the OAM catalog.
 	Schema graph.SchemaCatalog
+	// OnChunk is called after each chunk of a document is read, so a long
+	// document shows progress.
+	OnChunk func()
 }
 
 // DocumentResult is what one run did with one document. It holds counts, not
@@ -175,7 +178,7 @@ func ReadDocuments(ctx context.Context, g graph.Graph, store review.DocumentStat
 			continue
 		}
 
-		reading, err := ReadDocument(ctx, opts.Model, opts.ModelID, src.URL, text, opts.ChunkChars)
+		reading, err := readDocument(ctx, opts.Model, opts.ModelID, src.URL, text, opts.ChunkChars, opts.OnChunk)
 		if err != nil {
 			run.Failed++
 			res.Error = err.Error()

@@ -32,8 +32,11 @@ const (
 	// documents (a database or lens error), which would otherwise be silent.
 	ActivityDocumentErrors = "document_errors"
 	ActivityStatements     = "statements"
-	ActivityLeads          = "leads"
-	ActivityLeadsWaiting   = "leads_waiting"
+	// ActivityChunksRead counts the chunks of documents read, so a long
+	// document shows progress before it is finished.
+	ActivityChunksRead   = "chunks_read"
+	ActivityLeads        = "leads"
+	ActivityLeadsWaiting = "leads_waiting"
 )
 
 // DocumentGraph is the graph the companion reads documents from: it must
@@ -195,7 +198,7 @@ func (c *DocumentCompanion) pass(ctx context.Context, run collect.Run, act colle
 
 		res, err := ReadDocuments(ctx, c.Graph, c.Store, c.Journal, root, DocumentRunOptions{Model: c.Model,
 			ModelID: c.ModelID, ModelTimeout: c.ModelTimeout, ChunkChars: c.ChunkChars, Max: batch,
-			Fetcher: c.Fetcher, Schema: c.Schema})
+			Fetcher: c.Fetcher, Schema: c.Schema, OnChunk: func() { count(act, ActivityChunksRead, 1) }})
 		if err != nil {
 			if ctx.Err() == nil {
 				count(act, ActivityDocumentErrors, 1)

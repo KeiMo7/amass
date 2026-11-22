@@ -6,6 +6,7 @@ package ai
 
 import (
 	"context"
+	"fmt"
 	"strings"
 	"testing"
 
@@ -249,5 +250,83 @@ func TestReadDocumentRejectsNegationsAndCommonNouns(t *testing.T) {
 		if !strings.Contains(joined, want) {
 			t.Errorf("no rejection for %q in %q", want, r.Rejected)
 		}
+	}
+}
+
+// A name holding a piece of a split word is not a proper name; the short
+// words names hold are.
+func TestFragmentedNames(t *testing.T) {
+	for name, want := range map[string]bool{
+		"MV CC Theat er":                true,
+		"Herkimer Colle ge":             true,
+		"Bank of America":               false,
+		"Universidad de la Sabana":      false,
+		"Procter & Gamble":              false,
+		"AT&T":                          false,
+		"MVCC":                          false,
+		"Center for Corporate & Co. Ed": false,
+	} {
+		if got := fragmented(name); got != want {
+			t.Errorf("fragmented(%q) = %v, want %v", name, got, want)
+		}
+	}
+	if properName("MV CC Theat er") {
+		t.Error("a fragmented name passed as a proper name")
+	}
+}
+
+// cutModel cuts off its first reply at the token limit, as a model that
+// repeats itself until num_predict stops it.
+type cutModel struct{ docModel }
+
+func (m *cutModel) Generate(ctx context.Context, h []llm.Message, t []llm.ToolSpec) (llm.Response, error) {
+	resp, _ := m.docModel.Generate(ctx, h, t)
+	if len(m.histories) == 1 {
+		return llm.Response{Text: `{"category": "policy", "assets": [{"type": "FQDN", "value": "vpn.herkimer.edu",
+		  "quote": "Staff`}, fmt.Errorf("ollama %w (num_ctx 16384, num_predict 4096)", llm.ErrReplyLength)
+	}
+	return resp, nil
+}
+
+// A part whose reply is cut off at the token limit is skipped, and the rest
+// of the document is still read.
+func TestReadDocumentSkipsCutOffReplies(t *testing.T) {
+	text := strings.Repeat("Filler sentence about the campus grounds. ", 200) + docText
+	reply := `{"category": "policy", "assets": [{"type": "FQDN", "value": "vpn.herkimer.edu",
+	  "quote": "Staff connect remotely through vpn.herkimer.edu"}], "statements": [], "attributes": []}`
+	model := &cutModel{docModel{replies: []string{reply}}}
+
+	r, err := ReadDocument(context.Background(), model, "m", "u", text, 2000)
+	if err != nil {
+		t.Fatalf("a cut-off part failed the document: %v", err)
+	}
+	if r.Chunks != len(model.histories) || r.Chunks < 4 || len(r.Statements) != 1 {
+		t.Fatalf("read %d chunks with %d requests, findings %+v", r.Chunks, len(model.histories), r.Statements)
+	}
+	cut := false
+	for _, reason := range r.Rejected {
+		cut = cut || strings.Contains(reason, "part 1: reply cut off")
+	}
+	if !cut {
+		t.Errorf("rejected %v, want part 1 cut off", r.Rejected)
+	}
+}
+
+// Control characters in extracted text become spaces before the model reads
+// it, newlines and tabs stay, and a quote across one still matches.
+func TestReadDocumentCleansControlCharacters(t *testing.T) {
+	if got := cleanText("a\fb\x00c\x1b[0m\td\ne\u0085f"); got != "a b c [0m\td\ne f" {
+		t.Errorf("cleanText = %q", got)
+	}
+	reply := `{"category": "policy", "assets": [{"type": "FQDN", "value": "vpn.herkimer.edu",
+	  "quote": "Staff connect remotely through vpn.herkimer.edu"}], "statements": [], "attributes": []}`
+	model := &docModel{replies: []string{reply}}
+	text := strings.Replace(docText, "Staff connect remotely", "Staff connect\fremotely", 1)
+	r, err := ReadDocument(context.Background(), model, "m", "u", text, 0)
+	if err != nil || len(r.Statements) != 1 {
+		t.Fatalf("findings %+v, %v", r.Statements, err)
+	}
+	if strings.ContainsRune(model.histories[0][1].Text, '\f') {
+		t.Error("the model was sent a control character")
 	}
 }

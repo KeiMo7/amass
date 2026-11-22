@@ -89,6 +89,11 @@ type DocumentModelSettings struct {
 	// ChunkChars is how many characters of a document one request reads
 	// (default 12000); a document is read whole, chunk by chunk.
 	ChunkChars int `yaml:"chunk_chars,omitempty" json:"chunk_chars,omitempty"`
+	// MaxTokens caps one reply (default 4096). A reply cut off at the cap is
+	// incomplete, so that chunk is skipped and the rest of the document is
+	// still read; without a cap a model that repeats itself fills the whole
+	// context window before it stops.
+	MaxTokens int `yaml:"max_tokens,omitempty" json:"max_tokens,omitempty"`
 	// ShareWithAssistants lets other models (the main investigation model and
 	// MCP clients) read the document model's findings, which quote the
 	// documents. Off by default: they then see only counts.
@@ -131,6 +136,9 @@ func (d *DocumentModelSettings) Validate() error {
 	}
 	if d.ChunkChars != 0 && (d.ChunkChars < 2000 || d.ChunkChars > 200000) {
 		return fmt.Errorf("options.ai.documents.chunk_chars must be 0 or 2000..200000")
+	}
+	if d.MaxTokens != 0 && (d.MaxTokens < 256 || d.MaxTokens > 32768) {
+		return fmt.Errorf("options.ai.documents.max_tokens must be 0 or 256..32768")
 	}
 	return nil
 }

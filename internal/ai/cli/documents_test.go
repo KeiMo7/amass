@@ -26,8 +26,8 @@ func TestWriteDocumentRun(t *testing.T) {
 					{Kind: ai.FindingAttribute, Subject: "College", SubjectType: "Organization", Field: "founding_date",
 						Object: "1966", Quote: "founded in 1966"},
 				}},
-			{URL: "https://a.example/b.pdf", Error: "fetch: status 404 Not Found"},
-		}}
+			{URL: "https://a.example/b.pdf", Error: "fetch: status 404 Not Found", Failure: ai.FailureFetch},
+		}, Failures: map[string]int{ai.FailureFetch: 1}}
 	var out bytes.Buffer
 	if err := writeDocumentRun(&out, "a.example", run); err != nil {
 		t.Fatal(err)
@@ -37,7 +37,8 @@ func TestWriteDocumentRun(t *testing.T) {
 		`Organization Foundation -[unit_of]-> Organization College: "The Foundation is a division of the College."`,
 		`FQDN vpn.a.example: "through vpn.a.example"`,
 		`Organization College founding_date = 1966`,
-		"https://a.example/b.pdf: fetch: status 404 Not Found",
+		"https://a.example/b.pdf: failed (fetch): fetch: status 404 Not Found",
+		"failed by why: fetch 1",
 		"read 1 documents, skipped 2 already read, 3 remaining, failed 1",
 	} {
 		if !strings.Contains(out.String(), want) {

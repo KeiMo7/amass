@@ -28,6 +28,10 @@ const (
 const (
 	ActivityDocumentsRead    = "documents_read"
 	ActivityDocumentFailures = "document_failures"
+	// ActivityFailurePrefix starts the counts of failed documents by why:
+	// document_failures_fetch, document_failures_model_timeout, and so on
+	// (the Failure* kinds).
+	ActivityFailurePrefix = "document_failures_"
 	// ActivityDocumentErrors counts passes that could not list a target's
 	// documents (a database or lens error), which would otherwise be silent.
 	ActivityDocumentErrors = "document_errors"
@@ -90,6 +94,31 @@ type companionRun struct {
 	seen      map[string]bool
 	submitted []*submittedLead
 	queue     []queuedLead
+	// orgOnlySubmitted counts the leads given for organizations named alone
+	orgOnlySubmitted int
+	// failed counts each File's failed attempts in this run, and holds the
+	// last failure's kind
+	failed map[string]failedDocument
+}
+
+// failedDocument is a File that could not be read during a run.
+type failedDocument struct {
+	kind     string
+	attempts int
+}
+
+// maxDocumentAttempts is how often a run tries a document whose failure may
+// pass (a busy model, a server that was down); one that cannot be read (an
+// unsupported or oversized file, text that cannot be extracted) is tried
+// once.
+const maxDocumentAttempts = 2
+
+// skip reports whether a File failed in a way another attempt in this run
+// would repeat. Without it, documents that always fail would fill every
+// pass's batch and keep the rest from being read.
+func (st *companionRun) skip(fileID string) bool {
+	f, ok := st.failed[fileID]
+	return ok && (!retryable(f.kind) || f.attempts >= maxDocumentAttempts)
 }
 
 // Begin implements collect.Companion.
@@ -98,7 +127,8 @@ func (c *DocumentCompanion) Begin(ctx context.Context, run collect.Run, act coll
 		return nil
 	}
 
-	st := &companionRun{nudge: make(chan struct{}, 1), roots: map[string]graph.Asset{}, seen: map[string]bool{}}
+	st := &companionRun{nudge: make(chan struct{}, 1), roots: map[string]graph.Asset{}, seen: map[string]bool{},
+		failed: map[string]failedDocument{}}
 	interval := c.Interval
 	if interval <= 0 {
 		interval = DefaultDocumentInterval
@@ -198,7 +228,8 @@ func (c *DocumentCompanion) pass(ctx context.Context, run collect.Run, act colle
 
 		res, err := ReadDocuments(ctx, c.Graph, c.Store, c.Journal, root, DocumentRunOptions{Model: c.Model,
 			ModelID: c.ModelID, ModelTimeout: c.ModelTimeout, ChunkChars: c.ChunkChars, Max: batch,
-			Fetcher: c.Fetcher, Schema: c.Schema, OnChunk: func() { count(act, ActivityChunksRead, 1) }})
+			Fetcher: c.Fetcher, Schema: c.Schema, OnChunk: func() { count(act, ActivityChunksRead, 1) },
+			Skip: st.skip})
 		if err != nil {
 			if ctx.Err() == nil {
 				count(act, ActivityDocumentErrors, 1)
@@ -208,6 +239,9 @@ func (c *DocumentCompanion) pass(ctx context.Context, run collect.Run, act colle
 		count(act, ActivityDocumentsRead, res.Read)
 		count(act, ActivityDocumentFailures, res.Failed)
 		count(act, ActivityStatements, res.Statements)
+		for kind, n := range res.Failures {
+			count(act, ActivityFailurePrefix+kind, n)
+		}
 		// a model that fails every document is unavailable: do not hold the
 		// run open waiting for it
 		if res.Read > 0 || res.Failed == 0 {
@@ -215,6 +249,11 @@ func (c *DocumentCompanion) pass(ctx context.Context, run collect.Run, act colle
 		}
 
 		for _, d := range res.Documents {
+			if d.Failure != "" {
+				f := st.failed[d.FileID]
+				st.failed[d.FileID] = failedDocument{kind: d.Failure, attempts: f.attempts + 1}
+				continue
+			}
 			c.submitLeads(ctx, run, act, st, d)
 		}
 	}
@@ -231,20 +270,20 @@ func (c *DocumentCompanion) submitLeads(ctx context.Context, run collect.Run, ac
 	anchored := anchoredOrganizations(d.Stored)
 	for _, s := range d.Stored {
 		for _, l := range statementLeads(s) {
-			// before seen: a later document may tie the organization to an
-			// anchor
-			if !anchoredLead(l, anchored) {
-				continue
-			}
 			key := strings.ToLower(string(l.asset.AssetType()) + "\x00" + l.name)
+			orgOnly := !anchoredLead(l, anchored)
 			if st.seen[key] {
+				// a later document tied a waiting organization to an anchor
+				if !orgOnly {
+					st.promote(key)
+				}
 				continue
 			}
 			st.seen[key] = true
 			if knownLead(ctx, c.Graph, l) {
 				continue
 			}
-			st.queue = append(st.queue, queuedLead{lead: l, stmt: s, doc: d})
+			st.queue = append(st.queue, queuedLead{lead: l, stmt: s, doc: d, key: key, orgOnly: orgOnly})
 			count(act, ActivityLeadsWaiting, 1)
 		}
 	}

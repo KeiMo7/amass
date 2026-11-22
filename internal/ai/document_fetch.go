@@ -68,17 +68,22 @@ func (f HTTPFetcher) Fetch(ctx context.Context, u string, max int64) ([]byte, er
 		return nil, fmt.Errorf("status %s", resp.Status)
 	}
 	if max > 0 && resp.ContentLength > max {
-		return nil, fmt.Errorf("larger than %d bytes", max)
+		return nil, tooLargeError{max: max}
 	}
 	data, err := io.ReadAll(io.LimitReader(resp.Body, max+1))
 	if err != nil {
 		return nil, err
 	}
 	if max > 0 && int64(len(data)) > max {
-		return nil, fmt.Errorf("larger than %d bytes", max)
+		return nil, tooLargeError{max: max}
 	}
 	return data, nil
 }
+
+// tooLargeError is a document longer than the documents rules allow.
+type tooLargeError struct{ max int64 }
+
+func (e tooLargeError) Error() string { return fmt.Sprintf("larger than %d bytes", e.max) }
 
 // fetchedDocument is a document fetched again for reading: its text and the
 // content hash of the version fetched.
@@ -95,7 +100,7 @@ func fetchDocument(ctx context.Context, f HTTPFetcher, src lens.DocumentSource) 
 	rules := semantics.Documents()
 	dt, ok := rules.DocumentFor(documentPath(src.URL))
 	if !ok {
-		return out, errors.New("not a document type Amass reads")
+		return out, &documentError{kind: FailureUnsupported, err: errors.New("not a document type Amass reads")}
 	}
 
 	from := src.URL
@@ -104,14 +109,18 @@ func fetchDocument(ctx context.Context, f HTTPFetcher, src lens.DocumentSource) 
 	}
 	data, err := f.Fetch(ctx, from, rules.MaxBytes)
 	if err != nil {
-		return out, fmt.Errorf("fetch: %w", err)
+		kind := FailureFetch
+		if errors.As(err, new(tooLargeError)) {
+			kind = FailureTooLarge
+		}
+		return out, &documentError{kind: kind, err: fmt.Errorf("fetch: %w", err)}
 	}
 	sum := sha256.Sum256(data)
 	out.sha256 = hex.EncodeToString(sum[:])
 
 	content, err := docmeta.ExtractContent(dt.Format, data)
 	if err != nil {
-		return out, fmt.Errorf("extract text: %w", err)
+		return out, &documentError{kind: FailureExtract, err: fmt.Errorf("extract text: %w", err)}
 	}
 	out.text = strings.TrimSpace(content.Text + "\n" + strings.Join(content.Links, "\n"))
 	return out, nil

@@ -110,6 +110,11 @@ func ValidateModelEndpoint(endpoint string, allowHTTP bool) error {
 // room for a chunk of a document, the instructions and the reply.
 const DefaultDocumentContextTokens = 16384
 
+// DefaultDocumentReplyTokens caps one document model reply when
+// options.ai.documents.max_tokens is not set: room for many findings from one
+// chunk, far short of a context window filled by a model repeating itself.
+const DefaultDocumentReplyTokens = 4096
+
 // DefaultDocumentModelTimeout bounds one document model request when
 // options.ai.documents.model_timeout is not set.
 const DefaultDocumentModelTimeout = 3 * time.Minute
@@ -145,8 +150,13 @@ func DocumentModel(d *config.DocumentModelSettings) (llm.Model, string, time.Dur
 	if contextTokens == 0 {
 		contextTokens = DefaultDocumentContextTokens
 	}
+	maxTokens := d.MaxTokens
+	if maxTokens == 0 {
+		maxTokens = DefaultDocumentReplyTokens
+	}
 	m, err := NewModel(ModelSettings{Provider: provider, Endpoint: d.Endpoint, Model: d.Model,
-		APIKey: key, AllowHTTP: d.AllowHTTP, Timeout: timeout, Temperature: &zero, ContextTokens: contextTokens})
+		APIKey: key, AllowHTTP: d.AllowHTTP, Timeout: timeout, Temperature: &zero, ContextTokens: contextTokens,
+		MaxTokens: maxTokens})
 	if err != nil {
 		return nil, "", 0, fmt.Errorf("options.ai.documents: %w", err)
 	}

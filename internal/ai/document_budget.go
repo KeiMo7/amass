@@ -31,6 +31,10 @@ const (
 	// confirmation rate can hold new leads back: a few early leads going
 	// nowhere say little.
 	leadRateSample = 10
+	// orgOnlyShare bounds the leads given for organizations a document names
+	// without tying them to an anchor: at most one in orgOnlyShare of the
+	// allowance, and only while no other lead waits.
+	orgOnlyShare = 5
 )
 
 // submittedLead is a lead given to the run, and whether the engine has
@@ -46,6 +50,39 @@ type queuedLead struct {
 	lead documentLead
 	stmt review.StoredStatement
 	doc  DocumentResult
+	key  string
+	// orgOnly marks an organization no document of the run has tied to an
+	// anchor yet
+	orgOnly bool
+}
+
+// next returns the index of the queued lead to submit next, or -1: the oldest
+// lead with an anchor (or that is one), otherwise the oldest organization
+// named alone while those stay within their share of the allowance.
+func (st *companionRun) next(allow int) int {
+	first := -1
+	for i, q := range st.queue {
+		if !q.orgOnly {
+			return i
+		}
+		if first < 0 {
+			first = i
+		}
+	}
+	if first >= 0 && st.orgOnlySubmitted < allow/orgOnlyShare {
+		return first
+	}
+	return -1
+}
+
+// promote marks a queued organization as tied to an anchor, once a document
+// of the run ties it to one.
+func (st *companionRun) promote(key string) {
+	for i := range st.queue {
+		if st.queue[i].key == key {
+			st.queue[i].orgOnly = false
+		}
+	}
 }
 
 // allowance returns how many leads the run may have been given by now.
@@ -90,17 +127,24 @@ func (c *DocumentCompanion) drain(ctx context.Context, run collect.Run, act coll
 	}
 
 	allow := c.allowance(ctx, st, act, time.Now())
-	for len(st.queue) > 0 && len(st.submitted) < allow {
+	for len(st.submitted) < allow {
 		if ctx.Err() != nil {
 			return
 		}
-		q := st.queue[0]
-		st.queue = st.queue[1:]
+		i := st.next(allow)
+		if i < 0 {
+			return
+		}
+		q := st.queue[i]
+		st.queue = append(st.queue[:i], st.queue[i+1:]...)
 		count(act, ActivityLeadsWaiting, -1)
 
 		id, err := act.Submit(ctx, q.lead.asset)
 		if err != nil || id == "" {
 			continue
+		}
+		if q.orgOnly {
+			st.orgOnlySubmitted++
 		}
 		st.submitted = append(st.submitted, &submittedLead{entityID: id, at: time.Now()})
 		count(act, ActivityLeads, 1)

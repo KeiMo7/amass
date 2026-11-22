@@ -126,7 +126,7 @@ func readDocument(ctx context.Context, model llm.Model, modelID, url, text strin
 		chunkChars = DefaultDocumentChunk
 	}
 
-	chunks := chunkText(text, chunkChars)
+	chunks := chunkText(cleanText(text), chunkChars)
 	if len(chunks) == 0 {
 		return out, nil
 	}
@@ -145,8 +145,19 @@ func readDocument(ctx context.Context, model llm.Model, modelID, url, text strin
 			{Role: "user", Text: fmt.Sprintf("Document: %s\nPart %d of %d:\n%s", url, i+1, len(chunks), chunk)},
 		}
 		resp, err := generateJSON(ctx, model, history, schema)
+		if errors.Is(err, llm.ErrReplyLength) {
+			// a reply cut off at the token cap is incomplete JSON, most
+			// often a model repeating itself: skip the part, keep reading
+			out.Chunks++
+			out.Rejected = append(out.Rejected, fmt.Sprintf("part %d: reply cut off at the token limit", i+1))
+			if onChunk != nil {
+				onChunk()
+			}
+			continue
+		}
 		if err != nil {
-			return out, fmt.Errorf("part %d of %d: %w", i+1, len(chunks), err)
+			return out, &documentError{kind: modelFailure(err),
+				err: fmt.Errorf("part %d of %d: %w", i+1, len(chunks), err)}
 		}
 		out.Chunks++
 		if onChunk != nil {
@@ -385,7 +396,46 @@ func negated(lower string, s1, e1, s2, e2 int) bool {
 // properName reports whether s reads as a name rather than a common noun
 // phrase ("third parties"): it holds an uppercase letter or a digit.
 func properName(s string) bool {
-	return strings.IndexFunc(s, func(r rune) bool { return unicode.IsUpper(r) || unicode.IsDigit(r) }) >= 0
+	return strings.IndexFunc(s, func(r rune) bool { return unicode.IsUpper(r) || unicode.IsDigit(r) }) >= 0 &&
+		!fragmented(s)
+}
+
+// nameParticles are the short lowercase words proper names hold: "Bank of
+// America", "Universidad de la Sabana", "Ludwig van Beethoven".
+var nameParticles = map[string]bool{"of": true, "de": true, "la": true, "le": true, "du": true, "da": true,
+	"di": true, "do": true, "y": true, "e": true, "et": true, "en": true, "at": true, "by": true, "in": true,
+	"on": true, "to": true, "an": true, "al": true, "el": true, "a": true, "i": true, "o": true}
+
+// fragmented reports whether a name holds a piece of a word split apart when
+// the document's text was extracted ("MV CC Theat er"): a lowercase word of
+// one or two letters that is not a name particle.
+func fragmented(s string) bool {
+	for _, w := range strings.Fields(s) {
+		w = strings.Trim(w, ".,;:&'\"()-")
+		if w == "" || utf8.RuneCountInString(w) > 2 || strings.ToLower(w) != w ||
+			strings.IndexFunc(w, func(r rune) bool { return !unicode.IsLetter(r) }) >= 0 {
+			continue
+		}
+		if !nameParticles[w] {
+			return true
+		}
+	}
+	return false
+}
+
+// cleanText replaces the control characters extracted document text can hold
+// (form feeds, NULs, escape codes) with spaces, keeping newlines and tabs. A
+// model whose reply must match a JSON schema cannot copy them into a quote,
+// since JSON strings forbid them raw, and the constrained reply fails partway
+// through; the quotes are checked against the cleaned text, so they still
+// match it verbatim.
+func cleanText(s string) string {
+	return strings.Map(func(r rune) rune {
+		if r == '\n' || r == '\t' || !unicode.IsControl(r) {
+			return r
+		}
+		return ' '
+	}, s)
 }
 
 // collapse trims s and joins its whitespace runs into single spaces.

@@ -10,6 +10,7 @@ import (
 	"encoding/xml"
 	"io"
 	"regexp"
+	"strconv"
 	"strings"
 )
 
@@ -247,14 +248,22 @@ func isTextObject(obj []byte) bool {
 	return printable*100 >= len(obj)*95
 }
 
+// wordGap is the narrowest TJ adjustment, in thousandths of an em, read as a
+// word space. A space glyph is about a quarter of an em wide; kerning between
+// letters rarely passes a seventh.
+const wordGap = 180
+
 func pdfTextObject(obj []byte, text *textBuilder) {
 	var num []byte
-	// gap writes a space when the number just read is a TJ adjustment of a
-	// hundred thousandths of an em or more, negative: a gap about as wide as
-	// a word space
+	// gap writes a space when the number just read is a TJ adjustment wide
+	// enough to be a word space: wordGap thousandths of an em or more,
+	// negative. Kerning inside a word is narrower; reading it as a space
+	// split words ("Theat er").
 	gap := func() {
-		if len(num) >= 4 && num[0] == '-' {
-			text.write(" ")
+		if len(num) > 0 && num[0] == '-' {
+			if v, err := strconv.ParseFloat(string(num), 64); err == nil && v <= -wordGap {
+				text.write(" ")
+			}
 		}
 		num = num[:0]
 	}

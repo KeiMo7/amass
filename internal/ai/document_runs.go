@@ -8,6 +8,8 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"net"
+	"os"
 	"strings"
 	"time"
 
@@ -81,6 +83,64 @@ type DocumentRunOptions struct {
 	// OnChunk is called after each chunk of a document is read, so a long
 	// document shows progress.
 	OnChunk func()
+	// Skip, when set, leaves out the Files it returns true for, without
+	// counting them as remaining: documents that failed earlier in an
+	// enumeration and would fail again.
+	Skip func(fileID string) bool
+}
+
+// Why a document could not be read, as DocumentResult.Failure.
+const (
+	// FailureUnsupported is a URL whose type Amass does not read.
+	FailureUnsupported = "unsupported"
+	// FailureFetch is a download that failed: an HTTP status, a network
+	// error, a timeout.
+	FailureFetch = "fetch"
+	// FailureTooLarge is a document longer than the documents rules allow.
+	FailureTooLarge = "too_large"
+	// FailureExtract is a document whose text could not be extracted.
+	FailureExtract = "extract"
+	// FailureModelTimeout is a model request that ran out of time.
+	FailureModelTimeout = "model_timeout"
+	// FailureModel is any other failed model request.
+	FailureModel = "model"
+)
+
+// documentError is a document that could not be read, with why.
+type documentError struct {
+	kind string
+	err  error
+}
+
+func (e *documentError) Error() string { return e.err.Error() }
+func (e *documentError) Unwrap() error { return e.err }
+
+// failureKind returns why a document could not be read. An error that does
+// not say (a custom Fetcher's) is a failed fetch.
+func failureKind(err error) string {
+	var de *documentError
+	if errors.As(err, &de) {
+		return de.kind
+	}
+	return FailureFetch
+}
+
+// modelFailure tells a model request that ran out of time from one that
+// failed otherwise.
+func modelFailure(err error) string {
+	var ne net.Error
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, os.ErrDeadlineExceeded) ||
+		(errors.As(err, &ne) && ne.Timeout()) {
+		return FailureModelTimeout
+	}
+	return FailureModel
+}
+
+// retryable reports whether a failure may pass on another attempt: a model
+// that was busy or a server that was down, not a document that cannot be
+// read.
+func retryable(kind string) bool {
+	return kind == FailureModelTimeout || kind == FailureModel || kind == FailureFetch
 }
 
 // DocumentResult is what one run did with one document. It holds counts, not
@@ -95,6 +155,8 @@ type DocumentResult struct {
 	Rejected   int    `json:"rejected,omitempty"`
 	ReadingID  string `json:"reading_id,omitempty"`
 	Error      string `json:"error,omitempty"`
+	// Failure is why the document could not be read (Failure* kinds).
+	Failure string `json:"failure,omitempty"`
 	// Stored is what was (or, in a dry run, would be) stored; it quotes the
 	// document, so callers show it only where document text may be shown.
 	Stored []review.StoredStatement `json:"-"`
@@ -111,6 +173,8 @@ type DocumentRun struct {
 	Statements int  `json:"statements"`
 	Rejected   int  `json:"rejected"`
 	DryRun     bool `json:"dry_run,omitempty"`
+	// Failures counts the failed documents by why (Failure* kinds).
+	Failures map[string]int `json:"failures,omitempty"`
 }
 
 // ReadDocuments has the document model read the documents the root publishes,
@@ -157,6 +221,9 @@ func ReadDocuments(ctx context.Context, g graph.Graph, store review.DocumentStat
 			run.Skipped++
 			continue
 		}
+		if opts.Skip != nil && opts.Skip(src.FileID) {
+			continue
+		}
 		if opts.Max > 0 && run.Read+run.Failed >= opts.Max {
 			run.Remaining++
 			continue
@@ -165,9 +232,7 @@ func ReadDocuments(ctx context.Context, g graph.Graph, store review.DocumentStat
 		res := DocumentResult{URL: src.URL, FileID: src.FileID}
 		text, sha, err := opts.Fetcher.Document(ctx, src)
 		if err != nil {
-			run.Failed++
-			res.Error = err.Error()
-			run.Documents = append(run.Documents, res)
+			run.fail(&res, err)
 			continue
 		}
 		res.SHA256 = sha
@@ -180,9 +245,10 @@ func ReadDocuments(ctx context.Context, g graph.Graph, store review.DocumentStat
 
 		reading, err := readDocument(ctx, opts.Model, opts.ModelID, src.URL, text, opts.ChunkChars, opts.OnChunk)
 		if err != nil {
-			run.Failed++
-			res.Error = err.Error()
-			run.Documents = append(run.Documents, res)
+			if ctx.Err() != nil {
+				return run, ctx.Err()
+			}
+			run.fail(&res, err)
 			continue
 		}
 
@@ -210,6 +276,17 @@ func ReadDocuments(ctx context.Context, g graph.Graph, store review.DocumentStat
 	}
 
 	return run, nil
+}
+
+// fail records a document that could not be read, and why.
+func (run *DocumentRun) fail(res *DocumentResult, err error) {
+	res.Error, res.Failure = err.Error(), failureKind(err)
+	run.Failed++
+	if run.Failures == nil {
+		run.Failures = make(map[string]int)
+	}
+	run.Failures[res.Failure]++
+	run.Documents = append(run.Documents, *res)
 }
 
 // undoReadings undoes the stored readings of a File, and of the same version

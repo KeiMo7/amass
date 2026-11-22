@@ -112,8 +112,9 @@ func TestDocumentCompanionSubmitsLeads(t *testing.T) {
 	defer act.mu.Unlock()
 	got := append([]string(nil), act.submitted...)
 	sort.Strings(got)
-	// a host and a range are leads; the organizations are named only in
-	// relation to each other, and the product is no lead
+	// a host and a range are leads; the organizations, named only in relation
+	// to each other, wait: with a budget of 3 they have no share of it, and the
+	// product is no lead
 	want := []string{"FQDN:vpn.herkimer.edu", "Netblock:192.0.2.0/24"}
 	if len(got) != len(want) {
 		t.Fatalf("submitted %v, want %v", got, want)
@@ -124,7 +125,7 @@ func TestDocumentCompanionSubmitsLeads(t *testing.T) {
 		}
 	}
 	if act.counts[ActivityDocumentsRead] != 1 || act.counts[ActivityLeads] != 2 ||
-		act.counts[ActivityLeadsWaiting] != 0 {
+		act.counts[ActivityLeadsWaiting] != 2 {
 		t.Fatalf("counts %v", act.counts)
 	}
 
@@ -245,21 +246,25 @@ func TestAnchoredOrganizations(t *testing.T) {
 	}
 }
 
-// The companion submits an anchored organization with its anchor, and holds
-// back one named alone without marking it seen, so a later document that ties
-// it to an anchor still makes it a lead.
-func TestDocumentCompanionAnchorsOrganizations(t *testing.T) {
+// Leads with an anchor go first. An organization named alone goes only while
+// no other lead waits and within its share of the budget (one in five of 5
+// here); one still waiting goes ahead as soon as a later document ties it to
+// an anchor.
+func TestDocumentCompanionRanksOrganizations(t *testing.T) {
 	store := &companionStore{runStore{props: map[string]oam.Property{}}}
-	c := &DocumentCompanion{Graph: documentFixture(), Store: store,
+	c := &DocumentCompanion{Graph: documentFixture(), Store: store, MaxLeads: 5,
 		Journal: &review.Journal{Path: filepath.Join(t.TempDir(), "review.jsonl")}, ModelID: "test-model"}
 	st := &companionRun{seen: map[string]bool{}}
 	act := &companionActivity{counts: map[string]int{}}
 	run := collect.Run{ID: "r"}
 
 	c.submitLeads(context.Background(), run, act.activity(), st, DocumentResult{Stored: []review.StoredStatement{
+		{Kind: FindingAsset, Subject: "Apex Catering Services", SubjectType: "Organization"},
 		{Kind: FindingAsset, Subject: "Zenith Facilities Group", SubjectType: "Organization"}}})
-	if len(act.submitted) != 0 {
-		t.Fatalf("submitted %v for an organization named alone", act.submitted)
+	if len(act.submitted) != 1 || act.submitted[0] != "Organization:Apex Catering Services" ||
+		act.counts[ActivityLeadsWaiting] != 1 {
+		t.Fatalf("submitted %v, counts %v: want one organization named alone, one waiting", act.submitted,
+			act.counts)
 	}
 
 	c.submitLeads(context.Background(), run, act.activity(), st, DocumentResult{Stored: []review.StoredStatement{
@@ -267,8 +272,29 @@ func TestDocumentCompanionAnchorsOrganizations(t *testing.T) {
 			Predicate: "website", Object: "https://zenithfacilities.example/", ObjectType: "URL"}}})
 	got := append([]string(nil), act.submitted...)
 	sort.Strings(got)
-	if len(got) != 2 || got[0] != "Organization:Zenith Facilities Group" ||
-		got[1] != "URL:https://zenithfacilities.example/" {
-		t.Fatalf("submitted %v", got)
+	want := []string{"Organization:Apex Catering Services", "Organization:Zenith Facilities Group",
+		"URL:https://zenithfacilities.example/"}
+	if len(got) != len(want) || act.counts[ActivityLeadsWaiting] != 0 {
+		t.Fatalf("submitted %v, counts %v, want %v", got, act.counts, want)
+	}
+	for i := range want {
+		if got[i] != want[i] {
+			t.Fatalf("submitted %v, want %v", got, want)
+		}
+	}
+}
+
+// A run tries a document that cannot be read once, and one whose failure may
+// pass twice, so documents that always fail do not fill every pass.
+func TestCompanionSkipsFailedDocuments(t *testing.T) {
+	st := &companionRun{failed: map[string]failedDocument{
+		"extract": {kind: FailureExtract, attempts: 1},
+		"busy":    {kind: FailureModelTimeout, attempts: 1},
+		"down":    {kind: FailureFetch, attempts: 2},
+	}}
+	for id, want := range map[string]bool{"extract": true, "busy": false, "down": true, "new": false} {
+		if got := st.skip(id); got != want {
+			t.Errorf("skip(%q) = %v, want %v", id, got, want)
+		}
 	}
 }

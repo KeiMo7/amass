@@ -111,3 +111,13 @@ func TestIsTextObject(t *testing.T) {
 		t.Error("an object without an operator, or of binary bytes, accepted")
 	}
 }
+
+// Kerning inside a word (a narrow TJ adjustment, or a fractional one) does not
+// split it; a gap about as wide as a space does.
+func TestPDFKerningKeepsWords(t *testing.T) {
+	var text textBuilder
+	pdfTextObject([]byte(" [(MV)-120(CC)-300(Theat)-111.5(er)-12.5(s)-250(Hall)] TJ "), &text)
+	if got := text.b.String(); got != "MVCC Theaters Hall" {
+		t.Errorf("text %q, want %q", got, "MVCC Theaters Hall")
+	}
+}

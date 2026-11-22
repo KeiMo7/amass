@@ -50,6 +50,10 @@ type OllamaModel struct {
 	noThink *atomic.Bool
 }
 
+// ErrReplyLength is a reply cut off at the token limit (num_predict or
+// num_ctx): its text is incomplete.
+var ErrReplyLength = errors.New("reply hit the token limit")
+
 var _ Model = OllamaModel{}
 var _ StructuredModel = OllamaModel{}
 
@@ -239,7 +243,8 @@ func (m OllamaModel) chat(ctx context.Context, history []Message, specs []ToolSp
 	out.InputTokens = payload.PromptEvalCount
 	out.OutputTokens = payload.EvalCount
 	if payload.DoneReason == "length" {
-		return out, fmt.Errorf("ollama reply hit the %v-token limit (num_ctx/num_predict); raise -context-tokens or -max-tokens", options["num_ctx"])
+		return out, fmt.Errorf("ollama %w (num_ctx %v, num_predict %v); raise -context-tokens or -max-tokens",
+			ErrReplyLength, options["num_ctx"], options["num_predict"])
 	}
 
 	return out, nil

@@ -7,6 +7,8 @@ package cli
 import (
 	"fmt"
 	"io"
+	"sort"
+	"strings"
 
 	"github.com/owasp-amass/amass/v5/internal/ai"
 	"github.com/owasp-amass/amass/v5/internal/review"
@@ -25,7 +27,7 @@ func writeDocumentRun(out io.Writer, root string, run ai.DocumentRun) error {
 	}
 	for _, d := range run.Documents {
 		if d.Error != "" {
-			_, _ = fmt.Fprintf(out, "%s: %s\n", d.URL, d.Error)
+			_, _ = fmt.Fprintf(out, "%s: failed (%s): %s\n", d.URL, d.Failure, d.Error)
 			continue
 		}
 		category := d.Category
@@ -48,6 +50,19 @@ func writeDocumentRun(out io.Writer, root string, run ai.DocumentRun) error {
 
 	_, err := fmt.Fprintf(out, "read %d documents, skipped %d already read, %d remaining, failed %d: "+
 		"%d findings, %d rejected\n", run.Read, run.Skipped, run.Remaining, run.Failed, run.Statements, run.Rejected)
+	if err != nil || len(run.Failures) == 0 {
+		return err
+	}
+	kinds := make([]string, 0, len(run.Failures))
+	for k := range run.Failures {
+		kinds = append(kinds, k)
+	}
+	sort.Strings(kinds)
+	parts := make([]string, 0, len(kinds))
+	for _, k := range kinds {
+		parts = append(parts, fmt.Sprintf("%s %d", k, run.Failures[k]))
+	}
+	_, err = fmt.Fprintf(out, "failed by why: %s\n", strings.Join(parts, ", "))
 	return err
 }
 

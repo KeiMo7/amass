@@ -150,10 +150,7 @@ var anchorTypes = map[string]bool{"FQDN": true, "URL": true, "IPAddress": true, 
 	"AutonomousSystem": true, "StreetAddress": true, "Phone": true, "Identifier": true}
 
 // anchoredOrganizations returns the organizations a document's findings relate
-// to an anchor (an asset of one of anchorTypes), keyed by orgKey. A name on
-// its own gives the engine nothing to collect from: it can only search the
-// registries by that name, where vendors and units of the publisher match
-// nothing or the wrong body.
+// to an anchor (an asset of one of anchorTypes), keyed by orgKey.
 func anchoredOrganizations(stored []review.StoredStatement) map[string]bool {
 	out := make(map[string]bool)
 	for _, s := range stored {
@@ -170,9 +167,12 @@ func anchoredOrganizations(stored []review.StoredStatement) map[string]bool {
 	return out
 }
 
-// anchoredLead reports whether a lead may go to the engine: any lead but an
-// organization, and an organization only when the document ties it to an
-// anchor. An organization left out is still stored as a finding.
+// anchoredLead reports whether a lead has an anchor: any lead but an
+// organization is one, and an organization has one when the document ties it
+// to one. Leads with an anchor go to the engine first; an organization named
+// alone goes only while no other lead waits, within a share of the budget
+// (see next), since a name alone gives the engine only the registries to
+// search, where it matches nothing or the wrong body as often as not.
 func anchoredLead(l documentLead, anchored map[string]bool) bool {
 	if _, ok := l.asset.(oamorg.Organization); !ok {
 		return true

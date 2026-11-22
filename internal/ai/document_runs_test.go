@@ -157,12 +157,62 @@ func TestReadDocuments(t *testing.T) {
 	delete(fetcher.texts, "https://www.colgate.edu/a.pdf")
 	opts.Reread = true
 	run, err = ReadDocuments(context.Background(), g, store, j, g.Assets["colgate.edu"], opts)
-	if err != nil || run.Failed != 1 || run.Read != 2 {
+	if err != nil || run.Failed != 1 || run.Read != 2 || run.Failures[FailureFetch] != 1 {
 		t.Fatalf("reread %+v, %v", run, err)
 	}
+	for _, d := range run.Documents {
+		if d.URL == "https://www.colgate.edu/a.pdf" && d.Failure != FailureFetch {
+			t.Errorf("failed document %+v, want failure %q", d, FailureFetch)
+		}
+	}
+
+	// a File the caller skips is neither fetched nor counted
+	fetcher.fetched = nil
+	opts.Skip = func(id string) bool { return id == "f-a" }
+	run, err = ReadDocuments(context.Background(), g, store, j, g.Assets["colgate.edu"], opts)
+	if err != nil || run.Failed != 0 || run.Remaining != 0 {
+		t.Fatalf("run skipping a %+v, %v", run, err)
+	}
+	for _, u := range fetcher.fetched {
+		if u == "https://www.colgate.edu/a.pdf" {
+			t.Fatal("a skipped File was fetched")
+		}
+	}
+	opts.Skip = nil
 
 	if _, err := ReadDocuments(context.Background(), g, store, j, g.Assets["colgate.edu"],
 		DocumentRunOptions{}); err == nil {
 		t.Fatal("a run without a document model read documents")
+	}
+}
+
+// Each failure says why: a custom fetcher's error is a failed fetch, an
+// oversized download is too large, and a model request that ran out of time
+// is told from one that failed otherwise. Only the failures that may pass are
+// retried.
+func TestFailureKinds(t *testing.T) {
+	for _, tc := range []struct {
+		err  error
+		want string
+	}{
+		{errors.New("status 404 Not Found"), FailureFetch},
+		{&documentError{kind: FailureUnsupported, err: errors.New("x")}, FailureUnsupported},
+		{fmt.Errorf("wrapped: %w", &documentError{kind: FailureExtract, err: errors.New("x")}), FailureExtract},
+		{&documentError{kind: modelFailure(fmt.Errorf("post: %w", context.DeadlineExceeded)), err: errors.New("x")},
+			FailureModelTimeout},
+		{&documentError{kind: modelFailure(errors.New("status 500")), err: errors.New("x")}, FailureModel},
+	} {
+		if got := failureKind(tc.err); got != tc.want {
+			t.Errorf("failureKind(%v) = %q, want %q", tc.err, got, tc.want)
+		}
+	}
+	if !errors.As(fmt.Errorf("fetch: %w", tooLargeError{max: 10}), new(tooLargeError)) {
+		t.Error("an oversized download is not recognized")
+	}
+	for kind, want := range map[string]bool{FailureFetch: true, FailureModel: true, FailureModelTimeout: true,
+		FailureUnsupported: false, FailureTooLarge: false, FailureExtract: false} {
+		if retryable(kind) != want {
+			t.Errorf("retryable(%q) = %v", kind, !want)
+		}
 	}
 }

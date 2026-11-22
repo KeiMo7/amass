@@ -19,7 +19,6 @@ package identity
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"regexp"
@@ -99,11 +98,14 @@ func (p *identity) check(e *et.Event) error {
 
 	tenant := p.entraTenant(e, e.Entity, host)
 	ns := p.userRealm(e, host)
-	switch {
-	case tenant != nil && ns != "":
-		p.property(e, tenant, "namespace_type", ns)
-	case ns != "":
-		p.property(e, e.Entity, "namespace_type", ns)
+	if ns != "" {
+		owner := e.Entity
+		if tenant != nil {
+			owner = tenant
+		}
+		ctx, cancel := context.WithTimeout(e.Session.Ctx(), 10*time.Second)
+		support.AddProperty(ctx, e.Session, owner, "namespace_type", ns)
+		cancel()
 	}
 
 	// A confirmed Microsoft tenant (either probe) means GetFederationInformation
@@ -131,23 +133,28 @@ func (p *identity) entraTenant(e *et.Event, apex *dbt.Entity, host string) *dbt.
 		return nil
 	}
 
-	m := guidInIssuer.FindStringSubmatch(resp.Body)
-	if len(m) < 2 {
+	guid := tenantID(resp.Body)
+	if guid == "" {
 		return nil
 	}
-	guid := strings.ToLower(m[1])
-
-	ident, err := e.Session.DB().CreateAsset(ctx, &oamgen.Identifier{
-		UniqueID: fmt.Sprintf("%s:%s", oamgen.AzureTenantID, guid), ID: guid, Type: oamgen.AzureTenantID,
-	})
-	if err != nil || ident == nil {
+	ident := support.LinkAsset(ctx, e.Session, apex, "identity_tenant", &oamgen.Identifier{
+		UniqueID: oamgen.AzureTenantID + ":" + guid, ID: guid, Type: oamgen.AzureTenantID,
+	}, p.source)
+	if ident == nil {
 		return nil
 	}
-
-	p.edge(ctx, e, apex, ident, "identity_tenant")
 	e.Session.Log().Info("Entra tenant resolved", "domain", host, "tenant", guid,
 		slog.Group("plugin", "name", p.name, "handler", p.name+"-Handler"))
 	return ident
+}
+
+// tenantID returns the Entra tenant GUID in the issuer of an OpenID
+// configuration document, lower-cased, or "".
+func tenantID(body string) string {
+	if m := guidInIssuer.FindStringSubmatch(body); len(m) == 2 {
+		return strings.ToLower(m[1])
+	}
+	return ""
 }
 
 var nameSpaceType = regexp.MustCompile(`(?i)<NameSpaceType>\s*([A-Za-z]+)\s*</NameSpaceType>`)
@@ -168,7 +175,13 @@ func (p *identity) userRealm(e *et.Event, host string) string {
 		return ""
 	}
 
-	m := nameSpaceType.FindStringSubmatch(resp.Body)
+	return namespaceType(resp.Body)
+}
+
+// namespaceType returns the NameSpaceType of a getuserrealm.srf answer,
+// "managed" or "federated", or "" for Unknown or none.
+func namespaceType(body string) string {
+	m := nameSpaceType.FindStringSubmatch(body)
 	if len(m) < 2 {
 		return ""
 	}
@@ -194,7 +207,36 @@ func (p *identity) federation(e *et.Event, apex *dbt.Entity, host string) {
 	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 20*time.Second)
 	defer cancel()
 
-	body := `<?xml version="1.0" encoding="utf-8"?>` +
+	resp, err := amasshttp.RequestWebPage(ctx, e.Session.Clients().General, &amasshttp.Request{
+		URL:    "https://autodiscover-s.outlook.com/autodiscover/autodiscover.svc",
+		Method: http.MethodPost,
+		Header: amasshttp.Header{
+			"Content-Type": []string{"text/xml; charset=utf-8"},
+			"SOAPAction":   []string{`"` + fedInfoAction + `"`},
+			"User-Agent":   []string{"AutodiscoverClient"},
+		},
+		Body: federationRequest(host),
+	})
+	if err != nil || resp == nil || resp.StatusCode != http.StatusOK {
+		return
+	}
+
+	var n int
+	for _, sib := range federationSiblings(resp.Body, host) {
+		if support.LinkAsset(ctx, e.Session, apex, "federated_with", &oamdns.FQDN{Name: sib}, p.source) != nil {
+			n++
+		}
+	}
+	if n > 0 {
+		e.Session.Log().Info("tenant federation mapped", "domain", host, "siblings", n,
+			slog.Group("plugin", "name", p.name, "handler", p.name+"-Handler"))
+	}
+}
+
+// federationRequest returns the GetFederationInformation SOAP request for a
+// domain.
+func federationRequest(host string) string {
+	return `<?xml version="1.0" encoding="utf-8"?>` +
 		`<soap:Envelope xmlns:a="http://www.w3.org/2005/08/addressing" ` +
 		`xmlns:soap="http://schemas.xmlsoap.org/soap/envelope/" ` +
 		`xmlns:autodiscover="http://schemas.microsoft.com/exchange/2010/Autodiscover">` +
@@ -206,66 +248,25 @@ func (p *identity) federation(e *et.Event, apex *dbt.Entity, host string) {
 		`<soap:Body><autodiscover:GetFederationInformationRequestMessage><autodiscover:Request>` +
 		`<autodiscover:Domain>` + host + `</autodiscover:Domain>` +
 		`</autodiscover:Request></autodiscover:GetFederationInformationRequestMessage></soap:Body></soap:Envelope>`
+}
 
-	resp, err := amasshttp.RequestWebPage(ctx, e.Session.Clients().General, &amasshttp.Request{
-		URL:    "https://autodiscover-s.outlook.com/autodiscover/autodiscover.svc",
-		Method: http.MethodPost,
-		Header: amasshttp.Header{
-			"Content-Type": []string{"text/xml; charset=utf-8"},
-			"SOAPAction":   []string{`"` + fedInfoAction + `"`},
-			"User-Agent":   []string{"AutodiscoverClient"},
-		},
-		Body: body,
-	})
-	if err != nil || resp == nil || resp.StatusCode != http.StatusOK {
-		return
-	}
-
+// federationSiblings returns the domains a GetFederationInformation answer
+// lists as sharing the tenant, lower-cased and each once, without the domain
+// itself, its subdomains or Microsoft's *.onmicrosoft.com routing names.
+func federationSiblings(body, host string) []string {
 	seen := map[string]bool{host: true}
-	var n int
-	for _, m := range siblingDomain.FindAllStringSubmatch(resp.Body, -1) {
+	var out []string
+	for _, m := range siblingDomain.FindAllStringSubmatch(body, -1) {
 		sib := strings.TrimSuffix(strings.ToLower(strings.TrimSpace(m[1])), ".")
 		if sib == "" || seen[sib] || !strings.Contains(sib, ".") {
 			continue
 		}
 		seen[sib] = true
-		// Skip the seed's own subdomains and Microsoft's routing domains; a
-		// *.onmicrosoft.com name is the tenant's routing label, not a sibling.
+		// a *.onmicrosoft.com name is the tenant's routing label, not a sibling
 		if strings.HasSuffix(sib, "."+host) || strings.HasSuffix(sib, ".onmicrosoft.com") {
 			continue
 		}
-
-		sibEnt, err := e.Session.DB().CreateAsset(ctx, &oamdns.FQDN{Name: sib})
-		if err != nil || sibEnt == nil {
-			continue
-		}
-		p.edge(ctx, e, apex, sibEnt, "federated_with")
-		n++
+		out = append(out, sib)
 	}
-	if n > 0 {
-		e.Session.Log().Info("tenant federation mapped", "domain", host, "siblings", n,
-			slog.Group("plugin", "name", p.name, "handler", p.name+"-Handler"))
-	}
-}
-
-func (p *identity) edge(ctx context.Context, e *et.Event, from, to *dbt.Entity, label string) {
-	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &oamgen.SimpleRelation{Name: label},
-		FromEntity: from,
-		ToEntity:   to,
-	})
-	if err != nil || edge == nil {
-		return
-	}
-	_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &oamgen.SourceProperty{
-		Source:     p.source.Name,
-		Confidence: p.source.Confidence,
-	})
-}
-
-func (p *identity) property(e *et.Event, entity *dbt.Entity, name, value string) {
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 10*time.Second)
-	defer cancel()
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, entity,
-		&oamgen.SimpleProperty{PropertyName: name, PropertyValue: value})
+	return out
 }

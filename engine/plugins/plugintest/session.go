@@ -34,15 +34,16 @@ import (
 // other methods panic when called.
 type Session struct {
 	et.Session
-	id     uuid.UUID
-	ctx    context.Context
-	cfg    *config.Config
-	db     repository.Repository
-	log    *slog.Logger
-	stats  *et.SessionStats
-	scope  et.Scope
-	http   *et.SessionHTTPClients
-	ranger cidranger.Ranger
+	id      uuid.UUID
+	ctx     context.Context
+	cfg     *config.Config
+	db      repository.Repository
+	log     *slog.Logger
+	stats   *et.SessionStats
+	scope   et.Scope
+	http    *et.SessionHTTPClients
+	ranger  cidranger.Ranger
+	backlog *Backlog
 }
 
 // NewSession returns a session over a new SQLite database, closed when the
@@ -65,7 +66,7 @@ func NewSession(t testing.TB) *Session {
 	s := &Session{id: uuid.New(), ctx: ctx, cfg: config.NewConfig(), db: db,
 		log: slog.New(slog.NewTextHandler(io.Discard, nil)), stats: &et.SessionStats{},
 		http:   &et.SessionHTTPClients{General: client, Probe: client, Crawl: client, Bulk: client},
-		ranger: cidranger.NewPCTrieRanger()}
+		ranger: cidranger.NewPCTrieRanger(), backlog: &Backlog{}}
 	s.scope = scope.New(s)
 
 	return s
@@ -97,7 +98,51 @@ func (s *Session) CIDRanger() cidranger.Ranger { return s.ranger }
 // Clients are plain HTTP clients, for tests that serve their own pages.
 func (s *Session) Clients() *et.SessionHTTPClients { return s.http }
 
+// Backlog returns the session's backlog, which keeps what is enqueued.
+func (s *Session) Backlog() et.Backlog { return s.backlog }
+
+// Enqueued returns the entities enqueued on the session's backlog so far.
+func (s *Session) Enqueued() []*dbt.Entity { return s.backlog.Entities() }
+
 type noSem struct{}
+
+// Backlog is the part of et.Backlog that plugin code under test uses: it
+// keeps the enqueued entities. The other methods panic when called.
+type Backlog struct {
+	et.Backlog
+	mu       sync.Mutex
+	entities []*dbt.Entity
+}
+
+// Enqueue keeps the entity.
+func (b *Backlog) Enqueue(e *dbt.Entity) error {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	b.entities = append(b.entities, e)
+	return nil
+}
+
+// Has reports whether the entity was enqueued.
+func (b *Backlog) Has(e *dbt.Entity) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	for _, x := range b.entities {
+		if x.ID == e.ID {
+			return true
+		}
+	}
+	return false
+}
+
+// Entities returns the entities enqueued so far.
+func (b *Backlog) Entities() []*dbt.Entity {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+
+	return append([]*dbt.Entity(nil), b.entities...)
+}
 
 func (noSem) Acquire() {}
 

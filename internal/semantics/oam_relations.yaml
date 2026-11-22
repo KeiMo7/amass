@@ -383,6 +383,15 @@ relations:
   - {source: Service, label: onion_location, relation_type: SimpleRelation, destination: URL,
      attribution: same_subject, purpose: web,
      note: "Tor onion address the service advertises for itself in its Onion-Location response header."}
+  - {source: Service, label: content_source, relation_type: SimpleRelation, destination: FQDN,
+     attribution: third_party, purpose: web,
+     note: "Host the service's Content-Security-Policy lets it load scripts, frames, connections or other content from."}
+  - {source: Service, label: allowed_origin, relation_type: SimpleRelation, destination: FQDN,
+     attribution: shared, purpose: web,
+     note: "Origin the service's CORS Access-Control-Allow-Origin or CSP frame-ancestors lets call or embed it; often a sibling site, sometimes a partner."}
+  - {source: Service, label: report_endpoint, relation_type: SimpleRelation, destination: URL,
+     attribution: third_party, purpose: web,
+     note: "Endpoint the service sends browser reports to (CSP report-uri, Report-To, Reporting-Endpoints, NEL)."}
   - {source: StorageBucket, label: provider, relation_type: SimpleRelation, destination: Organization,
      attribution: third_party, purpose: network,
      note: "The cloud provider that operates the bucket's global namespace (Amazon Web Services, Google Cloud, Microsoft Azure). It hosts the bucket but does not own the customer's data."}

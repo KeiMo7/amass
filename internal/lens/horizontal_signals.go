@@ -28,10 +28,13 @@ const (
 	// SigDNSDelegationSet is another apex delegated to the same full name
 	// server set of a provider that gives each account or zone its own set.
 	SigDNSDelegationSet = "dns-provider-delegation-set"
-	SigSharedMX         = "shared-mx"
-	SigDMARCReportsTo   = "dmarc-reports-to"
-	SigSPFAuthorizes    = "spf-authorizes"
-	SigOfficialWebsite  = "official-website"
+	// SigAllowedOrigin is another apex an organization's web service lets
+	// call or embed it (CORS, CSP frame-ancestors).
+	SigAllowedOrigin   = "allowed-origin"
+	SigSharedMX        = "shared-mx"
+	SigDMARCReportsTo  = "dmarc-reports-to"
+	SigSPFAuthorizes   = "spf-authorizes"
+	SigOfficialWebsite = "official-website"
 	// Shared service fingerprints: another apex whose service carries the
 	// same distinctive fingerprint Identifier as one of the org's services.
 	SigSharedAnalyticsID = "shared-analytics-id"
@@ -50,11 +53,12 @@ const (
 	matchHorWebsite       = "official_website"
 	matchHorFingerprint   = "shared_service_fingerprint"
 	matchHorDelegationSet = "provider_delegation_set"
+	matchHorAllowedOrigin = "allowed_origin"
 )
 
 var horizontalMatchers = map[string]bool{matchHorRegistrantOrg: true, matchHorCertOrg: true,
 	matchHorNameServer: true, matchHorMX: true, matchHorDMARC: true, matchHorSPF: true, matchHorWebsite: true,
-	matchHorFingerprint: true, matchHorDelegationSet: true}
+	matchHorFingerprint: true, matchHorDelegationSet: true, matchHorAllowedOrigin: true}
 
 var loadHorizontalCatalog = sync.OnceValues(func() (signalCatalog, error) {
 	var c signalCatalog

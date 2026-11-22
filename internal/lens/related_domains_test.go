@@ -376,3 +376,40 @@ func TestRelatedDomainsDelegationSet(t *testing.T) {
 		t.Error("a domain sharing only part of the delegation set was related")
 	}
 }
+
+// A domain a web service on one of the organization's hosts lets call or embed
+// it (CORS, frame-ancestors) is related on the supporting allowed-origin signal.
+func TestRelatedDomainsAllowedOrigin(t *testing.T) {
+	g := relatedDomainsGraph()
+	add := func(id, typ, key string) {
+		g.Assets[id] = graph.Asset{ID: id, Type: typ, Key: key, Content: map[string]any{"name": key}}
+	}
+	link := func(from, to, label string) {
+		g.Links = append(g.Links, graph.Relation{ID: label + from + to, FromID: from, ToID: to, Label: label,
+			Type: "SimpleRelation"})
+	}
+	add("fq_www_acme_net", "FQDN", "www.acme.net")
+	link("fq_acme_net", "fq_www_acme_net", "node")
+	add("svc_www", "Service", "svc_www")
+	link("fq_www_acme_net", "svc_www", "port")
+	add("fq_partner_app", "FQDN", "app.acme-partner.com")
+	link("svc_www", "fq_partner_app", "allowed_origin")
+
+	r, err := FindRelatedDomains(context.Background(), g, nil, "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, d := range r.Domains {
+		if d.Domain == "acme-partner.com" {
+			if len(d.SignalIDs) != 1 || d.SignalIDs[0] != SigAllowedOrigin ||
+				d.Confidence != HorizontalConfidence(SigAllowedOrigin) {
+				t.Errorf("acme-partner.com %+v: want the allowed-origin signal alone", d)
+			}
+			if _, strong := HorizontalScore(d.SignalIDs); strong {
+				t.Error("an allowed origin alone would expand scope")
+			}
+			return
+		}
+	}
+	t.Errorf("the allowed origin is not related: %+v", r.Domains)
+}

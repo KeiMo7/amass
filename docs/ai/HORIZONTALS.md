@@ -16,6 +16,7 @@ Horizontal correlation associates more registered (apex) domains with a target o
 | [Shared certificate subject organization](#cert-subject-org) | strong | identity | 0.75 |
 | [Shared name server](#shared-name-server) | supporting | infrastructure | 0.65 |
 | [Same DNS provider delegation set](#dns-provider-delegation-set) | supporting | infrastructure | 0.70 |
+| [Allowed cross-origin by the organization's site](#allowed-origin) | supporting | web | 0.55 |
 | [Shared mail exchanger](#shared-mx) | supporting | infrastructure | 0.60 |
 | [DMARC reports to the organization](#dmarc-reports-to) | strong | infrastructure | 0.70 |
 | [SPF authorizes the organization's senders](#spf-authorizes) | supporting | infrastructure | 0.55 |
@@ -100,6 +101,26 @@ Horizontal correlation associates more registered (apex) domains with a target o
 **Can still mislead when:**
 
 - A reseller, agency or managed-service provider can host many clients' zones in its own account, so the domains share an operator rather than an owner.
+
+<a id="allowed-origin"></a>
+## Allowed cross-origin by the organization's site
+
+`allowed-origin`: supporting web signal, weight 0.55 (confidence 55).
+
+**Finds:** Another registered domain that a web service on one of the organization's own hosts names in its CORS Access-Control-Allow-Origin or CSP frame-ancestors header, letting that domain call or embed it.
+
+**Why it counts:** Sites usually let their own sister sites (an application portal, a student system, a regional site) call their APIs or frame their pages, and they name them one by one. It is supporting rather than strong because partners and vendors are allowed the same way.
+
+**Guards:**
+
+- Only services on the organization's own hosts are read.
+- Only named origins count: a wildcard (*) or 'null' names no domain.
+- Never expands scope on its own.
+
+**Can still mislead when:**
+
+- A partner, payment provider or embedding vendor is allowed exactly like a sister site.
+- Some frameworks echo back whatever origin asked, so the header names the prober's origin rather than a chosen one; Amass's probes send no Origin header.
 
 <a id="shared-mx"></a>
 ## Shared mail exchanger

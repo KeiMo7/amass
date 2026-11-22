@@ -76,6 +76,25 @@
       ]
     },
     {
+      "id": "allowed-origin",
+      "title": "Allowed cross-origin by the organization's site",
+      "kind": "web",
+      "strength": "supporting",
+      "weight": 0.55,
+      "matcher": "allowed_origin",
+      "finds": "Another registered domain that a web service on one of the organization's own hosts names in its CORS Access-Control-Allow-Origin or CSP frame-ancestors header, letting that domain call or embed it.",
+      "rationale": "Sites usually let their own sister sites (an application portal, a student system, a regional site) call their APIs or frame their pages, and they name them one by one. It is supporting rather than strong because partners and vendors are allowed the same way.",
+      "guards": [
+        "Only services on the organization's own hosts are read.",
+        "Only named origins count: a wildcard (*) or 'null' names no domain.",
+        "Never expands scope on its own."
+      ],
+      "counter_indications": [
+        "A partner, payment provider or embedding vendor is allowed exactly like a sister site.",
+        "Some frameworks echo back whatever origin asked, so the header names the prober's origin rather than a chosen one; Amass's probes send no Origin header."
+      ]
+    },
+    {
       "id": "shared-mx",
       "title": "Shared mail exchanger",
       "kind": "infrastructure",

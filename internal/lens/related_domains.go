@@ -316,6 +316,7 @@ nsPivot:
 			}
 		}
 	}
+	allowedOriginPivot(ctx, g, ownApexes, add)
 	sharedDNSHostPivot(ctx, g, ownApexes, RRTypeNS, SigSharedNameServer, "shared name server", nsMaxApexes,
 		isNameServerProvider, add)
 	sharedDNSHostPivot(ctx, g, ownApexes, rrTypeMX, SigSharedMX, "shared mail exchanger", mxMaxApexes,
@@ -797,6 +798,67 @@ func delegationSetPivot(ctx context.Context, g graph.Graph, ownDRs []string,
 				FromID: e.FromID, FromType: "DomainRecord", ToID: e.ToID, ToType: "FQDN"}
 			if !add(apex, SigDNSDelegationSet, "same DNS provider delegation set", ownW, sibW) {
 				return
+			}
+		}
+	}
+}
+
+// Allowed-origin bounds: the hosts read under one apex, and the services and
+// origins read per host.
+const (
+	originMaxHosts    = 200
+	originMaxServices = 10
+	originMaxOrigins  = 50
+)
+
+// allowedOriginPivot finds the other apexes a web service on one of the
+// organization's own hosts lets call or embed it (Service --allowed_origin-->
+// FQDN, from CORS and CSP frame-ancestors), and adds them.
+func allowedOriginPivot(ctx context.Context, g graph.Graph, ownApexes []string,
+	add func(string, string, string, ...graph.WitnessEdge) bool) {
+	for _, apexID := range ownApexes {
+		hosts := []string{apexID}
+		if nodes, err := g.Edges(ctx, apexID, "out", "node", time.Time{}); err == nil {
+			for i, n := range nodes {
+				if i >= originMaxHosts {
+					break
+				}
+				hosts = append(hosts, n.ToID)
+			}
+		}
+		for _, hostID := range hosts {
+			ports, err := g.Edges(ctx, hostID, "out", "port", time.Time{})
+			if err != nil {
+				continue
+			}
+			for i, pe := range ports {
+				if i >= originMaxServices {
+					break
+				}
+				origins, err := g.Edges(ctx, pe.ToID, "out", "allowed_origin", time.Time{})
+				if err != nil {
+					continue
+				}
+				for j, oe := range origins {
+					if j >= originMaxOrigins {
+						break
+					}
+					o, err := g.GetAsset(ctx, oe.ToID)
+					if err != nil {
+						continue
+					}
+					apex := graph.RegisteredDomain(graph.FQDNName(o))
+					if apex == "" {
+						continue
+					}
+					portW := graph.WitnessEdge{EdgeID: pe.ID, Label: "port", RelationType: pe.Type,
+						FromID: pe.FromID, FromType: "FQDN", ToID: pe.ToID, ToType: "Service"}
+					originW := graph.WitnessEdge{EdgeID: oe.ID, Label: "allowed_origin", RelationType: oe.Type,
+						FromID: oe.FromID, FromType: "Service", ToID: oe.ToID, ToType: "FQDN"}
+					if !add(apex, SigAllowedOrigin, "allowed origin", portW, originW) {
+						return
+					}
+				}
 			}
 		}
 	}

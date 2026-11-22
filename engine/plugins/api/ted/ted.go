@@ -5,13 +5,13 @@
 package ted
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"errors"
 	"fmt"
 	"log/slog"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -122,22 +122,22 @@ func (h *awards) query(e *et.Event, orgent *dbt.Entity, name string) {
 	seen := map[string]bool{}
 	for _, n := range notices {
 		// The winner match is the attribution; the amount may be absent on the
-		// summary notice, so a matched award is recorded either way.
-		if !winnerMatches(name, flexStrings(n["winner-name"])) {
+		// summary notice, falling back to the tender value.
+		if !winnerMatches(name, support.JSONStrings(n["winner-name"])) {
 			continue
 		}
-		amount := flexFloat(n["total-value"])
-		currency := first(flexStrings(n["total-value-cur"]))
+		amount := support.JSONNumber(n["total-value"])
+		currency := support.JSONString(n["total-value-cur"])
 		if amount == 0 {
-			amount = flexFloat(n["tender-value"])
+			amount = support.JSONNumber(n["tender-value"])
 			if currency == "" {
-				currency = first(flexStrings(n["tender-value-cur"]))
+				currency = support.JSONString(n["tender-value-cur"])
 			}
 		}
 
-		id := first(flexStrings(n["publication-number"]))
+		id := support.JSONString(n["publication-number"])
 		if id == "" {
-			id = fmt.Sprintf("%s:%.0f", first(flexStrings(n["publication-date"])), amount)
+			id = fmt.Sprintf("%s:%.0f", support.JSONString(n["publication-date"]), amount)
 		}
 		if seen[id] {
 			continue
@@ -148,8 +148,8 @@ func (h *awards) query(e *et.Event, orgent *dbt.Entity, name string) {
 			id:       id,
 			amount:   amount,
 			currency: currency,
-			date:     firstNonEmpty(first(flexStrings(n["winner-decision-date"])), first(flexStrings(n["publication-date"]))),
-			buyer:    first(flexStrings(n["buyer-name"])),
+			date:     cmp.Or(support.JSONString(n["winner-decision-date"]), support.JSONString(n["publication-date"])),
+			buyer:    support.JSONString(n["buyer-name"]),
 		})
 	}
 }
@@ -160,6 +160,12 @@ type award struct {
 }
 
 func (h *awards) store(e *et.Event, orgent *dbt.Entity, a *award) {
+	// The Asset Database rejects a FundsTransfer with a non-positive amount,
+	// so a matched notice that carries no value is not stored.
+	if a.amount <= 0 {
+		return
+	}
+
 	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
 	defer cancel()
 
@@ -206,67 +212,4 @@ func (h *awards) store(e *et.Event, orgent *dbt.Entity, a *award) {
 // organization's name (semantics.SameOrgName).
 func winnerMatches(orgName string, winners []string) bool {
 	return slices.ContainsFunc(winners, func(w string) bool { return semantics.SameOrgName(orgName, w) })
-}
-
-// flexStrings extracts the string values from a TED field, whatever shape it
-// takes: a scalar, a number, a list, or a language-keyed map.
-func flexStrings(raw json.RawMessage) []string {
-	if len(raw) == 0 {
-		return nil
-	}
-
-	var s string
-	if json.Unmarshal(raw, &s) == nil {
-		if s == "" {
-			return nil
-		}
-		return []string{s}
-	}
-	var num json.Number
-	if json.Unmarshal(raw, &num) == nil {
-		return []string{num.String()}
-	}
-	var list []json.RawMessage
-	if json.Unmarshal(raw, &list) == nil {
-		var out []string
-		for _, item := range list {
-			out = append(out, flexStrings(item)...)
-		}
-		return out
-	}
-	var obj map[string]json.RawMessage
-	if json.Unmarshal(raw, &obj) == nil {
-		var out []string
-		for _, v := range obj {
-			out = append(out, flexStrings(v)...)
-		}
-		return out
-	}
-	return nil
-}
-
-// flexFloat extracts the first numeric value from a TED field of any shape.
-func flexFloat(raw json.RawMessage) float64 {
-	for _, s := range flexStrings(raw) {
-		if v, err := strconv.ParseFloat(strings.TrimSpace(s), 64); err == nil && v > 0 {
-			return v
-		}
-	}
-	return 0
-}
-
-func first(ss []string) string {
-	for _, s := range ss {
-		if strings.TrimSpace(s) != "" {
-			return s
-		}
-	}
-	return ""
-}
-
-func firstNonEmpty(a, b string) string {
-	if strings.TrimSpace(a) != "" {
-		return a
-	}
-	return b
 }

@@ -4,7 +4,11 @@
 
 package propublica
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/owasp-amass/amass/v5/engine/plugins/support"
+)
 
 func TestParseSearch(t *testing.T) {
 	body := []byte(`{"organizations":[
@@ -38,44 +42,13 @@ func TestParseOrg(t *testing.T) {
 		t.Fatalf("filings = %d", len(o.Filings))
 	}
 	// Contributions figure, as a number and as a numeric string.
-	if flexNum(o.Filings[0]["totcntrbgfts"]) != 120000000 {
-		t.Errorf("filing0 contrib = %v", flexNum(o.Filings[0]["totcntrbgfts"]))
+	if support.JSONNumber(o.Filings[0]["totcntrbgfts"]) != 120000000 {
+		t.Errorf("filing0 contrib = %v", support.JSONNumber(o.Filings[0]["totcntrbgfts"]))
 	}
-	if flexNum(o.Filings[1]["totcntrbgfts"]) != 95000000 {
-		t.Errorf("filing1 contrib = %v", flexNum(o.Filings[1]["totcntrbgfts"]))
+	if support.JSONNumber(o.Filings[1]["totcntrbgfts"]) != 95000000 {
+		t.Errorf("filing1 contrib = %v", support.JSONNumber(o.Filings[1]["totcntrbgfts"]))
 	}
-	if flexStr(o.Filings[0]["tax_prd_yr"]) != "2022" {
-		t.Errorf("filing0 year = %q", flexStr(o.Filings[0]["tax_prd_yr"]))
-	}
-}
-
-func TestFlexStr(t *testing.T) {
-	cases := map[string]string{
-		`"hello"`: "hello",
-		`1234`:    "1234",
-		`12.5`:    "12.5",
-		`null`:    "",
-		``:        "",
-	}
-	for raw, want := range cases {
-		if got := flexStr([]byte(raw)); got != want {
-			t.Errorf("flexStr(%q) = %q, want %q", raw, got, want)
-		}
-	}
-}
-
-func TestFlexNum(t *testing.T) {
-	cases := map[string]float64{
-		`1234`:     1234,
-		`"1234"`:   1234,
-		`" 12.5 "`: 12.5,
-		`"abc"`:    0,
-		`null`:     0,
-		`"1,000"`:  0, // commas are not stripped; not a valid float
-	}
-	for raw, want := range cases {
-		if got := flexNum([]byte(raw)); got != want {
-			t.Errorf("flexNum(%q) = %v, want %v", raw, got, want)
-		}
+	if support.JSONString(o.Filings[0]["tax_prd_yr"]) != "2022" {
+		t.Errorf("filing0 year = %q", support.JSONString(o.Filings[0]["tax_prd_yr"]))
 	}
 }

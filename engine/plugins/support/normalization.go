@@ -365,8 +365,9 @@ var transferDateLayouts = []string{
 
 // TransferDate returns a funds transfer's exchange date in RFC 3339, the form
 // the Asset Database accepts, from the date forms funding sources give: a
-// timestamp, a date ("2009-09-18", "09/18/2009"), a month ("2009-09") or a
-// year ("2019", for a fiscal or tax year), the last two as their first day.
+// timestamp, a date ("2009-09-18", "09/18/2009", or "2009-09-18+01:00" with a
+// zone offset, kept as that calendar day), a month ("2009-09") or a year
+// ("2019", for a fiscal or tax year), the last two as their first day.
 // A value in no known form is returned as given.
 func TransferDate(raw string) string {
 	s := strings.TrimSpace(raw)
@@ -374,6 +375,11 @@ func TransferDate(raw string) string {
 		if t, err := time.Parse(layout, s); err == nil {
 			return t.UTC().Format(time.RFC3339)
 		}
+	}
+	// A date with a zone offset (TED's "2024-03-01+01:00") names a calendar
+	// day, which converting to UTC would move, so the day is kept.
+	if t, err := time.Parse("2006-01-02Z07:00", s); err == nil {
+		return time.Date(t.Year(), t.Month(), t.Day(), 0, 0, 0, 0, time.UTC).Format(time.RFC3339)
 	}
 	return raw
 }

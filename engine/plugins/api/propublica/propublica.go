@@ -210,11 +210,11 @@ func (h *filings) storeFilings(e *et.Event, orgent *dbt.Entity, o *pubOrg) {
 		if i >= maxFilings {
 			break
 		}
-		amount := flexNum(f["totcntrbgfts"])
+		amount := support.JSONNumber(f["totcntrbgfts"])
 		if amount <= 0 {
 			continue
 		}
-		year := flexStr(f["tax_prd_yr"])
+		year := support.JSONString(f["tax_prd_yr"])
 
 		if orgacc == nil {
 			if orgacc = org.OrgCheckingAccount(e.Session, orgent, h.plugin.source); orgacc == nil {
@@ -239,29 +239,4 @@ func (h *filings) storeFilings(e *et.Event, orgent *dbt.Entity, o *pubOrg) {
 		}
 		cancel()
 	}
-}
-
-// flexStr renders a JSON value that may be a string or a number as a string.
-func flexStr(raw json.RawMessage) string {
-	if len(raw) == 0 {
-		return ""
-	}
-	var s string
-	if json.Unmarshal(raw, &s) == nil {
-		return s
-	}
-	var n json.Number
-	if json.Unmarshal(raw, &n) == nil {
-		return n.String()
-	}
-	return ""
-}
-
-// flexNum parses a JSON value that may be a number or a numeric string.
-func flexNum(raw json.RawMessage) float64 {
-	v, err := strconv.ParseFloat(strings.TrimSpace(flexStr(raw)), 64)
-	if err != nil {
-		return 0
-	}
-	return v
 }

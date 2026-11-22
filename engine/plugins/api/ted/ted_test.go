@@ -5,53 +5,10 @@
 package ted
 
 import (
-	"encoding/json"
 	"testing"
+
+	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 )
-
-func TestFlexStrings(t *testing.T) {
-	cases := []struct {
-		in   string
-		want []string
-	}{
-		{`"Acme Oy"`, []string{"Acme Oy"}},                              // scalar
-		{`["Acme Oy","Beta AB"]`, []string{"Acme Oy", "Beta AB"}},       // list
-		{`{"eng":"Acme","fin":"Acme Oy"}`, []string{"Acme", "Acme Oy"}}, // multilingual map
-		{`1234`, []string{"1234"}},                                      // number
-		{`null`, nil},
-	}
-	for _, c := range cases {
-		got := flexStrings(json.RawMessage(c.in))
-		if len(got) != len(c.want) {
-			t.Errorf("flexStrings(%s) = %v, want %v", c.in, got, c.want)
-			continue
-		}
-		set := map[string]bool{}
-		for _, g := range got {
-			set[g] = true
-		}
-		for _, w := range c.want {
-			if !set[w] {
-				t.Errorf("flexStrings(%s) = %v, missing %q", c.in, got, w)
-			}
-		}
-	}
-}
-
-func TestFlexFloat(t *testing.T) {
-	if got := flexFloat(json.RawMessage(`5000000`)); got != 5000000 {
-		t.Errorf("number = %v", got)
-	}
-	if got := flexFloat(json.RawMessage(`"2500000.50"`)); got != 2500000.50 {
-		t.Errorf("string = %v", got)
-	}
-	if got := flexFloat(json.RawMessage(`["0","750000"]`)); got != 750000 {
-		t.Errorf("list = %v", got)
-	}
-	if got := flexFloat(json.RawMessage(`"n/a"`)); got != 0 {
-		t.Errorf("non-numeric = %v", got)
-	}
-}
 
 func TestParseNoticesBothWrappers(t *testing.T) {
 	// The "notices" wrapper.
@@ -84,22 +41,22 @@ func TestExtractRealShapes(t *testing.T) {
 	}
 
 	// The first notice has a value but no winner — not an award to anyone.
-	if winnerMatches("Stadt Husum", flexStrings(notices[0]["winner-name"])) {
+	if winnerMatches("Stadt Husum", support.JSONStrings(notices[0]["winner-name"])) {
 		t.Error("notice 0 has no winner and should not match")
 	}
-	if flexFloat(notices[0]["total-value"]) != 900000 {
-		t.Errorf("notice 0 value = %v", flexFloat(notices[0]["total-value"]))
+	if support.JSONNumber(notices[0]["total-value"]) != 900000 {
+		t.Errorf("notice 0 value = %v", support.JSONNumber(notices[0]["total-value"]))
 	}
-	if first(flexStrings(notices[0]["total-value-cur"])) != "EUR" {
-		t.Errorf("notice 0 currency = %q", first(flexStrings(notices[0]["total-value-cur"])))
+	if support.JSONString(notices[0]["total-value-cur"]) != "EUR" {
+		t.Errorf("notice 0 currency = %q", support.JSONString(notices[0]["total-value-cur"]))
 	}
 
 	// The second notice names a winner (multilingual map) but carries no value.
-	if !winnerMatches("Planungsgruppe M+M AG", flexStrings(notices[1]["winner-name"])) {
+	if !winnerMatches("Planungsgruppe M+M AG", support.JSONStrings(notices[1]["winner-name"])) {
 		t.Error("notice 1 winner should match from the language-keyed map")
 	}
-	if first(flexStrings(notices[1]["buyer-name"])) != "Stadt Kiel" {
-		t.Errorf("notice 1 buyer = %q", first(flexStrings(notices[1]["buyer-name"])))
+	if support.JSONString(notices[1]["buyer-name"]) != "Stadt Kiel" {
+		t.Errorf("notice 1 buyer = %q", support.JSONString(notices[1]["buyer-name"]))
 	}
 }
 

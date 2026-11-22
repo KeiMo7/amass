@@ -4,10 +4,7 @@
 
 package usgrants
 
-import (
-	"encoding/json"
-	"testing"
-)
+import "testing"
 
 func TestParseNSF(t *testing.T) {
 	body := []byte(`{"response":{"award":[
@@ -110,14 +107,5 @@ func TestParseSBIR(t *testing.T) {
 	// No contract → id composed from title and year; amount from string.
 	if g[1].id != "sbir:Gadget_Study:2022" || g[1].amount != 750000 || g[1].date != "2022" {
 		t.Errorf("g1 = %+v", g[1])
-	}
-}
-
-func TestFlexNumStr(t *testing.T) {
-	if flexNum(json.RawMessage(`1200`)) != 1200 || flexNum(json.RawMessage(`"3400"`)) != 3400 {
-		t.Error("flexNum should parse number and numeric string")
-	}
-	if flexStr(json.RawMessage(`2024`)) != "2024" || flexStr(json.RawMessage(`"x"`)) != "x" {
-		t.Error("flexStr should render number and string")
 	}
 }

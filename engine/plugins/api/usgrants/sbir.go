@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strings"
 
+	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
@@ -49,14 +50,19 @@ func parseSBIR(body []byte) ([]grant, error) {
 
 	var out []grant
 	for _, a := range arr {
-		year := flexStr(a.AwardYear)
+		year := support.JSONString(a.AwardYear)
 		id := "sbir:" + a.Contract
 		if a.Contract == "" {
-			id = "sbir:" + strings.ReplaceAll(strings.TrimSpace(a.AwardTitle), " ", "_") + ":" + year
+			title := strings.TrimSpace(a.AwardTitle)
+			if title == "" {
+				// Nothing identifies the award, so it cannot be stored once.
+				continue
+			}
+			id = "sbir:" + strings.ReplaceAll(title, " ", "_") + ":" + year
 		}
 		out = append(out, grant{
 			id:        id,
-			amount:    flexNum(a.AwardAmount),
+			amount:    support.JSONNumber(a.AwardAmount),
 			date:      year,
 			agency:    a.Agency,
 			recipient: a.Firm,
@@ -84,7 +90,7 @@ func querySBIR(h *source, e *et.Event, orgent *dbt.Entity, name string) {
 	seen := map[string]bool{}
 	for i := range grants {
 		g := &grants[i]
-		if g.id == "sbir:" || !semantics.SameOrgName(name, g.recipient) || seen[g.id] {
+		if !semantics.SameOrgName(name, g.recipient) || seen[g.id] {
 			continue
 		}
 		seen[g.id] = true

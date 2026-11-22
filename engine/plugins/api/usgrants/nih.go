@@ -5,6 +5,7 @@
 package usgrants
 
 import (
+	"cmp"
 	"encoding/json"
 	"fmt"
 	"log/slog"
@@ -64,7 +65,7 @@ func parseNIH(body []byte) ([]grant, error) {
 			id:        "nih:" + p.ProjectNum,
 			amount:    amount,
 			date:      date,
-			agency:    firstNonEmpty(p.AgencyIcAdmin.Name, "National Institutes of Health"),
+			agency:    cmp.Or(p.AgencyIcAdmin.Name, "National Institutes of Health"),
 			recipient: p.Organization.OrgName,
 		})
 	}

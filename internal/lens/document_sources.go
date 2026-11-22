@@ -7,6 +7,7 @@ package lens
 import (
 	"context"
 	"sort"
+	"time"
 
 	"github.com/owasp-amass/amass/v5/internal/graph"
 )
@@ -34,6 +35,10 @@ type DocumentSource struct {
 	SHA256 string `json:"sha256,omitempty"`
 	// Statements counts the statements already stored on the File.
 	Statements int `json:"statements,omitempty"`
+	// Dated is the newest date the document's own metadata states, zero when
+	// it states none; Stale reports it older than DocumentStaleAge.
+	Dated time.Time `json:"dated,omitzero"`
+	Stale bool      `json:"stale,omitempty"`
 }
 
 // DocumentSources lists the Files stored from the URLs a domain or
@@ -98,6 +103,8 @@ func (s *scope) documentSource(f graph.Asset) (DocumentSource, error) {
 		src.RetrievedFrom = from
 	}
 	src.Statements = len(propertyValues(ev, propDocStatement))
+	src.Dated = documentDated(ev)
+	src.Stale = StaleDocument(src.Dated, time.Now())
 
 	steps, err := s.w.steps(f)
 	if err != nil {

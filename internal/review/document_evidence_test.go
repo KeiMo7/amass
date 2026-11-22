@@ -29,3 +29,16 @@ func TestWithoutDocumentEvidence(t *testing.T) {
 		t.Error("the proposal lost its document evidence")
 	}
 }
+
+// A bug-bounty declaration, like a document, is left out of what the
+// ownership model decides on.
+func TestWithoutDeclarationEvidence(t *testing.T) {
+	p := OwnershipProposal{
+		Signals:   []string{"identity via shared registrant", lens.DeclarationSignalKind + " via bug-bounty program scope FQDN"},
+		SignalIDs: []string{"shared_registrant_details", "bug_bounty_scope"},
+	}
+	q := withoutDocumentEvidence(p)
+	if len(q.Signals) != 1 || len(q.SignalIDs) != 1 || q.SignalIDs[0] != "shared_registrant_details" {
+		t.Errorf("signals %v, IDs %v", q.Signals, q.SignalIDs)
+	}
+}

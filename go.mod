@@ -25,8 +25,8 @@ require (
 	github.com/neo4j/neo4j-go-driver/v5 v5.28.6
 	github.com/nyaruka/phonenumbers v1.8.1
 	github.com/openrdap/rdap v0.10.2
-	github.com/owasp-amass/asset-db v0.24.6-0.20261122074658-a822d7dd0686
-	github.com/owasp-amass/open-asset-model v0.15.2-0.20261122074358-cbaaa6b3f91d
+	github.com/owasp-amass/asset-db v0.24.6-0.20261122144457-e5d1f7df002b
+	github.com/owasp-amass/open-asset-model v0.15.2-0.20261122144237-ac19332f38cd
 	github.com/owasp-amass/resolve v0.10.1
 	github.com/pioz/countries v0.2.2
 	github.com/samber/slog-common v0.22.0

@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"net"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -157,6 +158,9 @@ type DocumentResult struct {
 	Error      string `json:"error,omitempty"`
 	// Failure is why the document could not be read (Failure* kinds).
 	Failure string `json:"failure,omitempty"`
+	// Stale reports the document's own dates older than
+	// lens.DocumentStaleAge: its findings are stored, but give no leads.
+	Stale bool `json:"stale,omitempty"`
 	// Stored is what was (or, in a dry run, would be) stored; it quotes the
 	// document, so callers show it only where document text may be shown.
 	Stored []review.StoredStatement `json:"-"`
@@ -210,6 +214,16 @@ func ReadDocuments(ctx context.Context, g graph.Graph, store review.DocumentStat
 	if err != nil {
 		return run, err
 	}
+	// current documents first, so a run that stops early has read those
+	slices.SortStableFunc(sources, func(a, b lens.DocumentSource) int {
+		switch {
+		case a.Stale == b.Stale:
+			return 0
+		case b.Stale:
+			return -1
+		}
+		return 1
+	})
 
 	for _, src := range sources {
 		if ctx.Err() != nil {
@@ -229,7 +243,7 @@ func ReadDocuments(ctx context.Context, g graph.Graph, store review.DocumentStat
 			continue
 		}
 
-		res := DocumentResult{URL: src.URL, FileID: src.FileID}
+		res := DocumentResult{URL: src.URL, FileID: src.FileID, Stale: src.Stale}
 		text, sha, err := opts.Fetcher.Document(ctx, src)
 		if err != nil {
 			run.fail(&res, err)

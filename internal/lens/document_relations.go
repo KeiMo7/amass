@@ -244,7 +244,7 @@ func FindDocumentRelations(ctx context.Context, g graph.Graph, schema graph.Sche
 		}
 		for _, v := range values {
 			var st docStatement
-			if json.Unmarshal([]byte(v), &st) != nil || st.Kind != "relation" {
+			if json.Unmarshal([]byte(v), &st) != nil || st.Kind != "relation" || staleFinding(src.Stale, st.Predicate) {
 				continue
 			}
 			if err := r.add(src, st); err != nil {

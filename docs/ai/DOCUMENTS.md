@@ -126,8 +126,8 @@ for MCP-started runs:
   model that fails every document is treated as unavailable and doesn't hold
   the run.
 - **Activity:** `documents_read`, `chunks_read`, `statements`,
-  `document_failures` (and by kind), `document_errors`, `leads` and
-  `leads_waiting`.
+  `document_failures` (and by kind), `document_errors`, `documents_stale`,
+  `leads` and `leads_waiting`.
 
 ### Leads
 
@@ -157,10 +157,25 @@ for MCP-started runs:
 - An Organization is anchored when the same document relates it to an anchor
   type: FQDN, URL, IPAddress, Netblock, AutonomousSystem, StreetAddress, Phone
   or Identifier (`anchoredOrganizations`).
-- `next` submits anchored leads first. Organization-only leads go only while
-  nothing anchored waits, and only within `allow/orgOnlyShare` (a fifth) of
-  the allowance.
-- A queued Organization that a later document anchors is promoted.
+- Only anchored leads are queued. An organization named alone is a finding
+  only: it is not marked `seen`, so a later document that anchors it queues
+  it. (Real runs: 14 organization-only leads went out over two mvcc.edu runs,
+  none confirmed, and their failures tripped the confirmation-rate gate,
+  holding back the anchored leads behind them.)
+- Leads are submitted oldest first.
+
+**Stale documents:** `lens.DocumentSource.Dated` is the newest parseable
+`doc_modified`/`doc_created` (RFC 3339, `2006-01-02T15:04:05` or
+`2006-01-02`; years before 1990 are tool defaults and ignored), and `Stale`
+is set when it is older than `lens.DocumentStaleAge` (5 years). A stale
+document is read (after the current ones: `ReadDocuments` sorts stale last)
+and its findings stored, but:
+- the companion gives no leads from it (`DocumentResult.Stale`; counted as
+  `documents_stale`);
+- `lens.staleFinding` drops its findings from `FindDocumentRelations`,
+  `documentFindings` (duplicate and ownership signals) and
+  `rootDocumentFindings` (vendors, affiliation), except
+  `docFormerPredicates` (former names, mergers), which stay true.
 
 **Budget (`allowance`):**
 - It starts at `InitialDocumentLeads` (50), plus `leadsPerConfirmation` (2)

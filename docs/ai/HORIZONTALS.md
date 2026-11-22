@@ -17,6 +17,7 @@ Horizontal correlation associates more registered (apex) domains with a target o
 | [Shared name server](#shared-name-server) | supporting | infrastructure | 0.65 |
 | [Same DNS provider delegation set](#dns-provider-delegation-set) | supporting | infrastructure | 0.70 |
 | [Allowed cross-origin by the organization's site](#allowed-origin) | supporting | web | 0.55 |
+| [Listed by the organization's bug-bounty program](#bug-bounty-scope) | supporting | declaration | 0.70 |
 | [Shared mail exchanger](#shared-mx) | supporting | infrastructure | 0.60 |
 | [DMARC reports to the organization](#dmarc-reports-to) | strong | infrastructure | 0.70 |
 | [SPF authorizes the organization's senders](#spf-authorizes) | supporting | infrastructure | 0.55 |
@@ -121,6 +122,26 @@ Horizontal correlation associates more registered (apex) domains with a target o
 
 - A partner, payment provider or embedding vendor is allowed exactly like a sister site.
 - Some frameworks echo back whatever origin asked, so the header names the prober's origin rather than a chosen one; Amass's probes send no Origin header.
+
+<a id="bug-bounty-scope"></a>
+## Listed by the organization's bug-bounty program
+
+`bug-bounty-scope`: supporting declaration signal, weight 0.70 (confidence 70).
+
+**Finds:** Another registered domain that a public bug-bounty program lists in scope beside one of the organization's names, when the program is tied to the organization by its website, its exact name, the platform's verification TXT record on the organization's domain, or a link from the organization's security.txt.
+
+**Why it counts:** A program's scope is the organization's own public list of the assets it is responsible for, so the other domains it lists are usually the organization's. It is supporting rather than strong because it is review-only evidence: a scope can list a partner's or a vendor's domain, or a subsidiary that is a separate organization.
+
+**Guards:**
+
+- Only programs tied to the organization count.
+- Names under cloud providers' hosting domains and the platforms' own sites are skipped.
+- Never expands scope on its own.
+
+**Can still mislead when:**
+
+- A vendor-hosted tenant or a partner's system can be listed so researchers may test it.
+- A parent's program can cover subsidiaries and acquisitions that are separate organizations.
 
 <a id="shared-mx"></a>
 ## Shared mail exchanger

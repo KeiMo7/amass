@@ -14,6 +14,7 @@ import (
 
 	"github.com/owasp-amass/amass/v5/internal/collect"
 	"github.com/owasp-amass/amass/v5/internal/graph/graphtest"
+	"github.com/owasp-amass/amass/v5/internal/lens"
 	"github.com/owasp-amass/amass/v5/internal/review"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
@@ -113,8 +114,7 @@ func TestDocumentCompanionSubmitsLeads(t *testing.T) {
 	got := append([]string(nil), act.submitted...)
 	sort.Strings(got)
 	// a host and a range are leads; the organizations, named only in relation
-	// to each other, wait: with a budget of 3 they have no share of it, and the
-	// product is no lead
+	// to each other, are findings only, and the product is no lead
 	want := []string{"FQDN:vpn.herkimer.edu", "Netblock:192.0.2.0/24"}
 	if len(got) != len(want) {
 		t.Fatalf("submitted %v, want %v", got, want)
@@ -125,7 +125,7 @@ func TestDocumentCompanionSubmitsLeads(t *testing.T) {
 		}
 	}
 	if act.counts[ActivityDocumentsRead] != 1 || act.counts[ActivityLeads] != 2 ||
-		act.counts[ActivityLeadsWaiting] != 2 {
+		act.counts[ActivityLeadsWaiting] != 0 {
 		t.Fatalf("counts %v", act.counts)
 	}
 
@@ -248,11 +248,10 @@ func TestAnchoredOrganizations(t *testing.T) {
 	}
 }
 
-// Leads with an anchor go first. An organization named alone goes only while
-// no other lead waits and within its share of the budget (one in five of 5
-// here); one still waiting goes ahead as soon as a later document ties it to
+// An organization a document names alone is a finding, not a lead, and does
+// not wait for the budget; it becomes a lead once a later document ties it to
 // an anchor.
-func TestDocumentCompanionRanksOrganizations(t *testing.T) {
+func TestDocumentCompanionOrganizationLeads(t *testing.T) {
 	store := &companionStore{runStore{props: map[string]oam.Property{}}}
 	c := &DocumentCompanion{Graph: documentFixture(), Store: store, MaxLeads: 5,
 		Journal: &review.Journal{Path: filepath.Join(t.TempDir(), "review.jsonl")}, ModelID: "test-model"}
@@ -263,10 +262,8 @@ func TestDocumentCompanionRanksOrganizations(t *testing.T) {
 	c.submitLeads(context.Background(), run, act.activity(), st, DocumentResult{Stored: []review.StoredStatement{
 		{Kind: FindingAsset, Subject: "Apex Catering Services", SubjectType: "Organization"},
 		{Kind: FindingAsset, Subject: "Zenith Facilities Group", SubjectType: "Organization"}}})
-	if len(act.submitted) != 1 || act.submitted[0] != "Organization:Apex Catering Services" ||
-		act.counts[ActivityLeadsWaiting] != 1 {
-		t.Fatalf("submitted %v, counts %v: want one organization named alone, one waiting", act.submitted,
-			act.counts)
+	if len(act.submitted) != 0 || act.counts[ActivityLeadsWaiting] != 0 {
+		t.Fatalf("submitted %v, counts %v: organizations named alone are not leads", act.submitted, act.counts)
 	}
 
 	c.submitLeads(context.Background(), run, act.activity(), st, DocumentResult{Stored: []review.StoredStatement{
@@ -274,8 +271,7 @@ func TestDocumentCompanionRanksOrganizations(t *testing.T) {
 			Predicate: "website", Object: "https://zenithfacilities.example/", ObjectType: "URL"}}})
 	got := append([]string(nil), act.submitted...)
 	sort.Strings(got)
-	want := []string{"Organization:Apex Catering Services", "Organization:Zenith Facilities Group",
-		"URL:https://zenithfacilities.example/"}
+	want := []string{"Organization:Zenith Facilities Group", "URL:https://zenithfacilities.example/"}
 	if len(got) != len(want) || act.counts[ActivityLeadsWaiting] != 0 {
 		t.Fatalf("submitted %v, counts %v, want %v", got, act.counts, want)
 	}
@@ -283,6 +279,14 @@ func TestDocumentCompanionRanksOrganizations(t *testing.T) {
 		if got[i] != want[i] {
 			t.Fatalf("submitted %v, want %v", got, want)
 		}
+	}
+}
+
+// A stale document's findings are stored, but give the run no leads.
+func TestDocumentCompanionStaleDocument(t *testing.T) {
+	if !lens.StaleDocument(time.Now().AddDate(-15, 0, 0), time.Now()) || lens.StaleDocument(time.Time{}, time.Now()) ||
+		lens.StaleDocument(time.Now().AddDate(-1, 0, 0), time.Now()) {
+		t.Fatal("StaleDocument misjudges a 15-year-old, an undated or a recent document")
 	}
 }
 

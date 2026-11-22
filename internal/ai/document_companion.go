@@ -45,6 +45,10 @@ const (
 	ActivityChunksRead   = "chunks_read"
 	ActivityLeads        = "leads"
 	ActivityLeadsWaiting = "leads_waiting"
+	// ActivityDocumentsStale counts the documents read whose own dates are
+	// older than lens.DocumentStaleAge: their findings are kept, but they
+	// give no leads.
+	ActivityDocumentsStale = "documents_stale"
 )
 
 // DocumentGraph is the graph the companion reads documents from: it must
@@ -98,8 +102,6 @@ type companionRun struct {
 	seen      map[string]bool
 	submitted []*submittedLead
 	queue     []queuedLead
-	// orgOnlySubmitted counts the leads given for organizations named alone
-	orgOnlySubmitted int
 	// failed counts each File's failed attempts in this run, and holds the
 	// last failure's kind
 	failed map[string]failedDocument
@@ -292,13 +294,24 @@ func (c *DocumentCompanion) pass(ctx context.Context, run collect.Run, act colle
 				st.failed[d.FileID] = failedDocument{kind: d.Failure, attempts: f.attempts + 1}
 				continue
 			}
+			// a document whose own dates are years old keeps its findings,
+			// but what it names is no lead: offices, staff and vendors change
+			if d.Stale {
+				count(act, ActivityDocumentsStale, 1)
+				continue
+			}
 			c.submitLeads(ctx, run, act, st, d)
 		}
 	}
 }
 
 // submitLeads queues the assets a document's findings name that the database
-// does not hold, and submits as many as the run's lead budget allows.
+// does not hold, and submits as many as the run's lead budget allows. An
+// organization the document ties to no anchor (anchoredLead) is kept as a
+// finding only: a name alone gives the engine just the registries to search,
+// and such leads went nowhere in practice while their failures held the
+// anchored leads back. A later document that ties it to an anchor makes it a
+// lead.
 func (c *DocumentCompanion) submitLeads(ctx context.Context, run collect.Run, act collect.Activity,
 	st *companionRun, d DocumentResult) {
 	if c.MaxLeads < 0 || act.Submit == nil {
@@ -316,20 +329,18 @@ func (c *DocumentCompanion) submitLeads(ctx context.Context, run collect.Run, ac
 			if selfReference(l, own) {
 				continue
 			}
+			if !anchoredLead(l, anchored) {
+				continue
+			}
 			key := strings.ToLower(string(l.asset.AssetType()) + "\x00" + l.name)
-			orgOnly := !anchoredLead(l, anchored)
 			if st.seen[key] {
-				// a later document tied a waiting organization to an anchor
-				if !orgOnly {
-					st.promote(key)
-				}
 				continue
 			}
 			st.seen[key] = true
 			if knownLead(ctx, c.Graph, l) {
 				continue
 			}
-			st.queue = append(st.queue, queuedLead{lead: l, stmt: s, doc: d, key: key, orgOnly: orgOnly})
+			st.queue = append(st.queue, queuedLead{lead: l, stmt: s, doc: d, key: key})
 			count(act, ActivityLeadsWaiting, 1)
 		}
 	}

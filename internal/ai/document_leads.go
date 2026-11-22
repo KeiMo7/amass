@@ -179,10 +179,9 @@ func anchoredOrganizations(stored []review.StoredStatement) map[string]bool {
 
 // anchoredLead reports whether a lead has an anchor: any lead but an
 // organization is one, and an organization has one when the document ties it
-// to one. Leads with an anchor go to the engine first; an organization named
-// alone goes only while no other lead waits, within a share of the budget
-// (see next), since a name alone gives the engine only the registries to
-// search, where it matches nothing or the wrong body as often as not.
+// to one. Only leads with an anchor go to the engine: a name alone gives it
+// only the registries to search, where it matches nothing or the wrong body
+// as often as not.
 func anchoredLead(l documentLead, anchored map[string]bool) bool {
 	if _, ok := l.asset.(oamorg.Organization); !ok {
 		return true

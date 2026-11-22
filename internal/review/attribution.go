@@ -294,20 +294,20 @@ func (m mergePairs) supersedeDuplicates(j *Journal, org, asset string, state map
 	return nil
 }
 
-// withoutDocumentEvidence returns the proposal without the signals that came
-// from documents, for the ownership model to score: what is written
-// automatically is decided without document evidence.
+// withoutDocumentEvidence returns the proposal without the review-only
+// signals (lens.ReviewOnlyKind: documents and an organization's own
+// declarations), for the ownership model to score: what is written
+// automatically is decided without them.
 func withoutDocumentEvidence(p OwnershipProposal) OwnershipProposal {
-	prefix := lens.DocumentSignalKind + " via "
 	signals := make([]string, 0, len(p.Signals))
 	for _, s := range p.Signals {
-		if !strings.HasPrefix(s, prefix) {
+		if kind, _, _ := strings.Cut(s, " via "); !lens.ReviewOnlyKind(kind) {
 			signals = append(signals, s)
 		}
 	}
 	ids := make([]string, 0, len(p.SignalIDs))
 	for _, id := range p.SignalIDs {
-		if def, ok := lens.LookupOwnershipSignal(id); !ok || def.Kind != lens.DocumentSignalKind {
+		if def, ok := lens.LookupOwnershipSignal(id); !ok || !lens.ReviewOnlyKind(def.Kind) {
 			ids = append(ids, id)
 		}
 	}

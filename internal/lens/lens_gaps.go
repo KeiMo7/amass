@@ -150,6 +150,8 @@ type gapSearch struct {
 	// counts its searches and tag reads.
 	values     ValueSearcher
 	valueReads int
+	// bountyPrograms are the bug-bounty programs already read.
+	bountyPrograms map[string]bool
 }
 
 // SearchOwnershipGaps runs the ownership-gap lens from root, an

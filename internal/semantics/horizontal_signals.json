@@ -95,6 +95,25 @@
       ]
     },
     {
+      "id": "bug-bounty-scope",
+      "title": "Listed by the organization's bug-bounty program",
+      "kind": "declaration",
+      "strength": "supporting",
+      "weight": 0.7,
+      "matcher": "bounty_program_scope",
+      "finds": "Another registered domain that a public bug-bounty program lists in scope beside one of the organization's names, when the program is tied to the organization by its website, its exact name, the platform's verification TXT record on the organization's domain, or a link from the organization's security.txt.",
+      "rationale": "A program's scope is the organization's own public list of the assets it is responsible for, so the other domains it lists are usually the organization's. It is supporting rather than strong because it is review-only evidence: a scope can list a partner's or a vendor's domain, or a subsidiary that is a separate organization.",
+      "guards": [
+        "Only programs tied to the organization count.",
+        "Names under cloud providers' hosting domains and the platforms' own sites are skipped.",
+        "Never expands scope on its own."
+      ],
+      "counter_indications": [
+        "A vendor-hosted tenant or a partner's system can be listed so researchers may test it.",
+        "A parent's program can cover subsidiaries and acquisitions that are separate organizations."
+      ]
+    },
+    {
       "id": "shared-mx",
       "title": "Shared mail exchanger",
       "kind": "infrastructure",

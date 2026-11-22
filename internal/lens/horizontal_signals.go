@@ -30,7 +30,10 @@ const (
 	SigDNSDelegationSet = "dns-provider-delegation-set"
 	// SigAllowedOrigin is another apex an organization's web service lets
 	// call or embed it (CORS, CSP frame-ancestors).
-	SigAllowedOrigin   = "allowed-origin"
+	SigAllowedOrigin = "allowed-origin"
+	// SigBountyScope is another apex a bug-bounty program tied to the
+	// organization lists in its scope.
+	SigBountyScope     = "bug-bounty-scope"
 	SigSharedMX        = "shared-mx"
 	SigDMARCReportsTo  = "dmarc-reports-to"
 	SigSPFAuthorizes   = "spf-authorizes"
@@ -54,11 +57,13 @@ const (
 	matchHorFingerprint   = "shared_service_fingerprint"
 	matchHorDelegationSet = "provider_delegation_set"
 	matchHorAllowedOrigin = "allowed_origin"
+	matchHorBountyScope   = "bounty_program_scope"
 )
 
 var horizontalMatchers = map[string]bool{matchHorRegistrantOrg: true, matchHorCertOrg: true,
 	matchHorNameServer: true, matchHorMX: true, matchHorDMARC: true, matchHorSPF: true, matchHorWebsite: true,
-	matchHorFingerprint: true, matchHorDelegationSet: true, matchHorAllowedOrigin: true}
+	matchHorFingerprint: true, matchHorDelegationSet: true, matchHorAllowedOrigin: true,
+	matchHorBountyScope: true}
 
 var loadHorizontalCatalog = sync.OnceValues(func() (signalCatalog, error) {
 	var c signalCatalog

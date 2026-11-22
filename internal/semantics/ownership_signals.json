@@ -273,6 +273,28 @@
       ]
     },
     {
+      "id": "bug_bounty_scope",
+      "title": "Listed in the organization's bug-bounty program",
+      "kind": "declaration",
+      "strength": "strong",
+      "weight": 0.4,
+      "matcher": "bounty_program_scope",
+      "finds": "A name or address range the organization does not yet own that a public bug-bounty program lists in scope beside one of the organization's names, when the program is tied to the organization: its website is in the organization's namespace, its name is exactly the organization's name, the organization's domain carries the platform's verification TXT record (bugcrowd-verification), or the organization's security.txt links the program's page.",
+      "rationale": "A bug-bounty program's scope is the organization declaring, in public, the assets it is responsible for and invites researchers to test. Once the program is tied to the organization by its own records, the rest of its scope is the organization's own account of what it runs.",
+      "guards": [
+        "Review only: it raises a candidate to review but never causes or helps cause an automatic write.",
+        "A program the organization's records do not tie to it gives no signal; its listing stays an observation.",
+        "Names under cloud providers' hosting domains and the platforms' own sites are skipped.",
+        "Only in-scope entries count; out-of-scope entries are mostly vendors' services.",
+        "At most 10 programs and 200 entries per program are read."
+      ],
+      "counter_indications": [
+        "Programs sometimes list a vendor-hosted tenant or a partner's system the organization tests but does not own.",
+        "A parent company's program can cover subsidiaries and acquisitions that are separate organizations in the graph.",
+        "Scopes go stale: a divested business can stay listed until the program is updated."
+      ]
+    },
+    {
       "id": "self_hosted_dns",
       "title": "Name or mail servers run by the organization",
       "kind": "operation",

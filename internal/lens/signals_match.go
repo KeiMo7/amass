@@ -151,6 +151,9 @@ func (g *gapSearch) valueSignalsOf(a graph.Asset, pass int) error {
 
 	switch a.Type {
 	case "FQDN":
+		if err := g.bountySignals(a); err != nil {
+			return err
+		}
 		if g.isApex(a) {
 			if err := g.txtSignals(a); err != nil {
 				return err

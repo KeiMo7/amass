@@ -12,6 +12,7 @@ import (
 	"net/url"
 	"slices"
 	"strings"
+	"time"
 
 	"github.com/owasp-amass/amass/v5/internal/graph"
 )
@@ -89,10 +90,11 @@ func documentFindings(ctx context.Context, g graph.Graph, predicates []string) (
 				return out, truncated, err
 			}
 			fileURL := graph.ContentString(f, "url")
+			stale := StaleDocument(documentDated(ev), time.Now())
 			for _, v := range propertyValues(ev, propDocStatement) {
 				var st docStatement
 				if json.Unmarshal([]byte(v), &st) != nil || st.Kind != "relation" ||
-					!slices.Contains(predicates, st.Predicate) {
+					!slices.Contains(predicates, st.Predicate) || staleFinding(stale, st.Predicate) {
 					continue
 				}
 				out = append(out, docFinding{st: st, fileID: f.ID, url: fileURL})
@@ -109,8 +111,9 @@ func docFold(s string) string {
 }
 
 // WithoutDocumentSignals returns the signals that do not come from
-// documents. What may be written without a person's review is decided on
-// these alone: document evidence can raise a candidate to review and add to
+// documents or from an organization's own declarations (a bug-bounty
+// program's scope). What may be written without a person's review is decided
+// on these alone: such evidence can raise a candidate to review and add to
 // its score, but never causes or helps cause an automatic write.
 func WithoutDocumentSignals(signals []GapSignal) []GapSignal {
 	out := make([]GapSignal, 0, len(signals))
@@ -122,17 +125,24 @@ func WithoutDocumentSignals(signals []GapSignal) []GapSignal {
 	return out
 }
 
-// isDocumentSignal reports whether a signal came from a document finding, by
-// its kind or, for a signal read back without one, its catalog entry.
+// isDocumentSignal reports whether a signal is review-only (ReviewOnlyKind),
+// by its kind or, for a signal read back without one, its catalog entry.
 func isDocumentSignal(s GapSignal) bool {
-	if s.Kind == DocumentSignalKind {
+	if ReviewOnlyKind(s.Kind) {
 		return true
 	}
-	if def, ok := LookupOwnershipSignal(s.Signal); ok && def.Kind == DocumentSignalKind {
+	if def, ok := LookupOwnershipSignal(s.Signal); ok && ReviewOnlyKind(def.Kind) {
 		return true
 	}
 	def, ok := DuplicateSignal(s.Signal)
-	return ok && def.Kind == DocumentSignalKind
+	return ok && ReviewOnlyKind(def.Kind)
+}
+
+// ReviewOnlyKind reports whether signals of a kind are never decided on
+// without a person's review: document findings and an organization's own
+// declarations.
+func ReviewOnlyKind(kind string) bool {
+	return kind == DocumentSignalKind || kind == DeclarationSignalKind
 }
 
 // docLink is what documents state relates one organization name to another.

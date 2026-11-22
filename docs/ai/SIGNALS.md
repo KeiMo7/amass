@@ -23,6 +23,7 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 | [Certificate public key reuse](#certificate_public_key_reuse) | strong | identity | 0.45 |
 | [Issued by the organization's private CA](#private_ca_issuance) | strong | identity | 0.45 |
 | [security.txt points to the organization](#security_txt_reference) | supporting | operation | 0.25 |
+| [Listed in the organization's bug-bounty program](#bug_bounty_scope) | strong | declaration | 0.40 |
 | [Name or mail servers run by the organization](#self_hosted_dns) | strong | operation | 0.35 |
 | [Email authentication delegated to the organization](#email_auth_reference) | strong | operation | 0.35 |
 | [Hosted on the organization's infrastructure](#hosting_in_footprint) | supporting | hosting | 0.20 |
@@ -193,6 +194,29 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 
 - A managed security provider or bug-bounty platform may publish one organization's contact across several clients' files.
 - A template copied between unrelated sites can carry another organization's canonical URL.
+
+<a id="bug_bounty_scope"></a>
+## Listed in the organization's bug-bounty program
+
+`bug_bounty_scope`: strong declaration signal, weight 0.40.
+
+**Finds:** A name or address range the organization does not yet own that a public bug-bounty program lists in scope beside one of the organization's names, when the program is tied to the organization: its website is in the organization's namespace, its name is exactly the organization's name, the organization's domain carries the platform's verification TXT record (bugcrowd-verification), or the organization's security.txt links the program's page.
+
+**Why it counts:** A bug-bounty program's scope is the organization declaring, in public, the assets it is responsible for and invites researchers to test. Once the program is tied to the organization by its own records, the rest of its scope is the organization's own account of what it runs.
+
+**Guards:**
+
+- Review only: it raises a candidate to review but never causes or helps cause an automatic write.
+- A program the organization's records do not tie to it gives no signal; its listing stays an observation.
+- Names under cloud providers' hosting domains and the platforms' own sites are skipped.
+- Only in-scope entries count; out-of-scope entries are mostly vendors' services.
+- At most 10 programs and 200 entries per program are read.
+
+**Can still mislead when:**
+
+- Programs sometimes list a vendor-hosted tenant or a partner's system the organization tests but does not own.
+- A parent company's program can cover subsidiaries and acquisitions that are separate organizations in the graph.
+- Scopes go stale: a divested business can stay listed until the program is updated.
 
 <a id="self_hosted_dns"></a>
 ## Name or mail servers run by the organization

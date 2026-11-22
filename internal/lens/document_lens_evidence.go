@@ -54,7 +54,8 @@ func rootDocumentFindings(ctx context.Context, g graph.Graph, schema graph.Schem
 		}
 		for _, v := range propertyValues(ev, propDocStatement) {
 			var st docStatement
-			if json.Unmarshal([]byte(v), &st) != nil || st.Kind != "relation" || !want[st.Predicate] {
+			if json.Unmarshal([]byte(v), &st) != nil || st.Kind != "relation" || !want[st.Predicate] ||
+				staleFinding(src.Stale, st.Predicate) {
 				continue
 			}
 			out = append(out, docFinding{st: st, fileID: src.FileID, url: src.URL})

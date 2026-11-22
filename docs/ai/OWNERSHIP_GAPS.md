@@ -50,6 +50,29 @@ strong or supporting, with a weight, in the catalog:
 A tiebreaker never counts as the second signal, and a negative signal
 keeps a candidate at review at most.
 
+Review-only signals (`lens.ReviewOnlyKind`: kind `document`, from what an
+organization's documents state, and kind `declaration`, from a bug-bounty
+program's scope) add to the score and can raise a candidate to review, but
+`AutoDecision` and the ownership model are computed without them
+(`lens.WithoutDocumentSignals`, `review.withoutDocumentEvidence`), so they
+never cause or help cause an automatic write.
+
+The bug-bounty signal (`bug_bounty_scope`, matcher `bounty_program_scope`)
+runs for every controlled FQDN: an `Account` of type `bug_bounty_program`
+(stored by `engine/plugins/bounty`) with an `in_scope` edge to the name is
+read once per search, at most 10 programs. `lens.BountyAnchor` must tie the
+program to the subject (its `bounty_program_website` property in the
+subject's namespace, its `bounty_program_name` equal to the subject's name
+after case and white-space folding, the platform's `txt_prefix` record on the
+apex, or a `security_policy`, `security_acknowledgments`, `security_hiring`
+or security-contact URL on the apex's services pointing at the program page
+with every part of the handle in its path). Its other `in_scope` assets, at
+most 200, become candidates; names under `cloud_providers.json` hosting
+domains and the platforms' own hosts are skipped. The horizontal
+`bug-bounty-scope` signal (supporting) uses the same anchor
+(`bountyScopePivot`) over the apex and up to 200 of its `node` hosts.
+Platforms and feeds are in `internal/semantics/bounty_platforms.json`.
+
 A trained ownership model replaces these rules (see Learning from reviews).
 
 ## Attachment

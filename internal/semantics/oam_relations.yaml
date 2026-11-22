@@ -44,6 +44,18 @@ relations:
   - {source: Account, label: id, relation_type: SimpleRelation, destination: Identifier,
      attribution: attribute, purpose: identity,
      note: "Identifier of the account."}
+  - {source: Account, label: in_scope, relation_type: SimpleRelation, destination: FQDN,
+     attribution: shared, purpose: corporate,
+     note: "A name a bug-bounty program lists as in scope. Programs normally list their own assets, but some list a vendor-hosted tenant or a partner's system, so the listing alone confers no ownership; the ownership-gap lens weighs it only when the program is tied to an organization."}
+  - {source: Account, label: in_scope, relation_type: SimpleRelation, destination: Netblock,
+     attribution: shared, purpose: corporate,
+     note: "An address range a bug-bounty program lists as in scope; confers no ownership on its own."}
+  - {source: Account, label: in_scope, relation_type: SimpleRelation, destination: URL,
+     attribution: shared, purpose: corporate,
+     note: "A URL a bug-bounty program lists as in scope; confers no ownership on its own."}
+  - {source: Account, label: program_page, relation_type: SimpleRelation, destination: URL,
+     attribution: attribute, purpose: corporate,
+     note: "The bug-bounty program's page on its platform."}
   - {source: Account, label: user, relation_type: SimpleRelation, destination: Organization,
      attribution: controller, purpose: identity, reviewed: true,
      note: "The Person or Organization that uses the account; usually its controller, but a shared or delegated account can have other users."}

@@ -24,6 +24,7 @@ import (
 	"github.com/owasp-amass/amass/v5/engine/plugins/api/zoomeye"
 	"github.com/owasp-amass/amass/v5/engine/plugins/archive"
 	"github.com/owasp-amass/amass/v5/engine/plugins/attribution"
+	"github.com/owasp-amass/amass/v5/engine/plugins/bounty"
 	"github.com/owasp-amass/amass/v5/engine/plugins/breach"
 	"github.com/owasp-amass/amass/v5/engine/plugins/brute"
 	"github.com/owasp-amass/amass/v5/engine/plugins/bucket"
@@ -97,6 +98,7 @@ var pluginNewFuncs = []func() et.Plugin{
 	osm.NewOpenStreetMap,
 	propublica.NewProPublica,
 	securitytxt.NewSecurityTxt,
+	bounty.NewBountyScopes,
 	sshp.NewSSHProbing,
 	bannerp.NewBannerProbing,
 	rdap.NewRDAP,

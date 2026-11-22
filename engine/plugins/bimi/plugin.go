@@ -51,10 +51,10 @@ const (
 	maxEvidenceLen = 256 << 10
 )
 
-// Mark certificate object identifiers (BIMI Group, Verified Mark Certificate
-// Requirements v1.5, sections 7.1.2.3 and 7.1.4.2.2).
+// Mark certificate subject attributes (BIMI Group, Verified Mark Certificate
+// Requirements v1.5, section 7.1.4.2.2); the extended key usage is
+// support.OIDBIMIKeyUsage.
 var (
-	oidBIMIKeyUsage     = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 31}
 	oidTrademarkOffice  = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 53087, 1, 2}
 	oidTrademarkCountry = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 53087, 1, 3}
 	oidTrademarkID      = asn1.ObjectIdentifier{1, 3, 6, 1, 4, 1, 53087, 1, 4}
@@ -215,7 +215,7 @@ func markCertificate(data []byte, apex string, now time.Time) *x509.Certificate 
 		if err != nil || now.Before(cert.NotBefore) || now.After(cert.NotAfter) {
 			continue
 		}
-		if !slices.ContainsFunc(cert.UnknownExtKeyUsage, oidBIMIKeyUsage.Equal) {
+		if !slices.ContainsFunc(cert.UnknownExtKeyUsage, support.OIDBIMIKeyUsage.Equal) {
 			continue
 		}
 		if slices.ContainsFunc(cert.DNSNames, func(n string) bool { return strings.EqualFold(n, apex) }) {
@@ -255,12 +255,6 @@ func subjectDetails(cert *x509.Certificate) markDetails {
 	return d
 }
 
-// subjectContactKey is the key the certificate handler gives a certificate's
-// subject ContactRecord, so the mark details join the record it creates.
-func subjectContactKey(cert *x509.Certificate) string {
-	return "x509 Certificate: " + cert.SerialNumber.String() + ", Subject"
-}
-
 // store records the mark certificate and hands it to the certificate handler,
 // which stores its names and subject, then adds the mark details to the
 // subject ContactRecord.
@@ -282,7 +276,7 @@ func (b *bimiPlugin) store(e *et.Event, cert *x509.Certificate, rec bimiRecord) 
 		b.property(ctx, e, certEnt, PropBIMILogo, rec.logo)
 	}
 
-	cr, err := db.CreateAsset(ctx, &contact.ContactRecord{DiscoveredAt: subjectContactKey(cert)})
+	cr, err := db.CreateAsset(ctx, &contact.ContactRecord{DiscoveredAt: support.X509ContactKey(cert, "Subject")})
 	if err == nil && cr != nil {
 		b.link(ctx, e, certEnt, "subject_contact", cr)
 		d := subjectDetails(cert)

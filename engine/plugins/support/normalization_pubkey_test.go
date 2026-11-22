@@ -54,7 +54,7 @@ func TestX509ToOAMTLSCertificateMarksBIMIUsage(t *testing.T) {
 	c := X509ToOAMTLSCertificate(&x509.Certificate{
 		Version:            3,
 		SerialNumber:       big.NewInt(2),
-		UnknownExtKeyUsage: []asn1.ObjectIdentifier{{1, 3, 6, 1, 5, 5, 7, 3, 31}, {1, 2, 3}},
+		UnknownExtKeyUsage: []asn1.ObjectIdentifier{OIDBIMIKeyUsage, {1, 2, 3}},
 	})
 	if c == nil || !slices.Contains(c.ExtKeyUsage, oamcert.ExtKeyUsageBIMI) || len(c.ExtKeyUsage) != 1 {
 		t.Fatalf("ExtKeyUsage = %v, want only the BIMI usage", c.ExtKeyUsage)

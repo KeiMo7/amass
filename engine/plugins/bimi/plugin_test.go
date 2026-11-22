@@ -15,6 +15,8 @@ import (
 	"math/big"
 	"testing"
 	"time"
+
+	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 )
 
 func TestParseBIMI(t *testing.T) {
@@ -64,7 +66,7 @@ func testMarkCert(t *testing.T, names []string, eku []asn1.ObjectIdentifier, not
 func TestMarkCertificate(t *testing.T) {
 	now := time.Now()
 	later := now.Add(24 * time.Hour)
-	bimi := []asn1.ObjectIdentifier{oidBIMIKeyUsage}
+	bimi := []asn1.ObjectIdentifier{support.OIDBIMIKeyUsage}
 
 	good := testMarkCert(t, []string{"example.com"}, bimi, later)
 	cert := markCertificate(good, "example.com", now)
@@ -78,8 +80,8 @@ func TestMarkCertificate(t *testing.T) {
 	if d != want {
 		t.Fatalf("subjectDetails = %+v, want %+v", d, want)
 	}
-	if k := subjectContactKey(cert); k != "x509 Certificate: 4242, Subject" {
-		t.Fatalf("subjectContactKey = %q", k)
+	if k := support.X509ContactKey(cert, "Subject"); k != "x509 Certificate: 4242, Subject" {
+		t.Fatalf("X509ContactKey = %q", k)
 	}
 
 	cases := map[string][]byte{

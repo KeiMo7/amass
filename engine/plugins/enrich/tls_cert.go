@@ -315,10 +315,9 @@ func (te *tlsexpand) store(e *et.Event, cert *x509.Certificate, asset *dbt.Entit
 	support.ProcessAssetsWithSource(e, findings, te.source, te.name, te.name+"-Handler")
 
 	if m.IsMatch(string(oam.ContactRecord)) {
-		base := "x509 Certificate: " + cert.SerialNumber.String() + ", "
 		contacts := []*tlsContact{
-			{&cert.Subject, "subject_contact", base + "Subject"},
-			{&cert.Issuer, "issuer_contact", base + "Issuer"},
+			{&cert.Subject, "subject_contact", support.X509ContactKey(cert, "Subject")},
+			{&cert.Issuer, "issuer_contact", support.X509ContactKey(cert, "Issuer")},
 		}
 		for _, c := range contacts {
 			te.storeContact(e, c, asset, te.source, m)

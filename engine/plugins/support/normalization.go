@@ -247,10 +247,17 @@ func publicKeySHA256(cert *x509.Certificate) string {
 	return hex.EncodeToString(sum[:])
 }
 
-// oidBIMIKeyUsage is the extended key usage of a mark certificate for Brand
+// OIDBIMIKeyUsage is the extended key usage of a mark certificate for Brand
 // Indicators for Message Identification (the BIMI Group's Verified Mark
 // Certificate Requirements, section 7.1.2.3).
-var oidBIMIKeyUsage = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 31}
+var OIDBIMIKeyUsage = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 31}
+
+// X509ContactKey is the key of the ContactRecord holding a certificate's
+// subject or issuer (role "Subject" or "Issuer"), so every collector that
+// adds to it reaches the same record.
+func X509ContactKey(cert *x509.Certificate, role string) string {
+	return "x509 Certificate: " + cert.SerialNumber.String() + ", " + role
+}
 
 func X509ToOAMTLSCertificate(cert *x509.Certificate) *oamcert.TLSCertificate {
 	if cert == nil {
@@ -336,7 +343,7 @@ func X509ToOAMTLSCertificate(cert *x509.Certificate) *oamcert.TLSCertificate {
 		}
 	}
 	for _, oid := range cert.UnknownExtKeyUsage {
-		if oid.Equal(oidBIMIKeyUsage) {
+		if oid.Equal(OIDBIMIKeyUsage) {
 			c.ExtKeyUsage = append(c.ExtKeyUsage, oamcert.ExtKeyUsageBIMI)
 		}
 	}

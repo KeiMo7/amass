@@ -85,7 +85,12 @@ type dupSearch struct {
 	// search (documentLinks).
 	links     docLinks
 	linksRead bool
+	// resolved caches exact organization lookups by folded name.
+	resolved map[string]string
 }
+
+// dupMaxRenamePairs bounds the pairs documents add to a search.
+const dupMaxRenamePairs = 200
 
 var errDupReadLimit = errors.New("database read limit")
 
@@ -115,9 +120,26 @@ func FindDuplicateOrganizations(ctx context.Context, g graph.Graph) (DuplicateRe
 		s.profiles[o.ID] = p
 	}
 
+	pairs := s.pairs()
+	renamed, err := s.renamePairs()
+	if err != nil {
+		return s.report, err
+	}
+	compared := map[[2]string]bool{}
+	for _, pair := range pairs {
+		compared[pair] = true
+		compared[[2]string{pair[1], pair[0]}] = true
+	}
+	for _, pair := range renamed {
+		if !compared[pair] {
+			compared[pair] = true
+			compared[[2]string{pair[1], pair[0]}] = true
+			pairs = append(pairs, pair)
+		}
+	}
 	s.report.Organizations = len(s.profiles)
 
-	for _, pair := range s.pairs() {
+	for _, pair := range pairs {
 		if c, ok := s.candidate(s.profiles[pair[0]], s.profiles[pair[1]]); ok {
 			s.report.Candidates = append(s.report.Candidates, c)
 		}
@@ -125,6 +147,92 @@ func FindDuplicateOrganizations(ctx context.Context, g graph.Graph) (DuplicateRe
 
 	s.finalize()
 	return s.report, nil
+}
+
+// renamePairs returns the pairs of stored organizations a document says one
+// was formerly known as, or merged with, the other, each name resolved
+// exactly to one organization, profiling any not yet profiled. A renamed
+// organization can share no name, identifier, contact or address with its
+// former record, so the blocking keys never pair it.
+func (s *dupSearch) renamePairs() ([][2]string, error) {
+	links, err := s.documentLinks()
+	if err != nil || len(links) == 0 {
+		return nil, err
+	}
+
+	var out [][2]string
+	seen := map[[2]string]bool{}
+	for _, m := range links {
+		for _, l := range m {
+			if !l.former {
+				continue
+			}
+			if len(out) >= dupMaxRenamePairs {
+				s.truncate("document rename pairs")
+				return out, nil
+			}
+			a, ok := s.resolveOrg(l.fromName)
+			if !ok {
+				continue
+			}
+			b, ok := s.resolveOrg(l.toName)
+			if !ok || a == b {
+				continue
+			}
+			key := [2]string{min(a, b), max(a, b)}
+			if seen[key] {
+				continue
+			}
+			seen[key] = true
+			if !s.ensureProfile(a) || !s.ensureProfile(b) {
+				continue
+			}
+			out = append(out, key)
+		}
+	}
+	return out, nil
+}
+
+// ensureProfile profiles a stored organization when the search has not.
+func (s *dupSearch) ensureProfile(id string) bool {
+	if _, ok := s.profiles[id]; ok {
+		return true
+	}
+	p, ok := s.profileID(id)
+	if ok {
+		s.profiles[id] = p
+	}
+	return ok
+}
+
+// resolveOrg finds the one stored organization a name names exactly, by name
+// or legal name; an ambiguous or unknown name resolves to nothing.
+func (s *dupSearch) resolveOrg(name string) (string, bool) {
+	r, ok := s.graph.(graph.OrganizationResolver)
+	if !ok || strings.TrimSpace(name) == "" {
+		return "", false
+	}
+	key := docFold(name)
+	if s.resolved == nil {
+		s.resolved = map[string]string{}
+	}
+	if id, ok := s.resolved[key]; ok {
+		return id, id != ""
+	}
+
+	id := ""
+	for _, q := range []graph.OrganizationQuery{{Name: name}, {LegalName: name}} {
+		res, err := r.ResolveOrganizations(s.ctx, q, 2)
+		if err != nil || res.Status == "ambiguous" || res.Status == "truncated" {
+			break
+		}
+		if res.Status == "matched" && len(res.Candidates) == 1 {
+			id = res.Candidates[0].Asset.ID
+			break
+		}
+	}
+	s.resolved[key] = id
+	return id, id != ""
 }
 
 // duplicateCohort is the set of organizations the sweep profiles. When the
@@ -218,9 +326,11 @@ func (s *dupSearch) candidate(a, b *orgProfile) (DuplicateCandidate, bool) {
 		// evidence that the two are different companies.
 		decision = GapWeak
 	}
-	if decision == GapWeak && hasKind(signals, "name") && !hasStrength(signals, StrengthNegative) {
-		// A shared name with nothing against it is for a person to
-		// decide: never merged automatically, but not left unseen.
+	if decision == GapWeak && (hasKind(signals, "name") || hasKind(signals, DocumentSignalKind)) &&
+		!hasStrength(signals, StrengthNegative) {
+		// A shared name, or a document stating a former name, with nothing
+		// against it is for a person to decide: never merged automatically,
+		// but not left unseen.
 		decision = GapReview
 	}
 
@@ -284,6 +394,24 @@ func CompareOrganizations(ctx context.Context, g graph.Graph, seedIDs, candidate
 		}
 		if p, ok := s.profileID(id); ok {
 			s.profiles[id] = p
+		}
+	}
+
+	// a touched organization a document says was renamed from, or merged
+	// with, another is compared with that one too, though they share no
+	// blocking key
+	for _, id := range seeds {
+		p, ok := s.profiles[id]
+		if !ok {
+			continue
+		}
+		for _, l := range p.docs {
+			if !l.former {
+				continue
+			}
+			if other, ok := s.resolveOrg(l.toName); ok && other != id {
+				candidateIDs = append(candidateIDs, other)
+			}
 		}
 	}
 

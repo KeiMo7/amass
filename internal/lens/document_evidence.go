@@ -142,6 +142,9 @@ type docLink struct {
 	versions map[string]bool
 	text     string
 	url      string
+	// fromName and toName are the two names as the document wrote them,
+	// for exact lookups (the index is keyed by folded names).
+	fromName, toName string
 }
 
 // docLinks maps a folded organization name to the folded names documents
@@ -163,6 +166,8 @@ func buildDocLinks(findings []docFinding) docLinks {
 			continue
 		}
 		former := slices.Contains(docFormerPredicates, f.st.Predicate)
+		names := map[string]string{a: strings.Join(strings.Fields(f.st.Subject), " "),
+			b: strings.Join(strings.Fields(f.st.Object), " ")}
 		for _, pair := range [][2]string{{a, b}, {b, a}} {
 			m := out[pair[0]]
 			if m == nil {
@@ -171,8 +176,8 @@ func buildDocLinks(findings []docFinding) docLinks {
 			}
 			l := m[pair[1]]
 			if l == nil {
-				l = &docLink{versions: map[string]bool{}, url: f.url,
-					text: fmt.Sprintf("%q %s %q", f.st.Subject, f.st.Predicate, f.st.Object)}
+				l = &docLink{versions: map[string]bool{}, url: f.url, fromName: names[pair[0]],
+					toName: names[pair[1]], text: fmt.Sprintf("%q %s %q", f.st.Subject, f.st.Predicate, f.st.Object)}
 				m[pair[1]] = l
 			}
 			if former {

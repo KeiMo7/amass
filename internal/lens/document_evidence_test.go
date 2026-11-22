@@ -175,3 +175,58 @@ func TestDocumentLinksInDuplicateSignals(t *testing.T) {
 		t.Error("a document calling one the unit of the other did not count against the merge")
 	}
 }
+
+// renameGraph resolves organizations by exact name, as the repositories do.
+type renameGraph struct {
+	valueDocGraph
+	orgs map[string]string
+}
+
+func (g renameGraph) ResolveOrganizations(_ context.Context, q graph.OrganizationQuery, _ int) (graph.OrganizationResolution,
+	error) {
+	res := graph.OrganizationResolution{Query: q, Status: "not_found", Candidates: []graph.OrganizationCandidate{}}
+	name := q.Name
+	if name == "" {
+		name = q.LegalName
+	}
+	if id, ok := g.orgs[docFold(name)]; ok {
+		res.Status = "matched"
+		res.Candidates = []graph.OrganizationCandidate{{Asset: g.Assets[id]}}
+	}
+	return res, nil
+}
+
+// A touched organization a document says was formerly known as another is
+// compared with it though the two share no name, identifier or address, and
+// the pair goes to review on the document alone: never merged automatically.
+func TestDocumentRenamesAreCompared(t *testing.T) {
+	g := renameGraph{valueDocGraph: valueDocGraph{graphtest.VendorFixture()}, orgs: map[string]string{}}
+	if g.EvidenceByID == nil {
+		g.EvidenceByID = map[string][]graph.Evidence{}
+	}
+	for id, name := range map[string]string{"poly": "SUNY Polytechnic Institute", "it": "SUNY Institute of Technology"} {
+		g.Assets[id] = graph.Asset{ID: id, Type: "Organization", Key: name, Content: map[string]any{"name": name}}
+		g.orgs[docFold(name)] = id
+	}
+	g.Assets["f-history"] = graph.Asset{ID: "f-history", Type: "File", Key: "https://sunypoly.edu/history.pdf",
+		Content: map[string]any{"url": "https://sunypoly.edu/history.pdf"}}
+	g.EvidenceByID["f-history"] = []graph.Evidence{graphtest.SimpleProp(propDocStatement,
+		`{"kind":"relation","subject":"SUNY Polytechnic Institute","subject_type":"Organization",`+
+			`"predicate":"formerly_known_as","object":"SUNY Institute of Technology","object_type":"Organization",`+
+			`"sha256":"v1"}`)}
+
+	r, err := CompareOrganizations(context.Background(), g, []string{"poly"}, nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.Candidates) != 1 {
+		t.Fatalf("candidates %+v", r.Candidates)
+	}
+	c := r.Candidates[0]
+	if c.Decision != GapReview || !hasKind(c.Signals, DocumentSignalKind) {
+		t.Fatalf("rename candidate %+v: want review on the document", c)
+	}
+	if AutoMergeable(c.Signals) {
+		t.Error("a rename stated only by a document would be merged automatically")
+	}
+}

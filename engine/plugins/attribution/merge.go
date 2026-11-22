@@ -158,7 +158,7 @@ func (t *tracker) mergeDuplicates(write bool) {
 		return
 	}
 
-	merged := 0
+	merged, held := 0, 0
 	if write {
 		state, err := t.journal.DuplicateState()
 		if err != nil {
@@ -172,6 +172,12 @@ func (t *tracker) mergeDuplicates(write bool) {
 			// Only proposed pairs nobody has decided on: a rejected or undone
 			// merge is never applied again.
 			if !ok || c.Decision != lens.GapPropose || e.Status != review.ProposalPending {
+				continue
+			}
+			// a contact record beside only an address shows common control,
+			// not one company: a person decides
+			if !lens.AutoMergeable(c.Signals) {
+				held++
 				continue
 			}
 
@@ -204,7 +210,8 @@ func (t *tracker) mergeDuplicates(write bool) {
 	}
 	if pending > 0 || merged > 0 {
 		t.sess.Log().Info(fmt.Sprintf("AI duplicate search compared %d organizations: %d merged, %d merge "+
-			"proposal(s) waiting for review in %s", report.Organizations, merged, pending, t.journal.Path))
+			"proposal(s) waiting for review in %s (%d proposed without a registry identifier)",
+			report.Organizations, merged, pending, t.journal.Path, held))
 	}
 }
 

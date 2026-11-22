@@ -459,3 +459,33 @@ func TestPathWitness(t *testing.T) {
 		t.Errorf("a path with fewer nodes than edges keeps only covered edges: %+v", w2)
 	}
 }
+
+// A proposed merge is applied without review only on a registry identity
+// signal, or a shared contact record with the same name; a contact record with
+// only an address beside it waits for a person.
+func TestAutoMergeable(t *testing.T) {
+	sig := func(ids ...string) []GapSignal {
+		out := make([]GapSignal, 0, len(ids))
+		for _, id := range ids {
+			out = append(out, GapSignal{Signal: id})
+		}
+		return out
+	}
+	for _, tc := range []struct {
+		signals []GapSignal
+		want    bool
+	}{
+		{sig("shared_registry_identifier", "same_brand_name"), true},
+		{sig("shared_registration", "same_brand_name"), true},
+		{sig("shared_network_handle", "shared_location"), true},
+		{sig("shared_contact_record", "same_brand_name"), true},
+		{sig("shared_contact_record", "shared_location"), false},
+		{sig("shared_contact_record", "name_abbreviation", "shared_location"), false},
+		{sig("same_brand_name", "shared_location"), false},
+		{nil, false},
+	} {
+		if got := AutoMergeable(tc.signals); got != tc.want {
+			t.Errorf("AutoMergeable(%v) = %v, want %v", tc.signals, got, tc.want)
+		}
+	}
+}

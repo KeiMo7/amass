@@ -103,6 +103,33 @@ func DuplicateSignal(id string) (OwnershipSignal, bool) {
 	return OwnershipSignal{}, false
 }
 
+// AutoMergeable reports whether a proposed merge's signals let it be applied
+// without review: a registry identity signal (a shared registry identifier or
+// network handle, or the same jurisdiction and registration number), or a
+// shared contact record together with the same name. A registry identifier
+// names one legal entity. A contact record is written by whoever registered
+// the domain, and parents, subsidiaries and brand-protection firms reuse one
+// for many entities, so on its own, or with only an address, it shows common
+// control rather than one company: such a pair waits for review.
+func AutoMergeable(signals []GapSignal) bool {
+	contact, name := false, false
+	for _, gs := range signals {
+		s, ok := DuplicateSignal(gs.Signal)
+		if !ok {
+			continue
+		}
+		switch s.Matcher {
+		case matchSharedIdentifier, matchSharedRegistration:
+			return true
+		case matchSharedContactRecord:
+			contact = true
+		case matchSameBrand:
+			name = true
+		}
+	}
+	return contact && name
+}
+
 // legalForms returns the legal-form suffixes removed before names are
 // compared, from the same_brand matcher's parameters.
 var legalForms = sync.OnceValue(func() map[string]bool {
@@ -161,7 +188,12 @@ func DuplicateSignalsMarkdown() string {
 	b.WriteString("## How signals decide\n\n")
 	b.WriteString("- Two strong signals, or one strong signal and a different signal that is not a tiebreaker, " +
 		"**propose** a merge. During enumeration a proposed merge is applied automatically when the session ends " +
-		"(with the `amass-ai` source on every moved relationship) unless attribution is set to `journal` or `off`.\n")
+		"(with the `amass-ai` source on every moved relationship) unless attribution is set to `journal` or `off`, " +
+		"and only when its evidence includes a registry identity signal (a shared registry identifier or network " +
+		"handle, or the same jurisdiction and registration number) or a shared contact record together with the " +
+		"same name. A registry identifier names one legal entity; a contact record is written by whoever " +
+		"registered a domain and is often reused across a parent, its subsidiaries and the firms that register " +
+		"domains for them, so with only an address beside it the proposal waits for review.\n")
 	b.WriteString("- One strong signal, or two signals of any strength, **needs review**: it waits in the review " +
 		"journal for a person. A pair linked only by its name, with nothing against it, also needs review.\n")
 	b.WriteString("- A **negative** signal lowers the score and keeps a pair from being merged automatically; without " +

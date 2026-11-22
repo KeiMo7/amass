@@ -44,7 +44,8 @@ func (a *api) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	}
 	if r.URL.Path == "/company/search" {
 		body, _ := io.ReadAll(r.Body)
-		if !strings.Contains(string(body), `"value":"Example"`) {
+		// the search is by the organization's name key
+		if !strings.Contains(string(body), `"value":"example"`) {
 			_, _ = fmt.Fprint(w, `{"items":[]}`)
 			return
 		}

@@ -25,12 +25,13 @@ type familyRules struct {
 	About           string   `json:"_about"`
 	DepartmentWords []string `json:"department_words"`
 	UnitNouns       []string `json:"unit_nouns"`
-	GenericWords    []string `json:"generic_words"`
-	SampleNames     int      `json:"sample_names"`
-	SampleNetwork   int      `json:"sample_network"`
-	RenameWords     []string `json:"rename_words"`
-	MinHostedNames  int      `json:"min_hosted_names"`
-	DedicatedShare  float64  `json:"dedicated_share"`
+	// GenericWords are semantics.OrgGenericWords (org_names.json).
+	GenericWords   []string `json:"-"`
+	SampleNames    int      `json:"sample_names"`
+	SampleNetwork  int      `json:"sample_network"`
+	RenameWords    []string `json:"rename_words"`
+	MinHostedNames int      `json:"min_hosted_names"`
+	DedicatedShare float64  `json:"dedicated_share"`
 }
 
 // familyStrongTie is the weight of a registration, or of a name that is the
@@ -47,6 +48,7 @@ var loadFamilyRules = sync.OnceValue(func() familyRules {
 		r.DedicatedShare <= 0 || r.DedicatedShare > 1 {
 		panic("family.json: sample sizes must be in 1..500 and dedicated_share in (0, 1]")
 	}
+	r.GenericWords = semantics.OrgGenericWords()
 
 	return r
 })

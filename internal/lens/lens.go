@@ -52,7 +52,7 @@ type VendorUse struct {
 // (DNSMadeEasy), so a domain is keyed by the label before its public
 // suffix and a name by its brand without spaces or punctuation.
 func partyKey(name string) string {
-	s := brandName(name)
+	s := semantics.OrgNameKey(name)
 	if graph.DomainName.MatchString(name) {
 		s, _, _ = strings.Cut(graph.RegisteredDomain(name), ".")
 	}

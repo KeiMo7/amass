@@ -14,11 +14,11 @@ import (
 	"sort"
 	"strings"
 	"time"
-	"unicode"
 
 	"github.com/owasp-amass/amass/v5/internal/ai/llm"
 	"github.com/owasp-amass/amass/v5/internal/graph"
 	"github.com/owasp-amass/amass/v5/internal/review"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 )
 
 // ValidateCandidate never accepts an AI assertion as an independent source.
@@ -156,7 +156,11 @@ func CandidatePairs(assets []graph.Asset, limit int) ([]review.Candidate, error)
 			continue
 		}
 
-		n := normalizeOrgName(a.Key)
+		name := graph.ContentString(a, "name")
+		if name == "" {
+			name = a.Key
+		}
+		n := semantics.OrgNameKey(name)
 		if n != "" {
 			groups[n] = append(groups[n], a.ID)
 		}
@@ -184,22 +188,4 @@ func CandidatePairs(assets []graph.Asset, limit int) ([]review.Candidate, error)
 	}
 
 	return out, nil
-}
-
-func normalizeOrgName(input string) string {
-	var b strings.Builder
-	for _, r := range strings.ToLower(input) {
-		if unicode.IsLetter(r) || unicode.IsDigit(r) {
-			b.WriteRune(r)
-		}
-	}
-
-	s := b.String()
-	for _, suffix := range []string{"incorporated", "limited", "corporation", "company", "inc", "ltd", "llc", "corp"} {
-		if strings.HasSuffix(s, suffix) && len(s) > len(suffix)+3 {
-			return strings.TrimSuffix(s, suffix)
-		}
-	}
-
-	return s
 }

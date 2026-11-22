@@ -11,8 +11,8 @@ import (
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
-	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	"github.com/owasp-amass/open-asset-model/contact"
 )
@@ -101,12 +101,10 @@ func chooseLEIRecord(brands []string, ev locEvidence, cands []leiCandidate) (*LE
 	return best, bestScore
 }
 
-// brandForm reduces an organization name to its brand: lowercase, without
-// a legal form suffix or trailing punctuation.
+// brandForm reduces an organization name to its brand: its OrgNameKey,
+// without a leading "the".
 func brandForm(name string) string {
-	b := org.ExtractBrandName(strings.ToLower(strings.TrimSpace(name)))
-	b = strings.TrimRight(strings.TrimSpace(b), ".,")
-	return strings.TrimSpace(strings.TrimPrefix(b, "the "))
+	return strings.TrimPrefix(semantics.OrgNameKey(name), "the ")
 }
 
 func sameBrand(brands []string, name string) bool {

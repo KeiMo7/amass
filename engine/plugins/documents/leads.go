@@ -121,9 +121,9 @@ func companyNamesAuthor(rules semantics.DocumentRules, company string, vendors [
 		return false
 	}
 
-	brand := org.ExtractBrandName(strings.ToLower(company))
+	brand := semantics.OrgNameKey(company)
 	for _, v := range vendors {
-		if vb := org.ExtractBrandName(strings.ToLower(v)); brand == vb || strings.HasPrefix(vb, brand+" ") {
+		if vb := semantics.OrgNameKey(v); brand == vb || strings.HasPrefix(vb, brand+" ") {
 			return false
 		}
 	}

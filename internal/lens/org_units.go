@@ -299,7 +299,7 @@ func sortedRelationKeys(m map[string]graph.Relation) []string {
 func newOrgUnitProfile(ctx context.Context, g graph.Graph, o graph.Asset, name string) *orgUnitProfile {
 	p := &orgUnitProfile{
 		asset: o, id: o.ID, name: name,
-		brand:     brandName(name),
+		brand:     semantics.OrgNameKey(name),
 		addrEdges: map[string]graph.Relation{},
 		idEdges:   map[string]graph.Relation{},
 		linked:    map[string]bool{},

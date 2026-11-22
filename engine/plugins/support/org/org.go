@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"strings"
 	"time"
 
 	"github.com/biter777/countries"
@@ -131,7 +130,7 @@ func genNormName(o *oamorg.Organization) string {
 		name = o.LegalName
 	}
 
-	return ExtractBrandName(strings.ToLower(name))
+	return semantics.OrgNameKey(name)
 }
 
 func genStableOrgID(o *oamorg.Organization) string {

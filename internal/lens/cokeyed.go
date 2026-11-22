@@ -10,11 +10,12 @@ import (
 	"time"
 
 	"github.com/owasp-amass/amass/v5/internal/graph"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 )
 
 // BrandKeyProperty is the entity-tag property name under which an
 // organization's brand key is materialized. Grouping organizations by a shared
-// brand needs the brandName form of the name, which the database cannot
+// brand needs the semantics.OrgNameKey form of the name, which the database cannot
 // compute, so the backfill writes it as this tag and the duplicate sweep groups
 // by it (CoKeyBrand) without a full scan.
 const BrandKeyProperty = "brand_key"
@@ -81,12 +82,12 @@ type TypePager interface {
 // paging; the audit falls back to a single capped load.
 var ErrTypePagingUnsupported = errors.New("the repository does not support type paging")
 
-// BrandKey returns the brand key for an organization name: its brandName form
+// BrandKey returns the brand key for an organization name: its semantics.OrgNameKey form
 // (lower-cased, without surrounding punctuation or a trailing legal form), or
 // "" when the name reduces to nothing. It is exported so the brand-key backfill
 // stores exactly the value the duplicate sweep groups by.
 func BrandKey(name string) string {
-	return brandName(name)
+	return semantics.OrgNameKey(name)
 }
 
 // PersonNameKey returns the family-name key for a Person: the normalized family

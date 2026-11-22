@@ -431,14 +431,14 @@ func legalNameAgrees(legal string, independent []string) bool {
 // suppresses the jurisdiction-mismatch reason in that case; an exact or acronym
 // agreement does not.
 func legalNameAgreement(legal string, independent []string) (agrees, viaSubsidiary bool) {
-	lb := brandName(legal)
+	lb := semantics.OrgNameKey(legal)
 	if lb == "" {
 		return true, false
 	}
 	lacr := nameAcronym(legal)
 
 	for _, n := range independent {
-		nb := brandName(n)
+		nb := semantics.OrgNameKey(n)
 		if nb == "" {
 			continue
 		}
@@ -456,7 +456,7 @@ func legalNameAgreement(legal string, independent []string) (agrees, viaSubsidia
 		// A kind-of-institution rename (Utica College -> Utica University),
 		// recognized by the shared, data-driven family-rename check; and a
 		// governance/legal-entity wrapper ("The Trustees of Hamilton College")
-		// already handled by brandName above.
+		// already handled by semantics.OrgNameKey above.
 		if renamedNames(legal, n) {
 			agrees = true
 		}
@@ -488,14 +488,14 @@ func brandIsSubsidiaryOf(sub, parent string) bool {
 // regionOrDivisionToken reports whether a trailing brand token is a country or
 // region name, a corporate-division word, or a legal-form token, rather than
 // part of the brand. Legal forms are included so a subsidiary suffix is matched
-// whether or not brandName stripped the form (it only strips trailing ones).
+// whether or not semantics.OrgNameKey stripped the form (it only strips trailing ones).
 func regionOrDivisionToken(w string) bool {
 	switch w {
 	case "international", "global", "worldwide", "group", "holding", "holdings",
 		"europe", "americas", "asia", "apac", "emea", "latam":
 		return true
 	}
-	if legalForms()[normLegalForm(w)] {
+	if semantics.IsOrgLegalForm(w) {
 		return true
 	}
 	return countryCode(w) != ""

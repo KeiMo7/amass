@@ -11,6 +11,7 @@ import (
 	"unicode"
 
 	"github.com/owasp-amass/amass/v5/internal/graph"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 )
 
 // applyFamily takes the domain's own institution out of the vendor list
@@ -192,7 +193,7 @@ func familyDomainOf(f FamilyReport, domain string, affiliates bool) bool {
 func institutionName(f FamilyReport, name string) bool {
 	rules := loadFamilyRules()
 	stop := abbreviationStopWords()
-	b := brandName(name)
+	b := semantics.OrgNameKey(name)
 	if b == "" {
 		return false
 	}
@@ -203,7 +204,7 @@ func institutionName(f FamilyReport, name string) bool {
 
 	match := func(a graph.Asset) bool {
 		for _, n := range []string{graph.ContentString(a, "name"), graph.ContentString(a, "legal_name"), graph.AssetLabel(a)} {
-			if o := brandName(n); o != "" && (o == b || nameVariant(b, o, rules.GenericWords) ||
+			if o := semantics.OrgNameKey(n); o != "" && (o == b || nameVariant(b, o, rules.GenericWords) ||
 				nameVariant(o, b, rules.GenericWords)) {
 				return true
 			}
@@ -225,7 +226,7 @@ func institutionName(f FamilyReport, name string) bool {
 // institution's name: the State University of New York for SUNY - Mohawk
 // Valley Community College, a system the institution belongs to.
 func initialsOfFamilyWord(name string, words map[string]bool) bool {
-	a := abbreviation(brandName(name), abbreviationStopWords())
+	a := abbreviation(semantics.OrgNameKey(name), abbreviationStopWords())
 	return len(a) >= 3 && words[a]
 }
 

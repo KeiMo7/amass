@@ -49,9 +49,10 @@ var loadDocumentLeads = sync.OnceValue(func() documentLeadWords {
 })
 
 // GenericOrganizationName reports whether an organization name a document
-// names is too generic to be a lead: it has no entity form word ("Inc",
-// "Association", "College") and every word other than particles is a generic
-// office or service word ("Counseling", "Health Center", "Rapid Response").
+// names is too generic to be a lead: it has no entity form word
+// ("Association", "College") or legal form ("Inc"), and every word other than
+// particles is a generic office or service word ("Counseling", "Health
+// Center", "Rapid Response").
 // A name with no words is not generic.
 func GenericOrganizationName(name string) bool {
 	w := loadDocumentLeads()
@@ -61,7 +62,7 @@ func GenericOrganizationName(name string) bool {
 		if f == "" || w.particles[f] {
 			continue
 		}
-		if w.forms[f] || !w.generic[f] {
+		if w.forms[f] || IsOrgLegalForm(f) || !w.generic[f] {
 			return false
 		}
 		words++

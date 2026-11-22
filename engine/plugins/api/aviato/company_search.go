@@ -13,9 +13,9 @@ import (
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
-	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamgen "github.com/owasp-amass/open-asset-model/general"
@@ -89,7 +89,7 @@ func (cs *companySearch) lookup(e *et.Event, orgent *dbt.Entity, since time.Time
 
 func (cs *companySearch) query(e *et.Event, orgent *dbt.Entity, apikey []string) *dbt.Entity {
 	o := orgent.Asset.(*oamorg.Organization)
-	brand := org.ExtractBrandName(o.Name)
+	brand := semantics.OrgNameKey(o.Name)
 
 	var body string
 	success := false

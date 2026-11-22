@@ -104,7 +104,7 @@ Sources record one company several times: a certificate, an RDAP lookup and GLEI
 
 `same_brand_name`: supporting name signal, weight 0.20.
 
-**Finds:** Two organizations whose names are the same once case, punctuation and legal forms such as Inc, LLC, Ltd or NV-SA are removed.
+**Finds:** Two organizations whose names are the same once case, accents, punctuation, a governance wrapper such as 'The Trustees of' and legal forms such as Inc, LLC, Ltd or NV-SA are removed (org_names.json).
 
 **Why it counts:** Sources spell one company's name differently: a certificate says 'Google Trust Services LLC' where another says 'Google Trust Services'. A matching name supports other evidence, but it is never strong: organizations in different jurisdictions often share a name and are different companies.
 

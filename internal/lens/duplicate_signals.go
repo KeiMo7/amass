@@ -6,7 +6,6 @@ package lens
 
 import (
 	"fmt"
-	"sort"
 	"strings"
 	"sync"
 
@@ -65,8 +64,6 @@ func validateDuplicateSignals(signals []OwnershipSignal) error {
 			return fmt.Errorf("signal %s: unknown matcher %q", s.ID, s.Matcher)
 		case (s.Matcher == matchSharedIdentifier || s.Matcher == matchConflictingID) && len(s.Params.IDTypes) == 0:
 			return fmt.Errorf("signal %s: id_types required", s.ID)
-		case s.Matcher == matchSameBrand && len(s.Params.LegalForms) == 0:
-			return fmt.Errorf("signal %s: legal_forms required", s.ID)
 		case s.Matcher == matchAbbreviation && s.Params.MinLength < 3:
 			return fmt.Errorf("signal %s: min_length must be at least 3", s.ID)
 		case s.Matcher == matchParentChild && len(s.Params.Labels) == 0:
@@ -137,50 +134,6 @@ func AutoMergeable(signals []GapSignal) bool {
 	}
 	return contact && name
 }
-
-// legalForms returns the legal-form suffixes removed before names are
-// compared, from the same_brand matcher's parameters.
-var legalForms = sync.OnceValue(func() map[string]bool {
-	out := map[string]bool{}
-	for _, s := range DuplicateSignals() {
-		if s.Matcher != matchSameBrand {
-			continue
-		}
-		for _, f := range s.Params.LegalForms {
-			if f = normLegalForm(f); f != "" {
-				out[f] = true
-			}
-		}
-	}
-
-	return out
-})
-
-func normLegalForm(s string) string {
-	return strings.Trim(strings.ToLower(strings.TrimSpace(s)), ".,")
-}
-
-// governancePrefixes returns the leading governance or legal-entity wrappers
-// stripped from a name before its brand is compared ("the trustees of hamilton
-// college" -> "hamilton college"), from the same_brand matcher's parameters.
-// Each phrase is tokenized and the list is sorted longest-first so the most
-// specific prefix is removed.
-var governancePrefixes = sync.OnceValue(func() [][]string {
-	var out [][]string
-	for _, s := range DuplicateSignals() {
-		if s.Matcher != matchSameBrand {
-			continue
-		}
-		for _, p := range s.Params.GovernancePrefixes {
-			if toks := strings.Fields(strings.ToLower(strings.TrimSpace(p))); len(toks) > 0 {
-				out = append(out, toks)
-			}
-		}
-	}
-	sort.Slice(out, func(i, j int) bool { return len(out[i]) > len(out[j]) })
-
-	return out
-})
 
 // DuplicateSignalsMarkdown renders the duplicate catalog as the user
 // documentation in docs/ai/DUPLICATES.md.

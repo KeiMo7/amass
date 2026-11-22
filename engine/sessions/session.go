@@ -22,6 +22,7 @@ import (
 	"github.com/owasp-amass/amass/v5/engine/sessions/scope"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	afmt "github.com/owasp-amass/amass/v5/internal/afmt"
+	amassdb "github.com/owasp-amass/amass/v5/internal/db"
 	amassnet "github.com/owasp-amass/amass/v5/internal/net"
 	assetdb "github.com/owasp-amass/asset-db"
 	"github.com/owasp-amass/asset-db/repository"
@@ -473,6 +474,14 @@ func (s *Session) selectDBMS() error {
 	}
 	if runs, ok := store.(repository.RunRecorder); ok {
 		s.runs = runs
+	}
+	// Organizations the engine stored under an earlier name normalization
+	// are brought up to the current one before collection starts, so its
+	// name lookups find them.
+	if n, err := amassdb.NormalizeOrganizationNames(s.ctx, store); err != nil {
+		s.log.Warn("organization names were not normalized", slog.String("error", err.Error()))
+	} else if n > 0 {
+		s.log.Info("organization names normalized", slog.Int("organizations", n))
 	}
 
 	s.db, s.dbstats = withDBStats(store)

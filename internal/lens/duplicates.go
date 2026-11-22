@@ -869,7 +869,7 @@ func (p *orgProfile) addName(name string) {
 	}
 
 	p.names = append(p.names, name)
-	if b := brandName(name); b != "" {
+	if b := semantics.OrgNameKey(name); b != "" {
 		p.brands[b] = true
 	}
 }
@@ -900,60 +900,6 @@ func (p *orgProfile) addIdentifier(idtype, value string) {
 
 func normRegistration(s string) string {
 	return strings.ToUpper(strings.Join(strings.Fields(s), ""))
-}
-
-// brandName reduces an organization name to the form compared across
-// sources: lowercase, without punctuation around words or a trailing
-// legal form such as Inc, LLC or NV-SA.
-func brandName(name string) string {
-	words := strings.FieldsFunc(strings.ToLower(name), func(r rune) bool {
-		return unicode.IsSpace(r) || r == ','
-	})
-	for i, w := range words {
-		words[i] = strings.Trim(w, ".,;:()\"'")
-	}
-
-	words = slices.DeleteFunc(words, func(w string) bool { return w == "" })
-
-	// Strip a leading governance or legal-entity wrapper ("the trustees of
-	// hamilton college" -> "hamilton college"), longest prefix first, never
-	// removing the whole name.
-	for _, p := range governancePrefixes() {
-		if len(words) > len(p) && hasPrefixTokens(words, p) {
-			words = words[len(p):]
-			break
-		}
-	}
-
-	forms := legalForms()
-	for len(words) > 1 {
-		if n := len(words); n > 2 && forms[normLegalForm(words[n-2]+" "+words[n-1])] {
-			words = words[:n-2]
-			continue
-		}
-		if forms[normLegalForm(words[len(words)-1])] {
-			words = words[:len(words)-1]
-			continue
-		}
-
-		break
-	}
-
-	return strings.Join(words, " ")
-}
-
-// hasPrefixTokens reports whether words begins with the tokens of p.
-func hasPrefixTokens(words, p []string) bool {
-	if len(words) < len(p) {
-		return false
-	}
-	for i, w := range p {
-		if words[i] != w {
-			return false
-		}
-	}
-
-	return true
 }
 
 func parentChildLabels() []string {

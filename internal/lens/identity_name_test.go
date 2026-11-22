@@ -29,7 +29,7 @@ func TestLegalNameAgrees(t *testing.T) {
 		{"institution university/college", "utica university", []string{"utica college"}, true},
 		{"institution institute/university", "suny polytechnic institute", []string{"suny polytechnic university"}, true},
 		// Governance/legal-entity wrapper: "The Trustees of Hamilton College" is
-		// a legal name for "Hamilton College", not a wrong identity (brandName
+		// a legal name for "Hamilton College", not a wrong identity (semantics.OrgNameKey
 		// strips the wrapper so the brands match).
 		{"governance prefix trustees", "the trustees of hamilton college", []string{"hamilton college"}, true},
 		{"governance prefix the regents", "the regents of the university of michigan", []string{"university of michigan"}, true},

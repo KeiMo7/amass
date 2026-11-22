@@ -197,40 +197,19 @@ func TestFindDuplicateOrganizations(t *testing.T) {
 	}
 }
 
-func TestBrandName(t *testing.T) {
-	for in, want := range map[string]string{
-		"GlobalSign nv-sa":                 "globalsign",
-		"Google Trust Services LLC":        "google trust services",
-		"Amazon.com, Inc.":                 "amazon.com",
-		"Canva Pty Ltd":                    "canva",
-		"DigiCert Inc":                     "digicert",
-		"S.A.":                             "s.a",
-		"Internet Security Research Group": "internet security research group",
-		// Governance/legal-entity wrappers are stripped from the front.
-		"The Trustees of Hamilton College": "hamilton college",
-		"Trustees of Dartmouth College":    "dartmouth college",
-		// A bare leading "the" is not a governance prefix and stays.
-		"The North Face Inc": "the north face",
-	} {
-		if got := brandName(in); got != want {
-			t.Errorf("brandName(%q) = %q, want %q", in, got, want)
-		}
-	}
-}
-
 func TestDuplicateCatalog(t *testing.T) {
 	if len(DuplicateSignals()) == 0 {
 		t.Fatal("empty duplicate catalog")
 	}
 
 	strongName := []OwnershipSignal{{ID: "x", Title: "x", Kind: "name", Strength: StrengthStrong, Weight: 0.5,
-		Matcher: matchSameBrand, Params: SignalParams{LegalForms: []string{"inc"}}, Finds: "x", Rationale: "x"}}
+		Matcher: matchSameBrand, Finds: "x", Rationale: "x"}}
 	if validateDuplicateSignals(strongName) == nil {
 		t.Error("a strong name signal was accepted")
 	}
 
 	negativeName := []OwnershipSignal{{ID: "x", Title: "x", Kind: "name", Strength: StrengthNegative, Weight: 0.5,
-		Matcher: matchSameBrand, Params: SignalParams{LegalForms: []string{"inc"}}, Finds: "x", Rationale: "x"}}
+		Matcher: matchSameBrand, Finds: "x", Rationale: "x"}}
 	if validateDuplicateSignals(negativeName) == nil {
 		t.Error("a negative non-conflict signal was accepted")
 	}

@@ -17,6 +17,7 @@ import (
 	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamacct "github.com/owasp-amass/open-asset-model/account"
@@ -383,31 +384,11 @@ func (h *awards) process(e *et.Event, fundents []*dbt.Entity) {
 }
 
 // recipientMatches reports whether a USAspending recipient name is the same
-// organization as the one enumerated, comparing on normalized text so casing
-// and punctuation do not matter while a genuinely different recipient is not
-// taken for a match.
+// organization as the one enumerated: the same name once case, punctuation
+// and legal forms are set aside, or a misspelling of it (semantics.
+// OrgNameMatch). A name that only begins with the other's is a different
+// recipient.
 func recipientMatches(orgName, recipient string) bool {
-	a, b := normalizeOrg(orgName), normalizeOrg(recipient)
-	if a == "" || b == "" {
-		return false
-	}
-	return a == b || strings.HasPrefix(b, a+" ") || strings.HasPrefix(a, b+" ")
-}
-
-// normalizeOrg lowercases a name and collapses every run of non-alphanumeric
-// characters to a single space.
-func normalizeOrg(s string) string {
-	var b strings.Builder
-	space := false
-	for _, r := range strings.ToLower(s) {
-		switch {
-		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
-			b.WriteRune(r)
-			space = false
-		case !space:
-			b.WriteByte(' ')
-			space = true
-		}
-	}
-	return strings.TrimSpace(b.String())
+	exact, near := semantics.OrgNameMatch(orgName, recipient)
+	return exact || near
 }

@@ -71,6 +71,23 @@ type V1Handlers struct {
 	mgr et.SessionManager
 }
 
+// session returns the session the request's session_token names, or answers
+// the request with 400 for a malformed token or 404 for an unknown or
+// terminated session.
+func (v *V1Handlers) session(w http.ResponseWriter, r *http.Request) (et.Session, bool) {
+	token, err := uuid.Parse(mux.Vars(r)["session_token"])
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid session token", err)
+		return nil, false
+	}
+	sess := v.mgr.GetSession(token)
+	if sess == nil {
+		writeError(w, http.StatusNotFound, "session not found", ErrNotFound)
+		return nil, false
+	}
+	return sess, true
+}
+
 func NewV1Handlers(ctx context.Context, dis et.Dispatcher, mgr et.SessionManager, log *slog.Logger) (*V1Handlers, error) {
 	return &V1Handlers{
 		ctx: ctx,
@@ -150,17 +167,12 @@ func (v *V1Handlers) CreateSessionHandler(w http.ResponseWriter, r *http.Request
 // @Tags         sessions
 // @Produce      json
 // @Success      200  {object}  ListSessionsResponse
-// @Failure      404  {object}  ErrorResponse  "Zero sessions found"
 // @Router       /sessions/list [get]
 func (v *V1Handlers) ListSessionsHandler(w http.ResponseWriter, r *http.Request) {
-	sessions := v.mgr.GetSessions()
-	if len(sessions) == 0 {
-		writeError(w, http.StatusNotFound, "zero sessions found", ErrNotFound)
-		return
-	}
-
-	var resp ListSessionsResponse
-	for _, sess := range sessions {
+	// An engine with no sessions answers with an empty list, so a client can
+	// tell that a session it knew of is gone.
+	resp := ListSessionsResponse{SessionTokens: []string{}}
+	for _, sess := range v.mgr.GetSessions() {
 		resp.SessionTokens = append(resp.SessionTokens, sess.ID().String())
 	}
 
@@ -178,24 +190,12 @@ func (v *V1Handlers) ListSessionsHandler(w http.ResponseWriter, r *http.Request)
 // @Failure      404  {object}  ErrorResponse  "Session not found"
 // @Router       /sessions/{session_token} [delete]
 func (v *V1Handlers) TerminateSessionHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	sid := vars["session_token"]
-
-	// Check if the session token is valid
-	token, err := uuid.Parse(sid)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid session token", err)
-		return
-	}
-	// Check if the session exists
-	// and if the session is not already terminated
-	sess := v.mgr.GetSession(token)
-	if sess == nil {
-		writeError(w, http.StatusNotFound, "session not found", ErrNotFound)
+	sess, ok := v.session(w, r)
+	if !ok {
 		return
 	}
 
-	go v.mgr.CancelSession(token)
+	go v.mgr.CancelSession(sess.ID())
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -211,20 +211,8 @@ func (v *V1Handlers) TerminateSessionHandler(w http.ResponseWriter, r *http.Requ
 // @Failure      404  {object}  ErrorResponse  "Session not found"
 // @Router       /sessions/{session_token}/stats [get]
 func (v *V1Handlers) GetStatsHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	sid := vars["session_token"]
-
-	// Check if the session token is valid
-	token, err := uuid.Parse(sid)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid session token", err)
-		return
-	}
-	// Check if the session exists
-	// and if the session is not already terminated
-	sess := v.mgr.GetSession(token)
-	if sess == nil {
-		writeError(w, http.StatusNotFound, "session not found", ErrNotFound)
+	sess, ok := v.session(w, r)
+	if !ok {
 		return
 	}
 	// encode under the lock, and write after it, so a slow client does not
@@ -256,23 +244,11 @@ func (v *V1Handlers) GetStatsHandler(w http.ResponseWriter, r *http.Request) {
 // @Failure      404  {object}  ErrorResponse  "Session not found or scope not found for asset type"
 // @Router       /sessions/{session_token}/scope/{asset_type} [get]
 func (v *V1Handlers) GetScopeHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	sid := vars["session_token"]
-	assetType := strings.ToLower(strings.TrimSpace(vars["asset_type"]))
-
-	// Check if the session token is valid
-	token, err := uuid.Parse(sid)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid session token", err)
+	sess, ok := v.session(w, r)
+	if !ok {
 		return
 	}
-	// Check if the session exists
-	// and if the session is not already terminated
-	sess := v.mgr.GetSession(token)
-	if sess == nil {
-		writeError(w, http.StatusNotFound, "session not found", ErrNotFound)
-		return
-	}
+	assetType := strings.ToLower(strings.TrimSpace(mux.Vars(r)["asset_type"]))
 
 	var assets []oam.Asset
 	switch assetType {
@@ -315,12 +291,7 @@ func (v *V1Handlers) GetScopeHandler(w http.ResponseWriter, r *http.Request) {
 		}
 	}
 
-	response := struct {
-		Data []json.RawMessage `json:"data"`
-	}{
-		Data: jsonArray,
-	}
-	writeJSON(w, http.StatusOK, response)
+	writeJSON(w, http.StatusOK, ScopeResponse{Data: jsonArray})
 }
 
 // AddAssetTypedHandler godoc
@@ -339,23 +310,11 @@ func (v *V1Handlers) GetScopeHandler(w http.ResponseWriter, r *http.Request) {
 // @Failure      500            {object}  ErrorResponse  "Failed to submit the asset"
 // @Router       /sessions/{session_token}/assets/{asset_type} [post]
 func (v *V1Handlers) AddAssetTypedHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	sid := vars["session_token"]
-	assetType := strings.ToLower(strings.TrimSpace(vars["asset_type"]))
-
-	// Check if the session token is valid
-	token, err := uuid.Parse(sid)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid session token", err)
+	sess, ok := v.session(w, r)
+	if !ok {
 		return
 	}
-	// Check if the session exists
-	// and if the session is not already terminated
-	sess := v.mgr.GetSession(token)
-	if sess == nil {
-		writeError(w, http.StatusNotFound, "session not found", ErrNotFound)
-		return
-	}
+	assetType := strings.ToLower(strings.TrimSpace(mux.Vars(r)["asset_type"]))
 
 	raw, err := readRawJSON(r)
 	if err != nil {
@@ -402,23 +361,11 @@ func (v *V1Handlers) AddAssetTypedHandler(w http.ResponseWriter, r *http.Request
 // @Failure      500            {object}  BulkAddAssetsResponse  "Server failure (response includes ingested/stored/failed)"
 // @Router       /sessions/{session_token}/assets/{asset_type}:bulk [post]
 func (v *V1Handlers) AddAssetsBulkHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	sid := vars["session_token"]
-	assetType := strings.ToLower(strings.TrimSpace(vars["asset_type"]))
-
-	// Check if the session token is valid
-	token, err := uuid.Parse(sid)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid session token", err)
+	sess, ok := v.session(w, r)
+	if !ok {
 		return
 	}
-	// Check if the session exists
-	// and if the session is not already terminated
-	sess := v.mgr.GetSession(token)
-	if sess == nil {
-		writeError(w, http.StatusNotFound, "session not found", ErrNotFound)
-		return
-	}
+	assetType := strings.ToLower(strings.TrimSpace(mux.Vars(r)["asset_type"]))
 
 	var req BulkAddAssetsRequest
 	dec := json.NewDecoder(r.Body)
@@ -443,26 +390,22 @@ func (v *V1Handlers) AddAssetsBulkHandler(w http.ResponseWriter, r *http.Request
 		}
 	}
 
+	// Ingested counts the items that are assets of the type; Failed counts
+	// every item that was not stored, including those that were not.
 	ingested := int64(len(assets))
 	if ingested == 0 {
 		writeError(w, http.StatusBadRequest, "no valid JSON objects in items", nil)
 		return
 	}
 
+	status := http.StatusOK
 	stored, err := v.PutAssets(v.ctx, sess, assets)
 	if err != nil {
-		writeJSON(w, http.StatusInternalServerError, BulkAddAssetsResponse{
-			Ingested: ingested,
-			Stored:   0,
-			Failed:   ingested,
-		})
-		return
+		status, stored = http.StatusInternalServerError, 0
 	}
-
-	failed := ingested - stored
-	writeJSON(w, http.StatusOK, BulkAddAssetsResponse{
+	writeJSON(w, status, BulkAddAssetsResponse{
 		Ingested: ingested,
 		Stored:   stored,
-		Failed:   failed,
+		Failed:   int64(len(req.Items)) - stored,
 	})
 }

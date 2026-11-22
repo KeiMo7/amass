@@ -14,8 +14,10 @@ import (
 	"strings"
 	"sync"
 	"testing"
+	"time"
 
 	"github.com/google/uuid"
+	"github.com/gorilla/websocket"
 	"github.com/owasp-amass/amass/v5/config"
 	"github.com/owasp-amass/amass/v5/engine/plugins/plugintest"
 	et "github.com/owasp-amass/amass/v5/engine/types"
@@ -124,8 +126,10 @@ func TestHealthAndUnknownRoutes(t *testing.T) {
 func TestSessionLifecycle(t *testing.T) {
 	h, mgr, _ := newServer(t)
 
-	if code, _ := do(t, h, http.MethodGet, "/api/v1/sessions/list", ""); code != http.StatusNotFound {
-		t.Errorf("listing no sessions gave %d", code)
+	// an engine with no sessions says so, so a client can tell a session is gone
+	if code, out := do(t, h, http.MethodGet, "/api/v1/sessions/list", ""); code != http.StatusOK ||
+		len(out["sessionTokens"].([]any)) != 0 {
+		t.Errorf("listing no sessions gave %d %v", code, out)
 	}
 	if code, _ := do(t, h, http.MethodPost, "/api/v1/sessions", "{not json"); code != http.StatusBadRequest {
 		t.Errorf("a malformed configuration gave %d", code)
@@ -187,7 +191,9 @@ func TestAddAssetsAndScope(t *testing.T) {
 
 	code, out = do(t, h, http.MethodPost, base+"/assets/fqdn:bulk",
 		`{"items":[{"name":"a.example.com"},{"name":"b.example.com"},"bad"]}`)
-	if code != http.StatusOK || out["ingested"] != float64(2) || out["stored"] != float64(2) {
+	// the item that is not an asset is counted as failed
+	if code != http.StatusOK || out["ingested"] != float64(2) || out["stored"] != float64(2) ||
+		out["failed"] != float64(1) {
 		t.Errorf("a bulk add gave %d %v", code, out)
 	}
 	if code, _ := do(t, h, http.MethodPost, base+"/assets/fqdn:bulk", `{"items":[]}`); code != http.StatusBadRequest {
@@ -219,5 +225,48 @@ func TestRequestBodyLimit(t *testing.T) {
 	big := `{"items":["` + strings.Repeat("x", maxRequestBody) + `"]}`
 	if code, _ := do(t, h, http.MethodPost, base+"/assets/fqdn:bulk", big); code != http.StatusBadRequest {
 		t.Errorf("an oversized body gave %d", code)
+	}
+}
+
+// The log stream relays what the session publishes, and refuses an unknown
+// session.
+func TestLogStream(t *testing.T) {
+	h, mgr, _ := newServer(t)
+	srv := httptest.NewServer(h)
+	defer srv.Close()
+
+	_, out := do(t, h, http.MethodPost, "/api/v1/sessions", `{"scope":{"domains":["example.com"]}}`)
+	token := out["sessionToken"].(string)
+	id, _ := uuid.Parse(token)
+
+	ws := "ws" + strings.TrimPrefix(srv.URL, "http") + "/api/v1/sessions/"
+	if _, resp, err := websocket.DefaultDialer.Dial(ws+uuid.NewString()+"/ws/logs", nil); err == nil ||
+		resp == nil || resp.StatusCode != http.StatusNotFound {
+		t.Errorf("an unknown session's log stream was opened (%v)", err)
+	}
+
+	conn, _, err := websocket.DefaultDialer.Dial(ws+token+"/ws/logs", nil)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer func() { _ = conn.Close() }()
+
+	// the handler subscribes after the upgrade; publish until the line arrives
+	_ = conn.SetReadDeadline(time.Now().Add(10 * time.Second))
+	done := make(chan struct{})
+	defer close(done)
+	go func() {
+		for {
+			select {
+			case <-done:
+				return
+			case <-time.After(50 * time.Millisecond):
+				mgr.GetSession(id).PubSub().Publish("engine log line")
+			}
+		}
+	}()
+	_, msg, err := conn.ReadMessage()
+	if err != nil || string(msg) != "engine log line" {
+		t.Errorf("received %q, %v", msg, err)
 	}
 }

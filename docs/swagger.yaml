@@ -539,10 +539,6 @@ paths:
           description: OK
           schema:
             $ref: '#/definitions/v1.ListSessionsResponse'
-        "404":
-          description: Zero sessions found
-          schema:
-            $ref: '#/definitions/v1.ErrorResponse'
       summary: List active sessions
       tags:
       - sessions

@@ -105,12 +105,6 @@ const docTemplate = `{
                         "schema": {
                             "$ref": "#/definitions/v1.ListSessionsResponse"
                         }
-                    },
-                    "404": {
-                        "description": "Zero sessions found",
-                        "schema": {
-                            "$ref": "#/definitions/v1.ErrorResponse"
-                        }
                     }
                 }
             }

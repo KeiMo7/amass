@@ -20,6 +20,7 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/owasp-amass/amass/v5/config"
+	"github.com/owasp-amass/amass/v5/engine/pubsub"
 	"github.com/owasp-amass/amass/v5/engine/sessions/scope"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	assetdb "github.com/owasp-amass/asset-db"
@@ -44,6 +45,7 @@ type Session struct {
 	http    *et.SessionHTTPClients
 	ranger  cidranger.Ranger
 	backlog *Backlog
+	ps      *pubsub.Logger
 }
 
 // NewSession returns a session over a new SQLite database, closed when the
@@ -57,16 +59,20 @@ func NewSession(t testing.TB) *Session {
 	}
 
 	ctx, cancel := context.WithCancel(context.Background())
+	var s *Session
 	t.Cleanup(func() {
 		cancel()
+		if s != nil {
+			s.ps.Close()
+		}
 		_ = db.Close()
 	})
 
 	client := &http.Client{Timeout: 10 * time.Second}
-	s := &Session{id: uuid.New(), ctx: ctx, cfg: config.NewConfig(), db: db,
+	s = &Session{id: uuid.New(), ctx: ctx, cfg: config.NewConfig(), db: db,
 		log: slog.New(slog.NewTextHandler(io.Discard, nil)), stats: &et.SessionStats{},
 		http:   &et.SessionHTTPClients{General: client, Probe: client, Crawl: client, Bulk: client},
-		ranger: cidranger.NewPCTrieRanger(), backlog: &Backlog{}}
+		ranger: cidranger.NewPCTrieRanger(), backlog: &Backlog{}, ps: pubsub.NewLogger()}
 	s.scope = scope.New(s)
 
 	return s
@@ -97,6 +103,9 @@ func (s *Session) CIDRanger() cidranger.Ranger { return s.ranger }
 
 // Clients are plain HTTP clients, for tests that serve their own pages.
 func (s *Session) Clients() *et.SessionHTTPClients { return s.http }
+
+// PubSub returns the session's log stream.
+func (s *Session) PubSub() *pubsub.Logger { return s.ps }
 
 // Backlog returns the session's backlog, which keeps what is enqueued.
 func (s *Session) Backlog() et.Backlog { return s.backlog }

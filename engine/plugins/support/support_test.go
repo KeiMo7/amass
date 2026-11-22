@@ -151,3 +151,22 @@ func TestExtractURLsFromLinkHeaders(t *testing.T) {
 		}
 	}
 }
+
+// Funding sources give exchange dates as timestamps, dates, months or years;
+// all become RFC 3339, which the Asset Database requires, and an unknown form
+// is kept as given.
+func TestTransferDate(t *testing.T) {
+	for in, want := range map[string]string{
+		"2009-09-18":            "2009-09-18T00:00:00Z",
+		"09/18/2009":            "2009-09-18T00:00:00Z",
+		"2009-09":               "2009-09-01T00:00:00Z",
+		"2019":                  "2019-01-01T00:00:00Z",
+		" 2021-03-04T05:06:07Z": "2021-03-04T05:06:07Z",
+		"2021-03-04 05:06:07":   "2021-03-04T05:06:07Z",
+		"FY2019":                "FY2019",
+	} {
+		if got := TransferDate(in); got != want {
+			t.Errorf("TransferDate(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

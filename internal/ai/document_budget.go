@@ -27,6 +27,10 @@ const (
 	// toward the confirmation rate.
 	leadCheckAge = 2 * time.Minute
 	leadRunShare = 10
+	// leadRateSample is how many leads must have been checked before the
+	// confirmation rate can hold new leads back: a few early leads going
+	// nowhere say little.
+	leadRateSample = 10
 )
 
 // submittedLead is a lead given to the run, and whether the engine has
@@ -62,7 +66,7 @@ func (c *DocumentCompanion) allowance(ctx context.Context, st *companionRun, act
 	}
 
 	allow := InitialDocumentLeads + leadsPerConfirmation*confirmed
-	if checked > 0 && float64(confirmed) < leadConfirmationRate*float64(checked) {
+	if checked >= leadRateSample && float64(confirmed) < leadConfirmationRate*float64(checked) {
 		// most leads go nowhere: no new ones until that changes
 		allow = len(st.submitted)
 	}

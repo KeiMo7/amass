@@ -7,6 +7,7 @@ package semantics
 import (
 	"bytes"
 	"encoding/json"
+	"strings"
 	"sync"
 )
 
@@ -35,14 +36,23 @@ type DocumentCategory struct {
 	Description string `json:"description"`
 }
 
+// StatementKind is a kind of statement a document may make, with the
+// inference families that may consume such statements and the vocabulary term
+// it follows.
+type StatementKind struct {
+	Families []string `json:"families"`
+	Basis    string   `json:"basis"`
+}
+
 // StatementPredicates are the predicates and document categories the document
 // model's statements are validated against. Loaded from
 // statement_predicates.json; see that file's _about.
 type StatementPredicates struct {
-	License    string               `json:"_license"`
-	About      string               `json:"_about"`
-	Predicates []StatementPredicate `json:"predicates"`
-	Categories []DocumentCategory   `json:"categories"`
+	License    string                   `json:"_license"`
+	About      string                   `json:"_about"`
+	Kinds      map[string]StatementKind `json:"kinds"`
+	Predicates []StatementPredicate     `json:"predicates"`
+	Categories []DocumentCategory       `json:"categories"`
 	byName     map[string]StatementPredicate
 	categories map[string]bool
 }
@@ -54,11 +64,16 @@ var loadStatementPredicates = sync.OnceValue(func() StatementPredicates {
 	if err := dec.Decode(&s); err != nil {
 		panic("statement_predicates.json: " + err.Error())
 	}
-	if len(s.Predicates) == 0 || len(s.Categories) == 0 {
-		panic("statement_predicates.json: predicates and categories are required")
+	if len(s.Kinds) == 0 || len(s.Predicates) == 0 || len(s.Categories) == 0 {
+		panic("statement_predicates.json: kinds, predicates and categories are required")
+	}
+	for name, k := range s.Kinds {
+		if len(k.Families) == 0 || !strings.HasPrefix(k.Basis, "https://") {
+			panic("statement_predicates.json: kind " + name + " needs families and an https basis")
+		}
 	}
 
-	kinds := StatementCueRules().Kinds
+	kinds := s.Kinds
 	s.byName = make(map[string]StatementPredicate, len(s.Predicates))
 	for _, p := range s.Predicates {
 		if p.Name == "" || p.Description == "" || len(p.SubjectTypes) == 0 || len(p.ObjectTypes) == 0 {
@@ -101,5 +116,5 @@ func (s StatementPredicates) IsCategory(name string) bool { return s.categories[
 // Families returns the inference families that consume the predicate's
 // statements, from its kind.
 func (s StatementPredicates) Families(p StatementPredicate) []string {
-	return StatementCueRules().Kinds[p.Kind].Families
+	return s.Kinds[p.Kind].Families
 }

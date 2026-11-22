@@ -171,6 +171,7 @@ func TestLeadFor(t *testing.T) {
 	for _, tc := range []struct{ typ, value string }{
 		{"Person", "Jane Doe"}, {"Product", "Workday"}, {"FQDN", "not a host"}, {"Phone", "555-0100"},
 		{"Identifier", "LEI 5493001KJTIIGC8Y1R12"}, {"Organization", "third parties"},
+		{"Organization", "Office of Events"}, {"Organization", "Department of Computer Science"},
 	} {
 		if _, ok := leadFor(tc.typ, tc.value); ok {
 			t.Errorf("leadFor(%s, %q) gave a lead", tc.typ, tc.value)
@@ -187,5 +188,23 @@ func TestDocumentCompanionWithoutLeads(t *testing.T) {
 		Stored: []review.StoredStatement{{Kind: FindingAsset, Subject: "vpn.example.edu", SubjectType: "FQDN"}}})
 	if len(act.submitted) != 0 {
 		t.Fatalf("submitted %v with leads off", act.submitted)
+	}
+}
+
+// A generic unit of the publisher is not a lead; a public body with a unit-like
+// name, or a longer name, is.
+func TestGenericUnit(t *testing.T) {
+	for name, want := range map[string]bool{
+		"Office of Events":                       true,
+		"Department of Computer Science":         true,
+		"Center for Teaching":                    true,
+		"U.S. Department of Education":           false,
+		"New York State Office of Mental Health": false,
+		"Sodexho":                                false,
+		"Office of the Vice President for Academic Affairs and Provost": false,
+	} {
+		if got := genericUnit(name); got != want {
+			t.Errorf("genericUnit(%q) = %v, want %v", name, got, want)
+		}
 	}
 }

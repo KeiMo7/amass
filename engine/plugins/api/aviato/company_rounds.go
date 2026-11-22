@@ -256,7 +256,7 @@ func (cr *companyRounds) store(e *et.Event, ident, orgent *dbt.Entity, funds *co
 			ID:           fmt.Sprintf("%s:%s", round.Name, round.Stage),
 			Amount:       float64(round.MoneyRaised),
 			Currency:     "USD",
-			ExchangeDate: round.AnnouncedOn,
+			ExchangeDate: support.TransferDate(round.AnnouncedOn),
 		}
 
 		fundent, err := e.Session.DB().CreateAsset(ctx, f)

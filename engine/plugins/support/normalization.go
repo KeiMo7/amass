@@ -331,3 +331,31 @@ func X509ToOAMTLSCertificate(cert *x509.Certificate) *oamcert.TLSCertificate {
 	}
 	return c
 }
+
+// transferDateLayouts are the date forms funding sources give, from the most
+// to the least precise.
+var transferDateLayouts = []string{
+	time.RFC3339Nano,
+	time.RFC3339,
+	"2006-01-02T15:04:05",
+	"2006-01-02 15:04:05",
+	"2006-01-02",
+	"01/02/2006",
+	"2006-01",
+	"2006",
+}
+
+// TransferDate returns a funds transfer's exchange date in RFC 3339, the form
+// the Asset Database accepts, from the date forms funding sources give: a
+// timestamp, a date ("2009-09-18", "09/18/2009"), a month ("2009-09") or a
+// year ("2019", for a fiscal or tax year), the last two as their first day.
+// A value in no known form is returned as given.
+func TransferDate(raw string) string {
+	s := strings.TrimSpace(raw)
+	for _, layout := range transferDateLayouts {
+		if t, err := time.Parse(layout, s); err == nil {
+			return t.UTC().Format(time.RFC3339)
+		}
+	}
+	return raw
+}

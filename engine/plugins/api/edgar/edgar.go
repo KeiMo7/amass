@@ -317,7 +317,7 @@ func (h *filings) storeTransfer(e *et.Event, orgent *dbt.Entity, accession, date
 		Amount:          amount,
 		Currency:        "USD",
 		ReferenceNumber: accession,
-		ExchangeDate:    date,
+		ExchangeDate:    support.TransferDate(date),
 	})
 	if err != nil || fundent == nil {
 		return

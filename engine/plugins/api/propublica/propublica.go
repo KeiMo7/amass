@@ -228,7 +228,7 @@ func (h *filings) storeFilings(e *et.Event, orgent *dbt.Entity, o *pubOrg) {
 			Amount:          amount,
 			Currency:        "USD",
 			ReferenceNumber: strein + ":" + year,
-			ExchangeDate:    year,
+			ExchangeDate:    support.TransferDate(year),
 		})
 		if err == nil && fundent != nil {
 			_, _ = e.Session.DB().CreateEntityProperty(ctx, fundent, &general.SourceProperty{

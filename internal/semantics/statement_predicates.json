@@ -1,6 +1,17 @@
 {
   "_license": "Copyright © by Jeff Foley 2017-2026. All rights reserved. Use of this source code is governed by Apache 2 LICENSE that can be found in the LICENSE file. SPDX-License-Identifier: Apache-2.0",
-  "_about": "What the document model may say a document states. Each predicate is a kind of statement from statement_cues.json (whose kinds name the inference families that consume it), the OAM asset types its subject and object may be, and, when the statement is the same fact as an OAM relation, that relation's label and direction (forward: subject --label--> object; inverse: object --label--> subject). A test checks every OAM mapping against the OAM relationship table. detail is the extra text a predicate carries, such as the title of a role. categories are what a document may be (a File is_a statement). The model's statements are validated against this file and quote a stored passage exactly; a statement is evidence for inference, never a fact on its own. Add predicates and categories here, not in Go code.",
+  "_about": "What the document model may say a document states. Each predicate is a kind of statement from the kinds below (each naming the inference families that consume it and the vocabulary term it follows), the OAM asset types its subject and object may be, and, when the statement is the same fact as an OAM relation, that relation's label and direction (forward: subject --label--> object; inverse: object --label--> subject). A test checks every OAM mapping against the OAM relationship table. detail is the extra text a predicate carries, such as the title of a role. categories are what a document may be (a File is_a statement). The model's statements are validated against this file and quote a stored passage exactly; a statement is evidence for inference, never a fact on its own. Add predicates and categories here, not in Go code.",
+  "kinds": {
+    "org_structure": {"families": ["ownership", "org_unit", "family"], "basis": "https://www.w3.org/TR/vocab-org/#org:subOrganizationOf"},
+    "role": {"families": ["people", "identity"], "basis": "https://www.w3.org/TR/vocab-org/#org:Post"},
+    "membership": {"families": ["people", "affiliation"], "basis": "https://www.w3.org/TR/vocab-org/#org:memberOf"},
+    "funding": {"families": ["funding", "affiliation"], "basis": "https://schema.org/funder"},
+    "partnership": {"families": ["affiliation"], "basis": "https://schema.org/member"},
+    "supplier": {"families": ["vendors", "services"], "basis": "https://schema.org/provider"},
+    "product_use": {"families": ["services", "vulnerable_software"], "basis": "https://schema.org/instrument"},
+    "change": {"families": ["identity", "duplicates", "family"], "basis": "https://www.w3.org/TR/vocab-org/#org:ChangeEvent"},
+    "location": {"families": ["geography", "contacts"], "basis": "https://schema.org/location"}
+  },
   "predicates": [
     {"name": "subsidiary_of", "kind": "org_structure", "subject_types": ["Organization"], "object_types": ["Organization"],
      "oam": {"label": "subsidiary", "direction": "inverse"}, "description": "The subject is a subsidiary company of the object."},

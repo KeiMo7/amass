@@ -87,7 +87,7 @@ func (h *source) store(e *et.Event, orgent *dbt.Entity, g *grant) *dbt.Entity {
 		Amount:          g.amount,
 		Currency:        "USD",
 		ReferenceNumber: g.id,
-		ExchangeDate:    g.date,
+		ExchangeDate:    support.TransferDate(g.date),
 	})
 	if err != nil || fundent == nil {
 		msg := fmt.Sprintf("failed to create the FundsTransfer for %s: %s", g.id, err)

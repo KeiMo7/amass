@@ -74,6 +74,11 @@ func TestLeadAllowance(t *testing.T) {
 	if got := c.allowance(ctx, st, act, now); got != 30 {
 		t.Fatalf("allowance with 10 of 30 confirmed: %d", got)
 	}
+	// a few early leads going nowhere do not hold new ones back
+	submit(4, 0)
+	if got := c.allowance(ctx, st, act, now); got != InitialDocumentLeads {
+		t.Fatalf("allowance with 0 of 4 confirmed: %d", got)
+	}
 	// max_leads caps it
 	c.MaxLeads = 20
 	submit(10, 10)

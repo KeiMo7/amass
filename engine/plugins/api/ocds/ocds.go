@@ -546,7 +546,7 @@ func (h *handler) store(e *et.Event, orgent *dbt.Entity, a *award, id string) {
 		Amount:          a.amount,
 		Currency:        currency,
 		ReferenceNumber: a.ocid + ":" + a.id,
-		ExchangeDate:    a.date,
+		ExchangeDate:    support.TransferDate(a.date),
 	})
 	if err != nil || fundent == nil {
 		return

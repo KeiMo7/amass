@@ -40,7 +40,10 @@ func leadFor(t, value string) (documentLead, bool) {
 	sel := func(field, v string) graph.AssetSelector { return graph.AssetSelector{Type: t, Field: field, Value: v} }
 	switch t {
 	case "Organization":
-		return documentLead{asset: oamorg.Organization{ID: value, Name: value}, name: value}, properName(value)
+		// a unit of the publisher ("Office of Events") is kept as a finding:
+		// the engine has nothing to look up for it
+		return documentLead{asset: oamorg.Organization{ID: value, Name: value}, name: value},
+			properName(value) && !genericUnit(value)
 	case "FQDN":
 		name := strings.ToLower(strings.TrimSuffix(value, "."))
 		return documentLead{asset: oamdns.FQDN{Name: name}, selector: sel("name", name), name: name},
@@ -138,4 +141,34 @@ func knownLead(ctx context.Context, g DocumentGraph, l documentLead) bool {
 	}
 	res, err := g.ResolveAsset(ctx, l.selector, 1)
 	return err != nil || len(res.Candidates) > 0
+}
+
+// unitPrefixes start the names of an organization's own units.
+var unitPrefixes = []string{"office of ", "department of ", "dept. of ", "division of ", "school of ",
+	"center for ", "centre for ", "college of ", "program in ", "programs in "}
+
+// publicMarkers mark a unit-like name as a public body the registries know
+// ("Department of State", "Federal Office of …"), not a unit of the
+// document's publisher.
+var publicMarkers = []string{"federal", "national", "united states", "u.s.", "state", "county", "city of",
+	"government"}
+
+// genericUnit reports whether an organization name is a generic unit of the
+// document's publisher: a unit prefix followed by at most three words, with no
+// mark of a public body. It is a heuristic: a short unit-like name of a real
+// outside body without such a mark ("Office of Personnel Management") is
+// still kept as a finding, just not sent to the engine.
+func genericUnit(name string) bool {
+	lower := strings.ToLower(strings.Join(strings.Fields(name), " "))
+	for _, m := range publicMarkers {
+		if strings.Contains(lower, m) {
+			return false
+		}
+	}
+	for _, p := range unitPrefixes {
+		if rest, ok := strings.CutPrefix(lower, p); ok {
+			return len(strings.Fields(rest)) <= 3
+		}
+	}
+	return false
 }

@@ -28,9 +28,12 @@ const (
 const (
 	ActivityDocumentsRead    = "documents_read"
 	ActivityDocumentFailures = "document_failures"
-	ActivityStatements       = "statements"
-	ActivityLeads            = "leads"
-	ActivityLeadsWaiting     = "leads_waiting"
+	// ActivityDocumentErrors counts passes that could not list a target's
+	// documents (a database or lens error), which would otherwise be silent.
+	ActivityDocumentErrors = "document_errors"
+	ActivityStatements     = "statements"
+	ActivityLeads          = "leads"
+	ActivityLeadsWaiting   = "leads_waiting"
 )
 
 // DocumentGraph is the graph the companion reads documents from: it must
@@ -194,6 +197,9 @@ func (c *DocumentCompanion) pass(ctx context.Context, run collect.Run, act colle
 			ModelID: c.ModelID, ModelTimeout: c.ModelTimeout, ChunkChars: c.ChunkChars, Max: batch,
 			Fetcher: c.Fetcher, Schema: c.Schema})
 		if err != nil {
+			if ctx.Err() == nil {
+				count(act, ActivityDocumentErrors, 1)
+			}
 			continue
 		}
 		count(act, ActivityDocumentsRead, res.Read)

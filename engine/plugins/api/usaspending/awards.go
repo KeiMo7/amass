@@ -216,7 +216,7 @@ func (h *awards) store(e *et.Event, orgent *dbt.Entity, a *award, id string) *db
 		Amount:          a.Amount,
 		Currency:        "USD",
 		ReferenceNumber: a.AwardID,
-		ExchangeDate:    a.StartDate,
+		ExchangeDate:    support.TransferDate(a.StartDate),
 	}
 	fundent, err := e.Session.DB().CreateAsset(ctx, f)
 	if err != nil || fundent == nil {

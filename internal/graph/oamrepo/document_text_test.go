@@ -33,8 +33,8 @@ func TestWithholdDocumentText(t *testing.T) {
 		t.Fatal(err)
 	}
 	for _, p := range []*oamgen.SimpleProperty{
-		{PropertyName: "doc_passage", PropertyValue: "The Foundation is a division of the College."},
-		{PropertyName: "doc_passage", PropertyValue: "Jane Doe, Chief Information Officer."},
+		{PropertyName: "doc_statement", PropertyValue: "The Foundation is a division of the College."},
+		{PropertyName: "doc_statement", PropertyValue: "Jane Doe, Chief Information Officer."},
 		{PropertyName: "doc_title", PropertyValue: "IT Plan"},
 	} {
 		if _, err := repo.CreateEntityProperty(ctx, fent, p); err != nil {
@@ -51,7 +51,7 @@ func TestWithholdDocumentText(t *testing.T) {
 		for _, e := range ev {
 			if sp, ok := e.Property.(*oamgen.SimpleProperty); ok {
 				switch sp.PropertyName {
-				case "doc_passage":
+				case "doc_statement":
 					passages = append(passages, sp.PropertyValue)
 				case "doc_title":
 					title = sp.PropertyValue
@@ -75,11 +75,11 @@ func TestWithholdDocumentText(t *testing.T) {
 			t.Errorf("passage text leaked: %q", v)
 		}
 	}
-	if !graph.IsDocumentTextProperty("DOC_PASSAGE") || graph.IsDocumentTextProperty("doc_title") {
+	if !graph.IsDocumentTextProperty("DOC_STATEMENT") || graph.IsDocumentTextProperty("doc_title") {
 		t.Error("document text property names")
 	}
 
-	found, _, err := Adapter{Repo: repo, WithholdDocumentText: true}.FindByTagValue(ctx, "File", "doc_passage", "College", true, 10)
+	found, _, err := Adapter{Repo: repo, WithholdDocumentText: true}.FindByTagValue(ctx, "File", "doc_statement", "College", true, 10)
 	if err != nil || len(found) != 0 {
 		t.Errorf("withheld passages were searchable: %v, %v", found, err)
 	}

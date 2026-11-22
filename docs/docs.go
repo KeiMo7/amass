@@ -173,7 +173,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Asset type (e.g., autonomous_system, fqdn, ipaddress, netblock, location, organization)",
+                        "description": "Asset type (e.g., autonomous_system, fqdn, ipaddress, netblock, streetaddress, organization)",
                         "name": "asset_type",
                         "in": "path",
                         "required": true
@@ -243,7 +243,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Asset type (e.g., autonomous_system, fqdn, ipaddress, netblock, location, organization)",
+                        "description": "Asset type (e.g., autonomous_system, fqdn, ipaddress, netblock, streetaddress, organization)",
                         "name": "asset_type",
                         "in": "path",
                         "required": true
@@ -312,7 +312,7 @@ const docTemplate = `{
                     },
                     {
                         "type": "string",
-                        "description": "Asset type (e.g., autonomoussystem, fqdn, ipaddress, netblock, location, organization)",
+                        "description": "Asset type (e.g., autonomoussystem, fqdn, ipaddress, netblock, streetaddress, organization)",
                         "name": "asset_type",
                         "in": "path",
                         "required": true

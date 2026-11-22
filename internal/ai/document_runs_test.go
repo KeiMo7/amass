@@ -9,10 +9,12 @@ import (
 	"errors"
 	"fmt"
 	"path/filepath"
+	"strings"
 	"testing"
 
 	"github.com/owasp-amass/amass/v5/internal/graph"
 	"github.com/owasp-amass/amass/v5/internal/graph/graphtest"
+	"github.com/owasp-amass/amass/v5/internal/lens"
 	"github.com/owasp-amass/amass/v5/internal/review"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
@@ -44,9 +46,26 @@ func (s *runStore) DeleteEntityTag(_ context.Context, id string) error {
 	return nil
 }
 
-// A run reads the documents with passages and no statements, up to its limit,
-// stores what passes validation, and counts the rest as skipped or remaining.
-func TestReadDocuments(t *testing.T) {
+// textFetcher serves each document's text and version from memory, recording
+// what was fetched.
+type textFetcher struct {
+	texts   map[string]string
+	fetched []string
+}
+
+func (f *textFetcher) Document(_ context.Context, src lens.DocumentSource) (string, string, error) {
+	f.fetched = append(f.fetched, src.URL)
+	text, ok := f.texts[src.URL]
+	if !ok {
+		return "", "", errors.New("fetch: status 404 Not Found")
+	}
+	return text, "sha-" + src.URL[strings.LastIndex(src.URL, "/")+1:], nil
+}
+
+// documentFixture stores Files a, b and c on colgate.edu, each with the
+// content hash of its stored version; b's version predates versions being
+// recorded and already has statements.
+func documentFixture() graphtest.VendorGraph {
 	g := graphtest.VendorFixture()
 	if g.EvidenceByID == nil {
 		g.EvidenceByID = map[string][]graph.Evidence{}
@@ -54,31 +73,47 @@ func TestReadDocuments(t *testing.T) {
 	for _, f := range []string{"a", "b", "c"} {
 		url := "https://www.colgate.edu/" + f + ".pdf"
 		g.Assets["u-"+f] = graph.Asset{ID: "u-" + f, Type: "URL", Key: url, Content: map[string]any{"url": url}}
-		g.Assets["f-"+f] = graph.Asset{ID: "f-" + f, Type: "File", Key: url, Content: map[string]any{"url": url}}
+		g.Assets["f-"+f] = graph.Asset{ID: "f-" + f, Type: "File", Key: url,
+			Content: map[string]any{"url": url, "type": "application/pdf"}}
 		g.Links = append(g.Links,
 			graph.Relation{ID: "u-" + f + "-domain", FromID: "u-" + f, ToID: "www.colgate.edu", Label: "domain",
 				Type: "SimpleRelation"},
 			graph.Relation{ID: "u-" + f + "-file", FromID: "u-" + f, ToID: "f-" + f, Label: "file",
 				Type: "SimpleRelation"})
-		ev := []graph.Evidence{graphtest.SimpleProp("doc_passage", docPassages[0]),
-			graphtest.SimpleProp("doc_passage", docPassages[1])}
-		if f == "b" {
-			ev = append(ev, graphtest.SimpleProp(review.PropDocStatement, `{"predicate":"unit_of"}`))
+		if f != "b" {
+			g.Assets["h-"+f] = graph.Asset{ID: "h-" + f, Type: "Identifier", Key: "file_sha256:sha-" + f + ".pdf",
+				Content: map[string]any{"id": "sha-" + f + ".pdf", "id_type": "file_sha256"}}
+			g.Links = append(g.Links, graph.Relation{ID: "f-" + f + "-fp", FromID: "f-" + f, ToID: "h-" + f,
+				Label: "fingerprint", Type: "SimpleRelation"})
 		}
-		g.EvidenceByID["f-"+f] = ev
 	}
+	g.EvidenceByID["f-b"] = []graph.Evidence{graphtest.SimpleProp(review.PropDocStatement, `{"predicate":"unit_of"}`)}
+	return g
+}
 
-	reply := `{"category": "staff_directory", "statements": [
-	 {"subject": "Herkimer College Foundation", "subject_type": "Organization", "predicate": "unit_of",
-	  "object": "Herkimer County Community College", "object_type": "Organization",
-	  "quote": "The Herkimer College Foundation is a division of Herkimer County Community College."},
-	 {"subject": "Acme", "subject_type": "Organization", "predicate": "supplied_by",
-	  "object": "Herkimer County Community College", "object_type": "Organization",
-	  "quote": "Acme supplies the College"}]}`
+const runReply = `{"category": "staff_directory", "assets": [
+  {"type": "FQDN", "value": "vpn.herkimer.edu", "quote": "Staff connect remotely through vpn.herkimer.edu"}],
+ "statements": [
+  {"subject": "Herkimer College Foundation", "subject_type": "Organization", "predicate": "unit_of",
+   "object": "Herkimer County Community College", "object_type": "Organization",
+   "quote": "The Herkimer College Foundation is a division of Herkimer County Community College."},
+  {"subject": "Acme", "subject_type": "Organization", "predicate": "supplied_by",
+   "object": "Herkimer County Community College", "object_type": "Organization",
+   "quote": "Acme supplies the College"}],
+ "attributes": []}`
+
+// A run fetches each document and reads all of its text, up to its limit,
+// stores what passes validation with the version read, and reads each version
+// once: a version already read is skipped without fetching it.
+func TestReadDocuments(t *testing.T) {
+	g := documentFixture()
+	fetcher := &textFetcher{texts: map[string]string{
+		"https://www.colgate.edu/a.pdf": docText, "https://www.colgate.edu/b.pdf": docText,
+		"https://www.colgate.edu/c.pdf": docText}}
 	store := &runStore{props: map[string]oam.Property{}}
 	j := &review.Journal{Path: filepath.Join(t.TempDir(), "review.jsonl")}
-	opts := DocumentRunOptions{Model: &docModel{replies: []string{reply}}, ModelID: "test-model", Max: 1,
-		Schema: graphtest.VendorCatalog{PlanCatalog: graphtest.TestOAMCatalog}}
+	opts := DocumentRunOptions{Model: &docModel{replies: []string{runReply}}, ModelID: "test-model", Max: 1,
+		Fetcher: fetcher, Schema: graphtest.VendorCatalog{PlanCatalog: graphtest.TestOAMCatalog}}
 
 	// a dry run stores nothing
 	dry := opts
@@ -87,7 +122,7 @@ func TestReadDocuments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.Read != 1 || len(store.props) != 0 || len(run.Documents) != 1 || len(run.Documents[0].Stored) != 2 {
+	if run.Read != 1 || len(store.props) != 0 || len(run.Documents) != 1 || len(run.Documents[0].Stored) != 3 {
 		t.Fatalf("dry run %+v, stored %d", run, len(store.props))
 	}
 
@@ -95,18 +130,35 @@ func TestReadDocuments(t *testing.T) {
 	if err != nil {
 		t.Fatal(err)
 	}
-	if run.Read != 1 || run.Skipped != 1 || run.Remaining != 1 || run.Statements != 2 || run.Rejected != 1 {
+	if run.Read != 1 || run.Skipped != 1 || run.Remaining != 1 || run.Statements != 3 || run.Rejected != 1 {
 		t.Fatalf("run %+v", run)
 	}
 	d := run.Documents[0]
-	if d.URL != "https://www.colgate.edu/a.pdf" || d.Category != "staff_directory" || d.ReadingID == "" {
+	if d.URL != "https://www.colgate.edu/a.pdf" || d.Category != "staff_directory" || d.ReadingID == "" ||
+		d.SHA256 != "sha-a.pdf" {
 		t.Fatalf("document %+v", d)
 	}
-	if len(store.props) != 2 {
-		t.Fatalf("stored %d properties, want the category and one statement", len(store.props))
+	if len(store.props) != 3 {
+		t.Fatalf("stored %d properties, want the category, the asset and one relation", len(store.props))
 	}
-	if ids, _ := j.StoredDocumentReadings("f-a"); len(ids) != 1 || ids[0] != d.ReadingID {
-		t.Fatalf("journaled readings %v", ids)
+
+	// a's version is read: the next run fetches only c
+	fetcher.fetched = nil
+	opts.Max = 0
+	run, err = ReadDocuments(context.Background(), g, store, j, g.Assets["colgate.edu"], opts)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if run.Read != 1 || run.Skipped != 2 || len(fetcher.fetched) != 1 || fetcher.fetched[0] != "https://www.colgate.edu/c.pdf" {
+		t.Fatalf("second run %+v, fetched %v", run, fetcher.fetched)
+	}
+
+	// a document that cannot be fetched fails without stopping the run
+	delete(fetcher.texts, "https://www.colgate.edu/a.pdf")
+	opts.Reread = true
+	run, err = ReadDocuments(context.Background(), g, store, j, g.Assets["colgate.edu"], opts)
+	if err != nil || run.Failed != 1 || run.Read != 2 {
+		t.Fatalf("reread %+v, %v", run, err)
 	}
 
 	if _, err := ReadDocuments(context.Background(), g, store, j, g.Assets["colgate.edu"],

@@ -75,8 +75,8 @@ func TestStoreAndUndoDocumentStatements(t *testing.T) {
 	s := newStatementStore()
 	j := &Journal{Path: filepath.Join(t.TempDir(), "review.jsonl")}
 
-	rec, err := StoreDocumentStatements(ctx, s, j, "f1", "https://www.cobleskill.edu/plan.pdf", "ollama/qwen3",
-		testStatements)
+	rec, err := StoreDocumentStatements(ctx, s, j, "f1", "https://www.cobleskill.edu/plan.pdf", "abc123",
+		"ollama/qwen3", testStatements)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestStoreAndUndoDocumentStatements(t *testing.T) {
 	for _, p := range s.props {
 		var v StoredStatement
 		if p.PropertyName != PropDocStatement || json.Unmarshal([]byte(p.PropertyValue), &v) != nil ||
-			v.Source != InferenceSource || v.Model != "ollama/qwen3" {
+			v.Source != InferenceSource || v.Model != "ollama/qwen3" || v.SHA256 != "abc123" {
 			t.Fatalf("stored property %+v", p)
 		}
 	}
@@ -132,7 +132,7 @@ func TestStoreDocumentStatementsRollsBack(t *testing.T) {
 	s.failAfter = 1
 	j := &Journal{Path: filepath.Join(t.TempDir(), "review.jsonl")}
 
-	if _, err := StoreDocumentStatements(ctx, s, j, "f1", "u", "m", testStatements); err == nil {
+	if _, err := StoreDocumentStatements(ctx, s, j, "f1", "u", "h", "m", testStatements); err == nil {
 		t.Fatal("expected the write to fail")
 	}
 	if len(s.props) != 0 {
@@ -143,7 +143,33 @@ func TestStoreDocumentStatementsRollsBack(t *testing.T) {
 	}
 
 	// statements need a stored File
-	if _, err := StoreDocumentStatements(ctx, newStatementStore(), j, "missing", "u", "m", testStatements); err == nil {
+	if _, err := StoreDocumentStatements(ctx, newStatementStore(), j, "missing", "u", "h", "m", testStatements); err == nil {
 		t.Fatal("stored on a missing entity")
+	}
+}
+
+// A reading that found nothing is journaled, so the version it read is not
+// read again; undoing a reading frees its version.
+func TestEmptyReadingMarksTheVersionRead(t *testing.T) {
+	ctx := context.Background()
+	s := newStatementStore()
+	j := &Journal{Path: filepath.Join(t.TempDir(), "review.jsonl")}
+
+	rec, err := StoreDocumentStatements(ctx, s, j, "f1", "u", "v1", "m", nil)
+	if err != nil || rec.ID == "" || len(s.props) != 0 {
+		t.Fatalf("empty reading %+v, %v", rec, err)
+	}
+	read, err := j.ReadVersions()
+	if err != nil || !read["v1"] {
+		t.Fatalf("read versions %v, %v", read, err)
+	}
+	if ids, _ := j.StoredVersionReadings("v1"); len(ids) != 1 {
+		t.Fatalf("version readings %v", ids)
+	}
+	if err := UndoDocumentStatements(ctx, s, j, rec.ID, "jeff"); err != nil {
+		t.Fatal(err)
+	}
+	if read, _ := j.ReadVersions(); read["v1"] {
+		t.Fatal("an undone reading still marks its version read")
 	}
 }

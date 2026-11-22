@@ -19,8 +19,8 @@ import (
 	oamgen "github.com/owasp-amass/open-asset-model/general"
 )
 
-// PropDocStatement is the File property holding one statement the document
-// model read from the File's passages, as a JSON StoredStatement.
+// PropDocStatement is the File property holding one finding the document
+// model read from the document, as a JSON StoredStatement.
 const PropDocStatement = "doc_statement"
 
 // PredicateIsA is the predicate of the statement recording a document's
@@ -34,17 +34,24 @@ const (
 )
 
 // StoredStatement is the value of a doc_statement property. It is an
-// observation of what a document says (principle 10), never a conclusion:
-// Quote is the passage text it was read from, Model the document model that
-// read it, and Source is always amass-ai.
+// observation of what a document says (principle 10), never a conclusion.
+// Kind is asset (the document names Subject, an asset of SubjectType),
+// relation (Subject Predicate Object) or attribute (Subject's OAM Field is
+// Object). Quote is the text it was read from, SHA256 the version of the
+// document read (the Asset Database keeps no copy of the content, so the hash
+// is what the quote cites), Model the document model that read it, and Source
+// is always amass-ai.
 type StoredStatement struct {
+	Kind        string `json:"kind,omitempty"`
 	Subject     string `json:"subject"`
 	SubjectType string `json:"subject_type"`
-	Predicate   string `json:"predicate"`
-	Object      string `json:"object"`
+	Predicate   string `json:"predicate,omitempty"`
+	Object      string `json:"object,omitempty"`
 	ObjectType  string `json:"object_type,omitempty"`
+	Field       string `json:"field,omitempty"`
 	Detail      string `json:"detail,omitempty"`
 	Quote       string `json:"quote,omitempty"`
+	SHA256      string `json:"sha256,omitempty"`
 	Model       string `json:"model"`
 	Source      string `json:"source"`
 }
@@ -58,11 +65,12 @@ type DocumentStatementStore interface {
 
 // DocumentStatementRecord journals one stored reading of a document so it can
 // be undone. It holds no document text, only counts and the property tags,
-// since the journal is readable where the passages may be withheld.
+// since the journal is readable where the findings may be withheld.
 type DocumentStatementRecord struct {
 	ID         string         `json:"id"`
 	FileID     string         `json:"file_id"`
 	URL        string         `json:"url"`
+	SHA256     string         `json:"sha256,omitempty"`
 	Model      string         `json:"model"`
 	Predicates map[string]int `json:"predicates"`
 	TagIDs     []string       `json:"tag_ids"`
@@ -80,18 +88,16 @@ type documentStatementUndo struct {
 
 // StoreDocumentStatements writes each statement as a doc_statement property
 // of the File, tagged amass-ai, and journals the property tags so the reading
-// can be undone (principle 9). When the journal cannot be written, the
-// properties just written are removed again and the error returned: nothing is
-// stored that cannot be undone.
-func StoreDocumentStatements(ctx context.Context, w DocumentStatementStore, j *Journal, fileID, url, model string,
-	statements []StoredStatement) (DocumentStatementRecord, error) {
-	rec := DocumentStatementRecord{FileID: fileID, URL: url, Model: model, Predicates: map[string]int{},
-		Status: StatementsStored, Actor: InferenceSource, At: time.Now().UTC()}
+// can be undone (principle 9). A reading that found nothing is journaled too,
+// so that version of the document (sha256) is not read again. When the journal
+// cannot be written, the properties just written are removed again and the
+// error returned: nothing is stored that cannot be undone.
+func StoreDocumentStatements(ctx context.Context, w DocumentStatementStore, j *Journal, fileID, url, sha256,
+	model string, statements []StoredStatement) (DocumentStatementRecord, error) {
+	rec := DocumentStatementRecord{FileID: fileID, URL: url, SHA256: sha256, Model: model,
+		Predicates: map[string]int{}, Status: StatementsStored, Actor: InferenceSource, At: time.Now().UTC()}
 	if fileID == "" || model == "" {
 		return rec, errors.New("document statements need a File and a model")
-	}
-	if len(statements) == 0 {
-		return rec, nil
 	}
 
 	file, err := w.FindEntityById(ctx, fileID)
@@ -108,7 +114,7 @@ func StoreDocumentStatements(ctx context.Context, w DocumentStatementStore, j *J
 		}
 	}
 	for _, s := range statements {
-		s.Model, s.Source = model, InferenceSource
+		s.Model, s.Source, s.SHA256 = model, InferenceSource, sha256
 		value, err := json.Marshal(s)
 		if err != nil {
 			rollback()
@@ -122,7 +128,14 @@ func StoreDocumentStatements(ctx context.Context, w DocumentStatementStore, j *J
 			return rec, fmt.Errorf("store statement on %s: %w", url, err)
 		}
 		rec.TagIDs = append(rec.TagIDs, tag.ID)
-		rec.Predicates[s.Predicate]++
+		key := s.Predicate
+		switch {
+		case s.Kind == "asset":
+			key = "asset:" + s.SubjectType
+		case s.Kind == "attribute" && s.Field != "":
+			key = "field:" + s.Field
+		}
+		rec.Predicates[key]++
 	}
 
 	rec.ID = documentRecordID(fileID, rec.At)
@@ -183,6 +196,40 @@ func (j *Journal) DocumentStatementRecords() ([]DocumentStatementRecord, error) 
 	}
 	sort.SliceStable(out, func(a, b int) bool { return out[a].At.Before(out[b].At) })
 	return out, nil
+}
+
+// ReadVersions returns the document versions (content SHA-256) that have a
+// stored reading, so each version is read once wherever it was found.
+func (j *Journal) ReadVersions() (map[string]bool, error) {
+	recs, err := j.DocumentStatementRecords()
+	if err != nil {
+		return nil, err
+	}
+
+	out := map[string]bool{}
+	for _, r := range recs {
+		if r.Status == StatementsStored && r.SHA256 != "" {
+			out[r.SHA256] = true
+		}
+	}
+	return out, nil
+}
+
+// StoredVersionReadings returns the IDs of the stored readings of a document
+// version, wherever it was found.
+func (j *Journal) StoredVersionReadings(sha256 string) ([]string, error) {
+	recs, err := j.DocumentStatementRecords()
+	if err != nil {
+		return nil, err
+	}
+
+	var ids []string
+	for _, r := range recs {
+		if sha256 != "" && r.SHA256 == sha256 && r.Status == StatementsStored {
+			ids = append(ids, r.ID)
+		}
+	}
+	return ids, nil
 }
 
 // StoredDocumentReadings returns the IDs of the readings of a File that are

@@ -184,3 +184,29 @@ func TestAISettingsRefusedOutsideOptions(t *testing.T) {
 		t.Errorf("no options.ai still set AI: %+v", c.AI)
 	}
 }
+
+// Only an explicit options.ai key counts as set, so a document model section
+// does not change the question model's guidance rounds.
+func TestAIKeySet(t *testing.T) {
+	c := loadYAML(t, "options:\n  ai:\n    documents:\n      enabled: true\n      provider: ollama\n      model: m\n")
+	if c.AIKeySet("guidance_rounds") {
+		t.Error("guidance_rounds reported set when only documents is")
+	}
+	c = loadYAML(t, "options:\n  ai:\n    guidance_rounds: 0\n")
+	if !c.AIKeySet("guidance_rounds") || c.AI.GuidanceRounds != 0 {
+		t.Error("an explicit guidance_rounds: 0 is not reported set")
+	}
+	if NewConfig().AIKeySet("guidance_rounds") {
+		t.Error("a config without options.ai reports a key set")
+	}
+
+	for _, bad := range []DocumentModelSettings{
+		{Enabled: true, Provider: "ollama", Model: "m", MaxLeads: -2},
+		{Enabled: true, Provider: "ollama", Model: "m", ContextTokens: 1024},
+		{Enabled: true, Provider: "ollama", Model: "m", ChunkChars: 100},
+	} {
+		if bad.Validate() == nil {
+			t.Errorf("%+v was accepted", bad)
+		}
+	}
+}

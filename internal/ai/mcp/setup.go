@@ -16,6 +16,7 @@ import (
 	"github.com/owasp-amass/amass/v5/internal/collect"
 	"github.com/owasp-amass/amass/v5/internal/graph"
 	"github.com/owasp-amass/amass/v5/internal/graph/oamrepo"
+	"github.com/owasp-amass/amass/v5/internal/review"
 )
 
 // OperatorOptions configures NewOperator.
@@ -68,6 +69,21 @@ func NewOperator(cfg *config.Config, g oamrepo.Adapter, opts OperatorOptions) (*
 		MaxRunning:  opts.MaxRunning,
 		IdleTimeout: opts.IdleTimeout,
 		MaxDuration: opts.MaxDuration,
+	}
+	// With a document model, it reads the documents each run collects while
+	// the run goes on and gives the run the organizations they name as leads.
+	if cfg.AI.DocumentModelEnabled() && journal != "" && g.Repo != nil {
+		model, modelID, timeout, err := ai.DocumentModel(cfg.AI.Documents)
+		if err != nil {
+			c.Close()
+			return nil, nil, err
+		}
+
+		dg := g
+		dg.WithholdDocumentText = false
+		m.Companions = append(m.Companions, &ai.DocumentCompanion{Graph: dg, Store: g.Repo,
+			Journal: &review.Journal{Path: journal}, Model: model, ModelID: modelID, ModelTimeout: timeout,
+			ChunkChars: cfg.AI.Documents.ChunkChars, MaxLeads: cfg.AI.Documents.MaxLeads})
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)

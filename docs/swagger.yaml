@@ -348,7 +348,7 @@ paths:
         required: true
         type: string
       - description: Asset type (e.g., autonomous_system, fqdn, ipaddress, netblock,
-          location, organization)
+          streetaddress, organization)
         in: path
         name: asset_type
         required: true
@@ -398,7 +398,7 @@ paths:
         required: true
         type: string
       - description: Asset type (e.g., autonomous_system, fqdn, ipaddress, netblock,
-          location, organization)
+          streetaddress, organization)
         in: path
         name: asset_type
         required: true
@@ -447,7 +447,7 @@ paths:
         required: true
         type: string
       - description: Asset type (e.g., autonomoussystem, fqdn, ipaddress, netblock,
-          location, organization)
+          streetaddress, organization)
         in: path
         name: asset_type
         required: true

@@ -107,7 +107,7 @@ A server started with an operator configuration also offers tools that act:
 | `watch_target` | Re-runs a planned enumeration every N hours (at least 6) after one approval, until stopped. |
 | `list_watches` | Lists watches with their schedule, next run and what the last finished run found (the changes lens since it started). |
 | `stop_watch` | Removes a watch. |
-| `read_documents` | With the user's approval, has the document model named in `options.ai.documents` read a domain's or organization's stored document passages and stores the validated statements (at most 10 documents per call; call again while documents remain). Returns counts unless `options.ai.documents.share_with_assistants` is set. |
+| `read_documents` | With the user's approval, has the document model named in `options.ai.documents` read a domain's or organization's documents in full (fetched again; the database keeps no copy) and stores the validated findings: assets, relations and field values in OAM terms (at most 10 documents per call, default 2; each version is read once). Returns counts unless `options.ai.documents.share_with_assistants` is set. |
 | `list_proposals` | Lists ownership, merge, identity and person-named proposals. |
 | `review_proposal` | Approves, rejects or retracts a proposal; approving and retracting write to the Asset Database after the user approves. |
 | `data_sources` | Lists which data sources have credentials, never the credentials. |

@@ -9,12 +9,13 @@ import (
 	"io"
 
 	"github.com/owasp-amass/amass/v5/internal/ai"
+	"github.com/owasp-amass/amass/v5/internal/review"
 )
 
 // writeDocumentRun prints a documents run, one line per document read.
 func writeDocumentRun(out io.Writer, root string, run ai.DocumentRun) error {
 	if len(run.Documents) == 0 && run.Skipped == 0 && run.Remaining == 0 {
-		_, err := fmt.Fprintf(out, "no stored documents with passages for %s\n", root)
+		_, err := fmt.Fprintf(out, "no stored documents for %s\n", root)
 		return err
 	}
 
@@ -31,8 +32,8 @@ func writeDocumentRun(out io.Writer, root string, run ai.DocumentRun) error {
 		if category == "" {
 			category = "none"
 		}
-		_, _ = fmt.Fprintf(out, "%s: %s %d statements (category %s), rejected %d", d.URL, verb, d.Statements,
-			category, d.Rejected)
+		_, _ = fmt.Fprintf(out, "%s: read %d part(s), %s %d findings (category %s), rejected %d", d.URL, d.Chunks,
+			verb, d.Statements, category, d.Rejected)
 		if d.ReadingID != "" {
 			_, _ = fmt.Fprintf(out, " [%s]", d.ReadingID)
 		}
@@ -40,19 +41,36 @@ func writeDocumentRun(out io.Writer, root string, run ai.DocumentRun) error {
 		// a dry run shows what would be stored, quotes included
 		if run.DryRun {
 			for _, s := range d.Stored {
-				_, _ = fmt.Fprintf(out, "    %s %s %s", s.Subject, s.Predicate, s.Object)
-				if s.Detail != "" {
-					_, _ = fmt.Fprintf(out, " (%s)", s.Detail)
-				}
-				if s.Quote != "" {
-					_, _ = fmt.Fprintf(out, ": %q", s.Quote)
-				}
-				_, _ = fmt.Fprintln(out)
+				_, _ = fmt.Fprintf(out, "    %s\n", findingLine(s))
 			}
 		}
 	}
 
 	_, err := fmt.Fprintf(out, "read %d documents, skipped %d already read, %d remaining, failed %d: "+
-		"%d statements, %d rejected\n", run.Read, run.Skipped, run.Remaining, run.Failed, run.Statements, run.Rejected)
+		"%d findings, %d rejected\n", run.Read, run.Skipped, run.Remaining, run.Failed, run.Statements, run.Rejected)
 	return err
+}
+
+// findingLine renders one stored finding.
+func findingLine(s review.StoredStatement) string {
+	var line string
+	switch s.Kind {
+	case ai.FindingAsset:
+		line = fmt.Sprintf("%s %s", s.SubjectType, s.Subject)
+	case ai.FindingAttribute:
+		if s.Predicate != "" {
+			line = fmt.Sprintf("%s %s %s", s.Subject, s.Predicate, s.Object)
+		} else {
+			line = fmt.Sprintf("%s %s %s = %s", s.SubjectType, s.Subject, s.Field, s.Object)
+		}
+	default:
+		line = fmt.Sprintf("%s %s -[%s]-> %s %s", s.SubjectType, s.Subject, s.Predicate, s.ObjectType, s.Object)
+		if s.Detail != "" {
+			line += fmt.Sprintf(" (%s)", s.Detail)
+		}
+	}
+	if s.Quote != "" {
+		line += fmt.Sprintf(": %q", s.Quote)
+	}
+	return line
 }

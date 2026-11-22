@@ -94,13 +94,14 @@ options:
   #   endpoint: http://127.0.0.1:11434
   #   model: qwen3:8b
   #
-  #   # documents: the ONE model allowed to read the content of collected
-  #   # documents (passages kept from PDFs and Office files), to find the
-  #   # statements they make: who runs what, which organization a unit belongs
-  #   # to, who supplies a service. Documents can hold personal or internal
-  #   # details, so this model is named on its own and never falls back to the
-  #   # model above; without it, no model reads documents. Uncomment ONE of the
-  #   # three provider choices below.
+  #   # documents: the ONE model allowed to read collected documents (PDFs
+  #   # and Office files), all of each one's text, to find what they state:
+  #   # the hosts, networks, organizations, people, products and addresses
+  #   # they name, how these relate, and their details. Documents are fetched
+  #   # again to be read; the database keeps no copy, and each version is read
+  #   # once. Documents can hold personal or internal details, so this model is
+  #   # named on its own and never falls back to the model above; without it,
+  #   # no model reads documents. Uncomment ONE of the three provider choices.
   #   documents:
   #     enabled: true
   #     # 1) The containerized Ollama started by this Compose project:
@@ -115,7 +116,7 @@ options:
   #     # model: qwen3:8b
   #     # allow_http: true
   #     # 3) Another provider or model, if you are comfortable sending document
-  #     #    passages to it (the key is read from the named variable, never
+  #     #    documents to it (the key is read from the named variable, never
   #     #    written here):
   #     # provider: anthropic           # or compatible (OpenAI-compatible API)
   #     # model: claude-sonnet-5-5
@@ -123,8 +124,12 @@ options:
   #     # endpoint: https://api.anthropic.com/v1/messages
   #     model_timeout: 4m
   #     # Other models (the investigation model above, MCP clients) see only
-  #     # counts of passages unless this is true:
+  #     # counts of the findings unless this is true:
   #     share_with_assistants: false
+  #     # Leads the document model may hand one enumeration: 0 adapts to how
+  #     # many the engine confirms and to the run's size; a number caps it;
+  #     # -1 submits none (findings are still stored):
+  #     max_leads: 0
 
 transformations:
   Account->ALL:

@@ -257,5 +257,27 @@ func DecisionItems(journalPath string) ([]DecisionItem, error) {
 		add("scope_expansion", e.ID, DecisionApplied, e.Reviewer, text, e.OrgID)
 	}
 
+	leads, err := j.DocumentLeads()
+	if err != nil {
+		return nil, err
+	}
+	for _, l := range leads {
+		if l.Status != review.ProposalApplied || !isAIReviewer(l.Reviewer) {
+			continue
+		}
+
+		kind := l.Type
+		if kind == "" {
+			kind = "Organization"
+		}
+		text := fmt.Sprintf("Lead given to enumeration %s: the %s %q, named (%s) in %s (read by %s). The engine "+
+			"checks it like any other lead; it joins the scope only if attributed.", l.RunID, kind, l.Name,
+			l.Predicate, l.URL, l.Model)
+		if l.Confirmed && l.Footprint != nil {
+			text += " " + footprintText(l.Footprint)
+		}
+		add("document_lead", l.ID, DecisionApplied, l.Reviewer, text, l.EntityID)
+	}
+
 	return out, nil
 }

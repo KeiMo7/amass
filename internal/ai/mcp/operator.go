@@ -84,7 +84,7 @@ const (
 // defaultDocumentsPerCall and maxDocumentsPerCall bound the documents one
 // read_documents call reads, so a call ends within a client's tool timeout.
 const (
-	defaultDocumentsPerCall = 5
+	defaultDocumentsPerCall = 2
 	maxDocumentsPerCall     = 10
 )
 
@@ -95,10 +95,10 @@ Operator mode: this connection can also collect data and change the database, ea
 - To start from a phone number or a street address instead of a target, give plan_enumeration a phone or address: it resolves the organizations tied to the seed and plans a passive enumeration of their registered domains (never the phone or address itself). Show the user the resolved organizations and domains the plan lists before start_enumeration. A shared or registered-agent address is reported and not enumerated; a seed not yet in the database plans a passive resolution pass, after which you plan again to review and enumerate the domains found.
 - Follow a run with enumeration_status; when it finishes, its result lists what was found, and investigate answers questions about it. stop_enumeration ends a run. A finished run also reports pending_proposals (counts by kind) when the run left proposals awaiting review.
 - When a run reports pending_proposals, present them for the user to decide on: call list_proposals with pending true, group them by kind, and for each explain the evidence behind it with get_evidence and walk_relations (for example, that two organization records share an LEI and a registrant phone, so they are likely the same company, or how an identity contradicts the evidence). Then review_proposal approves, rejects or retracts one; approving and retracting write to the database and ask the user first. Never approve on the user's behalf — the decision is theirs. list_proposals also shows every ownership, merge, identity and person-named proposal when pending is false.
-- A finished run also reports applied_by_ai (counts by kind) for the changes the classifier applied automatically during the run (ownership edges, organization merges, identity corrections, scope expansions). Tell the user what the AI decided on its own and explain the evidence with get_evidence and walk_relations; list_proposals with applied true lists them. These are already applied, so the only action is review_proposal retract to undo one — ask the user first, and never retract on their behalf.
+- A finished run also reports applied_by_ai (counts by kind) for the changes the classifier applied automatically during the run (ownership edges, organization merges, identity corrections, scope expansions, and document leads: organizations the document model found named in the run's documents and gave the run to check). Tell the user what the AI decided on its own and explain the evidence with get_evidence and walk_relations; list_proposals with applied true lists them. These are already applied, so the only action is review_proposal retract to undo one — ask the user first, and never retract on their behalf.
 - To keep the user aware in near real time, offer to watch a run the user starts or points you at. Call watch_decisions once without a cursor to start from now, then call it again with the cursor it returned, in a loop: each call waits until a new proposal or an AI-applied change is written to the review journal (or up to its wait time) and returns those items with the next cursor. Surface each item at once — explain its evidence with get_evidence and walk_relations, ask the user before any decision, and never approve or retract on their behalf — and check enumeration_status between calls to stop when the run finishes or the user says so. This is user-initiated, so watch when asked.
 - watch_target re-runs a planned enumeration on a schedule (at most every 6 hours) after the user approves it once; list_watches shows each watch with what its last run found, and stop_watch removes one.
-- When the configuration names a document model (options.ai.documents), read_documents has it read the passages Amass kept from a domain's or organization's documents and stores the statements that pass validation, with the user's approval; call it again while it reports remaining documents. The document text goes only to that model; you see counts unless documents are shared with assistants.
+- When the configuration names a document model (options.ai.documents), read_documents has it read a domain's or organization's documents, all of each document's text (fetched again; the database keeps no copy), and stores what they state in OAM terms (assets, relations, field values) after checking each finding against the text, with the user's approval; each version of a document is read once. Call it again while it reports remaining documents. While an enumeration this server started runs, the document model also reads its documents on its own and gives the run the assets they name that the database lacks (hosts, networks, organizations, addresses, phones, emails, URLs) as leads; enumeration_status shows this in the run's activity (documents_read, statements, leads, leads_waiting). The number of leads adapts to how many the engine confirms and to the run's size. When the run ends, leads the engine confirmed stay (with what they led to recorded), and the rest expire. The document text goes only to that model; you see counts unless documents are shared with assistants.
 - data_sources lists which data sources have credentials. data_source_key_link gives the user a one-time local link to enter a key; never ask the user to type a key into the chat.
 - To change how enumerations run, draft a complete configuration (describe_config gives the schema, current settings and a template), check it with validate_config, then call apply_config with the same content; the user approves the exact change and sees a masked diff. Never put data source credentials in a configuration; the operator adds keys through data_source_key_link.`
 
@@ -437,23 +437,25 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 		})
 
 	approveAction(ToolReadDocuments, "Read documents with the document model",
-		"Have the document model named in the options.ai.documents configuration read the passages Amass kept from the "+
-			"documents a domain or organization publishes, and store the statements it finds that pass "+
-			"validation (each quotes a passage word for word, uses a catalog relationship and names both sides "+
-			"in that passage) on the documents as amass-ai observations, undoable. Reads at most max_documents "+
-			"(default 5) per call, skipping documents already read; call again while remaining is above zero. "+
-			"The document text goes to that model only; the result holds counts unless the configuration shares "+
-			"documents with assistants.",
+		"Have the document model named in the options.ai.documents configuration read the documents a domain or "+
+			"organization publishes, all of each document's text (fetched again, from the archive copy the engine "+
+			"read when it read one; the database keeps no copy), and store what they state in Open Asset Model "+
+			"terms (assets, relations, field values) as amass-ai observations, undoable. Each finding is checked "+
+			"against the text: its quote is in the document, its names are written there, its types and relations "+
+			"are ones OAM allows, and a relation is not negated. Each version of a document is read once. Reads at "+
+			"most max_documents (default 2) per call; call again while remaining is above zero. The document "+
+			"text goes to that model only; the result holds counts unless the configuration shares documents "+
+			"with assistants.",
 		obj(nil, map[string]any{
 			"domain": map[string]any{"type": "string", "description": "The domain whose documents are read"},
 			"organization": map[string]any{"type": "string",
 				"description": "Instead of a domain, the exact name of a stored organization"},
 			"max_documents": map[string]any{"type": "integer", "minimum": 1, "maximum": maxDocumentsPerCall,
-				"description": "Most documents read in this call (default 5)"},
+				"description": "Most documents read in this call (default 2)"},
 			"dry_run": map[string]any{"type": "boolean",
 				"description": "Read and validate without storing anything"},
 			"reread": map[string]any{"type": "boolean",
-				"description": "Read documents that already have statements again, undoing their earlier statements"},
+				"description": "Read documents again even when their version was read, undoing the earlier findings"},
 		}),
 		&mcp.ToolAnnotations{DestructiveHint: boolPtr(false), OpenWorldHint: boolPtr(true)},
 		func(ctx context.Context, req *mcp.CallToolRequest, raw json.RawMessage) (string,
@@ -476,7 +478,7 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 			if op.Graph.Repo == nil {
 				return "", nil, errors.New("no Asset Database is open")
 			}
-			// the document model reads the passages as stored; this graph is
+			// the document model's findings are read as stored; this graph is
 			// never handed to the client
 			dg := op.Graph
 			dg.WithholdDocumentText = false
@@ -494,11 +496,12 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 			if a.DryRun {
 				action = "check the statements it finds without storing them"
 			}
-			msg := fmt.Sprintf("Send the passages of up to %d documents published by %s to the document model %s, "+
-				"and %s?", limit, graph.AssetLabel(root), modelID, action)
+			msg := fmt.Sprintf("Fetch up to %d documents published by %s and send their full text to the document "+
+				"model %s, and %s?", limit, graph.AssetLabel(root), modelID, action)
 			return msg, func(via string) (*mcp.CallToolResult, error) {
 				run, err := ai.ReadDocuments(ctx, dg, op.Graph.Repo, &review.Journal{Path: op.Journal}, root,
-					ai.DocumentRunOptions{Model: model, ModelID: modelID, ModelTimeout: timeout, Max: limit,
+					ai.DocumentRunOptions{Model: model, ModelID: modelID, ModelTimeout: timeout,
+						ChunkChars: op.Documents.ChunkChars, Max: limit,
 						Reread: a.Reread, DryRun: a.DryRun, Actor: approver(req, via)})
 				if err != nil {
 					return nil, err
@@ -587,7 +590,7 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 	add(ToolWatchDecisions, "Watch Amass decisions",
 		"Wait for new review items while an enumeration runs: proposals that now await the user's decision and "+
 			"changes the AI classifier applied on its own (ownership edges, organization merges, identity "+
-			"corrections, scope expansions). Call it first without a cursor to start from now; then pass the "+
+			"corrections, scope expansions, document leads). Call it first without a cursor to start from now; then pass the "+
 			"cursor it returns. Each call returns as soon as new items are written, or after wait_seconds with "+
 			"none, with the cursor for the next call. Reads the review journal only; it changes nothing.",
 		obj(nil, map[string]any{

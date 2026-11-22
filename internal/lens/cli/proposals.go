@@ -583,6 +583,7 @@ type AppliedSummary struct {
 	Merges          int `json:"merges"`
 	Identities      int `json:"identities"`
 	ScopeExpansions int `json:"scope_expansions"`
+	DocumentLeads   int `json:"document_leads"`
 	Total           int `json:"total"`
 }
 
@@ -651,7 +652,17 @@ func AppliedByAISummary(journalPath string, since time.Time) (AppliedSummary, er
 		}
 	}
 
-	s.Total = s.Ownership + s.Merges + s.Identities + s.ScopeExpansions
+	leads, err := j.DocumentLeads()
+	if err != nil {
+		return s, err
+	}
+	for _, l := range leads {
+		if applied(l.Status, l.Reviewer, l.At) {
+			s.DocumentLeads++
+		}
+	}
+
+	s.Total = s.Ownership + s.Merges + s.Identities + s.ScopeExpansions + s.DocumentLeads
 	return s, nil
 }
 
@@ -679,6 +690,10 @@ func (s AppliedSummary) Line() string {
 	if s.ScopeExpansions > 0 {
 		parts = append(parts, fmt.Sprintf("%d scope %s", s.ScopeExpansions,
 			plural(s.ScopeExpansions, "expansion", "expansions")))
+	}
+	if s.DocumentLeads > 0 {
+		parts = append(parts, fmt.Sprintf("%d document %s", s.DocumentLeads,
+			plural(s.DocumentLeads, "lead", "leads")))
 	}
 
 	return fmt.Sprintf("%d change(s) the AI made automatically: %s — review with 'amass review applied'",

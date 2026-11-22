@@ -43,7 +43,6 @@ const (
 	propDocModified      = "doc_modified"
 	propDocRetrievedFrom = "doc_retrieved_from"
 	propDocImageCamera   = "doc_image_camera"
-	propDocPassage       = "doc_passage"
 )
 
 // Document is one stored File the subject publishes.
@@ -76,11 +75,8 @@ type Document struct {
 	Places        []string `json:"places,omitempty"`
 	Photographers []string `json:"photographers,omitempty"`
 	Cameras       []string `json:"cameras,omitempty"`
-	// Passages counts the sentences kept for the statement model: those that
-	// name something the document links and state a relationship.
-	Passages int `json:"passages,omitempty"`
-	// Statements counts what the document model read from the passages
-	// (amass ai read-documents).
+	// Statements counts the findings the document model read from it
+	// (amass ai read-documents, or during an enumeration).
 	Statements int `json:"statements,omitempty"`
 	// Copies are the other URLs serving the same bytes (the same content
 	// hash).
@@ -233,7 +229,6 @@ func (s *scope) document(f graph.Asset) (Document, string, error) {
 		if from := firstValue(propertyValues(ev, propDocRetrievedFrom)); from != "" && from != d.URL {
 			d.Archived = true
 		}
-		d.Passages = len(propertyValues(ev, propDocPassage))
 		d.Statements = len(propertyValues(ev, propDocStatement))
 		for _, v := range propertyValues(ev, propDocImageCamera) {
 			// "word/media/image1.jpeg: Canon EOS 5D"
@@ -389,11 +384,8 @@ func (r DocumentsReport) Text() string {
 		writeDocList(&b, "photo locations", d.Places)
 		writeDocList(&b, "photographers", d.Photographers)
 		writeDocList(&b, "cameras", d.Cameras)
-		if d.Passages > 0 {
-			fmt.Fprintf(&b, "    passages stating relationships: %d\n", d.Passages)
-		}
 		if d.Statements > 0 {
-			fmt.Fprintf(&b, "    statements read by the document model: %d\n", d.Statements)
+			fmt.Fprintf(&b, "    findings read by the document model: %d\n", d.Statements)
 		}
 		if len(d.Mentions) > 0 {
 			keys := make([]string, 0, len(d.Mentions))

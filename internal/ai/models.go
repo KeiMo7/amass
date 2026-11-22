@@ -106,6 +106,10 @@ func ValidateModelEndpoint(endpoint string, allowHTTP bool) error {
 	return nil
 }
 
+// DefaultDocumentContextTokens is the document model's Ollama context window:
+// room for a chunk of a document, the instructions and the reply.
+const DefaultDocumentContextTokens = 16384
+
 // DefaultDocumentModelTimeout bounds one document model request when
 // options.ai.documents.model_timeout is not set.
 const DefaultDocumentModelTimeout = 3 * time.Minute
@@ -137,8 +141,12 @@ func DocumentModel(d *config.DocumentModelSettings) (llm.Model, string, time.Dur
 	}
 	provider := strings.ToLower(strings.TrimSpace(d.Provider))
 	zero := 0.0
+	contextTokens := d.ContextTokens
+	if contextTokens == 0 {
+		contextTokens = DefaultDocumentContextTokens
+	}
 	m, err := NewModel(ModelSettings{Provider: provider, Endpoint: d.Endpoint, Model: d.Model,
-		APIKey: key, AllowHTTP: d.AllowHTTP, Timeout: timeout, Temperature: &zero})
+		APIKey: key, AllowHTTP: d.AllowHTTP, Timeout: timeout, Temperature: &zero, ContextTokens: contextTokens})
 	if err != nil {
 		return nil, "", 0, fmt.Errorf("options.ai.documents: %w", err)
 	}

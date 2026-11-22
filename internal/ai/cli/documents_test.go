@@ -16,21 +16,28 @@ import (
 // A run prints one line per document; a dry run also shows what it would
 // store, quotes included.
 func TestWriteDocumentRun(t *testing.T) {
-	run := ai.DocumentRun{Read: 1, Skipped: 2, Remaining: 3, Failed: 1, Statements: 2, Rejected: 1, DryRun: true,
+	run := ai.DocumentRun{Read: 1, Skipped: 2, Remaining: 3, Failed: 1, Statements: 3, Rejected: 1, DryRun: true,
 		Documents: []ai.DocumentResult{
-			{URL: "https://a.example/plan.pdf", Category: "annual_report", Statements: 2, Rejected: 1,
-				Stored: []review.StoredStatement{{Subject: "Foundation", Predicate: "unit_of", Object: "College",
-					Quote: "The Foundation is a division of the College."}}},
-			{URL: "https://a.example/b.pdf", Error: "model timed out"},
+			{URL: "https://a.example/plan.pdf", Category: "annual_report", Chunks: 2, Statements: 3, Rejected: 1,
+				Stored: []review.StoredStatement{
+					{Kind: ai.FindingRelation, Subject: "Foundation", SubjectType: "Organization", Predicate: "unit_of",
+						Object: "College", ObjectType: "Organization", Quote: "The Foundation is a division of the College."},
+					{Kind: ai.FindingAsset, Subject: "vpn.a.example", SubjectType: "FQDN", Quote: "through vpn.a.example"},
+					{Kind: ai.FindingAttribute, Subject: "College", SubjectType: "Organization", Field: "founding_date",
+						Object: "1966", Quote: "founded in 1966"},
+				}},
+			{URL: "https://a.example/b.pdf", Error: "fetch: status 404 Not Found"},
 		}}
 	var out bytes.Buffer
 	if err := writeDocumentRun(&out, "a.example", run); err != nil {
 		t.Fatal(err)
 	}
 	for _, want := range []string{
-		"https://a.example/plan.pdf: would store 2 statements (category annual_report), rejected 1",
-		`Foundation unit_of College: "The Foundation is a division of the College."`,
-		"https://a.example/b.pdf: model timed out",
+		"https://a.example/plan.pdf: read 2 part(s), would store 3 findings (category annual_report), rejected 1",
+		`Organization Foundation -[unit_of]-> Organization College: "The Foundation is a division of the College."`,
+		`FQDN vpn.a.example: "through vpn.a.example"`,
+		`Organization College founding_date = 1966`,
+		"https://a.example/b.pdf: fetch: status 404 Not Found",
 		"read 1 documents, skipped 2 already read, 3 remaining, failed 1",
 	} {
 		if !strings.Contains(out.String(), want) {
@@ -40,7 +47,7 @@ func TestWriteDocumentRun(t *testing.T) {
 
 	out.Reset()
 	_ = writeDocumentRun(&out, "b.example", ai.DocumentRun{})
-	if !strings.Contains(out.String(), "no stored documents with passages for b.example") {
+	if !strings.Contains(out.String(), "no stored documents for b.example") {
 		t.Errorf("empty run: %q", out.String())
 	}
 }

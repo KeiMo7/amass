@@ -331,6 +331,8 @@ func run(group string, _ io.Reader, out, errout io.Writer, args []string) error 
 			return retractAccount(ctx, repo, journalPath, proposalID, reviewer, out)
 		case isRelationProposal(proposalID):
 			return retractRelation(ctx, repo, journalPath, proposalID, reviewer, out)
+		case isDocumentDecision(proposalID):
+			return retractDocument(ctx, repo, journalPath, proposalID, reviewer, out)
 		}
 
 		return retractProposal(ctx, g, journalPath, proposalID, reviewer, out)

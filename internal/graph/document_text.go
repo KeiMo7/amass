@@ -7,11 +7,11 @@ package graph
 import "strings"
 
 // DocumentTextProperties are the properties that hold text from collected
-// documents: the passages the document collector keeps, and the statements a
-// document model finds, which quote them. Only the model the user named in
+// documents: the findings a document model reads, which quote the document.
+// The Asset Database keeps no copy of a document's content itself. Only the model the user named in
 // options.ai.documents reads them, unless the user shares them with other models
 // (options.ai.documents.share_with_assistants).
-var DocumentTextProperties = []string{"doc_passage", "doc_statement"}
+var DocumentTextProperties = []string{"doc_statement"}
 
 // IsDocumentTextProperty reports whether a property name holds document text.
 func IsDocumentTextProperty(name string) bool {

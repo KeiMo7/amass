@@ -249,7 +249,7 @@ func (v *V1Handlers) GetStatsHandler(w http.ResponseWriter, r *http.Request) {
 // @Tags         scope
 // @Produce      json
 // @Param        session_token  path  string  true  "Session token (UUID)"
-// @Param        asset_type     path  string  true  "Asset type (e.g., autonomoussystem, fqdn, ipaddress, netblock, location, organization)"
+// @Param        asset_type     path  string  true  "Asset type (e.g., autonomoussystem, fqdn, ipaddress, netblock, streetaddress, organization)"
 // @Success      200  {object}  ScopeResponse  "Response contains a 'data' array of raw OAM JSON"
 // @Failure      400  {object}  ErrorResponse  "Invalid session token"
 // @Failure      404  {object}  ErrorResponse  "Session not found or scope not found for asset type"
@@ -330,7 +330,7 @@ func (v *V1Handlers) GetScopeHandler(w http.ResponseWriter, r *http.Request) {
 // @Accept       json
 // @Produce      json
 // @Param        session_token  path  string          true  "Session token (UUID)"
-// @Param        asset_type     path  string          true  "Asset type (e.g., autonomous_system, fqdn, ipaddress, netblock, location, organization)"
+// @Param        asset_type     path  string          true  "Asset type (e.g., autonomous_system, fqdn, ipaddress, netblock, streetaddress, organization)"
 // @Param        asset          body  json.RawMessage true  "Raw OAM JSON object (without 'type')"
 // @Success      200            {object}  AddAssetResponse
 // @Failure      400            {object}  ErrorResponse  "Invalid session token, invalid JSON, or invalid asset object"
@@ -392,7 +392,7 @@ func (v *V1Handlers) AddAssetTypedHandler(w http.ResponseWriter, r *http.Request
 // @Accept       json
 // @Produce      json
 // @Param        session_token  path  string               true  "Session token (UUID)"
-// @Param        asset_type     path  string               true  "Asset type (e.g., autonomous_system, fqdn, ipaddress, netblock, location, organization)"
+// @Param        asset_type     path  string               true  "Asset type (e.g., autonomous_system, fqdn, ipaddress, netblock, streetaddress, organization)"
 // @Param        request        body  BulkAddAssetsRequest true  "Bulk add request payload"
 // @Success      200            {object}  BulkAddAssetsResponse
 // @Failure      400            {object}  ErrorResponse  "Invalid session token, invalid JSON, empty items, or no valid items"

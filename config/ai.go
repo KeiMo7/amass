@@ -61,11 +61,14 @@ type AISettings struct {
 	Documents *DocumentModelSettings `yaml:"documents,omitempty" json:"documents,omitempty"`
 }
 
-// DocumentModelSettings choose the model that reads the passages kept from
-// collected documents to find the statements they make (who runs what, which
-// organization a unit belongs to, who supplies a service). A document can
-// hold personal or internal details, so the user names this model explicitly,
-// and other models see the passages only when ShareWithAssistants is set.
+// DocumentModelSettings choose the model that reads collected documents, all
+// of each one's text, to find what they state in Open Asset Model terms: the
+// assets they name (hosts, networks, organizations, people, products,
+// addresses), the relations between them and the values of their fields. The
+// Asset Database keeps no copy of a document; the reader fetches it when it
+// reads it. A document can hold personal or internal details, so the user
+// names this model explicitly, and other models see its findings only when
+// ShareWithAssistants is set.
 type DocumentModelSettings struct {
 	// Enabled turns the document model on; off by default.
 	Enabled bool `yaml:"enabled,omitempty" json:"enabled,omitempty"`
@@ -77,12 +80,26 @@ type DocumentModelSettings struct {
 	APIKeyEnv string `yaml:"api_key_env,omitempty" json:"api_key_env,omitempty"`
 	// AllowHTTP permits a plain HTTP endpoint, for a model on a trusted
 	// private network only.
-	AllowHTTP    bool   `yaml:"allow_http,omitempty" json:"allow_http,omitempty"`
+	AllowHTTP bool `yaml:"allow_http,omitempty" json:"allow_http,omitempty"`
+	// ModelTimeout bounds one request: one chunk of a document.
 	ModelTimeout string `yaml:"model_timeout,omitempty" json:"model_timeout,omitempty"`
+	// ContextTokens sets an Ollama model's context window (default 16384,
+	// enough for a chunk and the instructions).
+	ContextTokens int `yaml:"context_tokens,omitempty" json:"context_tokens,omitempty"`
+	// ChunkChars is how many characters of a document one request reads
+	// (default 12000); a document is read whole, chunk by chunk.
+	ChunkChars int `yaml:"chunk_chars,omitempty" json:"chunk_chars,omitempty"`
 	// ShareWithAssistants lets other models (the main investigation model and
-	// MCP clients) read the passages and the statements quoting them. Off by
-	// default: they then see only counts.
+	// MCP clients) read the document model's findings, which quote the
+	// documents. Off by default: they then see only counts.
 	ShareWithAssistants bool `yaml:"share_with_assistants,omitempty" json:"share_with_assistants,omitempty"`
+	// MaxLeads caps the leads the document model hands one supervised
+	// enumeration. The budget adapts on its own: it starts at 50, grows by 2
+	// for each lead the engine confirms while at least half are confirmed,
+	// and never passes one lead per 10 work items the run has completed. 0
+	// leaves it at that, a positive value caps it lower, -1 submits none
+	// while findings are still stored.
+	MaxLeads int `yaml:"max_leads,omitempty" json:"max_leads,omitempty"`
 }
 
 // DocumentModelProviders are the providers the document model may use.
@@ -106,6 +123,15 @@ func (d *DocumentModelSettings) Validate() error {
 			return fmt.Errorf("options.ai.documents.model_timeout must be 5s..15m")
 		}
 	}
+	if d.MaxLeads < -1 || d.MaxLeads > 10000 {
+		return fmt.Errorf("options.ai.documents.max_leads must be -1 (none), 0 (adaptive) or up to 10000")
+	}
+	if d.ContextTokens != 0 && (d.ContextTokens < 4096 || d.ContextTokens > 262144) {
+		return fmt.Errorf("options.ai.documents.context_tokens must be 0 or 4096..262144")
+	}
+	if d.ChunkChars != 0 && (d.ChunkChars < 2000 || d.ChunkChars > 200000) {
+		return fmt.Errorf("options.ai.documents.chunk_chars must be 0 or 2000..200000")
+	}
 	return nil
 }
 
@@ -115,7 +141,7 @@ func (a *AISettings) DocumentModelEnabled() bool {
 }
 
 // DocumentsShared reports whether models other than the document model may
-// read document passages and the statements quoting them.
+// read its findings, which quote the documents.
 func (a *AISettings) DocumentsShared() bool {
 	return a.DocumentModelEnabled() && a.Documents.ShareWithAssistants
 }
@@ -145,6 +171,17 @@ func (c *Config) loadAISettings(cfg *Config) error {
 
 	c.AI = &s
 	return nil
+}
+
+// AIKeySet reports whether options.ai sets key explicitly, for a setting whose
+// zero value is a real choice (guidance_rounds: 0 turns guidance off).
+func (c *Config) AIKeySet(key string) bool {
+	m, ok := c.Options["ai"].(map[string]interface{})
+	if !ok {
+		return false
+	}
+	_, ok = m[key]
+	return ok
 }
 
 // refuseTopLevelAI stops a configuration that still has the ai section at the

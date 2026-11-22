@@ -485,3 +485,152 @@ func TestPollMarksVanishedSessionLost(t *testing.T) {
 		t.Errorf("the scope stayed blocked: %v", err)
 	}
 }
+
+// testCompanion submits one lead, counts it, and reports work pending until
+// released.
+type testCompanion struct {
+	mu      sync.Mutex
+	pending bool
+	began   chan Run
+}
+
+func (c *testCompanion) Begin(ctx context.Context, run Run, act Activity) func() bool {
+	go func() {
+		if _, err := act.Submit(ctx, oamdns.FQDN{Name: "lead.example"}); err == nil {
+			act.Count("leads", 1)
+		}
+		c.began <- run
+	}()
+	return func() bool {
+		c.mu.Lock()
+		defer c.mu.Unlock()
+		return c.pending
+	}
+}
+
+func (c *testCompanion) release() {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.pending = false
+}
+
+// A companion works beside the run: what it submits goes to the run's
+// session, what it counts shows in the run, and its pending work keeps a
+// finished run open until it is done or the hold limit passes.
+func TestCompanionsWorkBesideTheRun(t *testing.T) {
+	f := newFake()
+	m := newManager(f, "")
+	c := &testCompanion{pending: true, began: make(chan Run, 1)}
+	m.Companions = []Companion{c}
+	defer m.Close()
+
+	run, err := m.Start(context.Background(),
+		NewPlan(graph.AssetSelector{Type: "FQDN", Field: "name", Value: "a.example"}, Passive), "tester")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if began := <-c.began; began.ID != run.ID {
+		t.Fatalf("companion began for %s, want %s", began.ID, run.ID)
+	}
+
+	f.progress(run.ID, 10, 10)
+	time.Sleep(100 * time.Millisecond)
+	if r, _ := m.Get(run.ID); r.State != StateRunning {
+		t.Fatalf("run ended with companion work pending: %+v", r)
+	}
+
+	c.release()
+	done := waitState(t, m, run.ID, StateFinished)
+	if done.Activity["leads"] != 1 {
+		t.Errorf("activity = %v", done.Activity)
+	}
+	f.mu.Lock()
+	seeded := len(f.seeded)
+	f.mu.Unlock()
+	if seeded != 2 {
+		t.Errorf("seeded %d assets, want the target and the lead", seeded)
+	}
+
+	// pending work never holds a run past the hold limit
+	m.HoldLimit = 20 * time.Millisecond
+	c.mu.Lock()
+	c.pending = true
+	c.mu.Unlock()
+	run, err = m.Start(context.Background(),
+		NewPlan(graph.AssetSelector{Type: "FQDN", Field: "name", Value: "b.example"}, Passive), "tester")
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-c.began
+	f.progress(run.ID, 5, 5)
+	waitState(t, m, run.ID, StateFinished)
+}
+
+// finishingCompanion records the runs it finished.
+type finishingCompanion struct {
+	mu       sync.Mutex
+	finished []Run
+}
+
+func (c *finishingCompanion) Begin(context.Context, Run, Activity) func() bool { return nil }
+
+func (c *finishingCompanion) Finish(_ context.Context, run Run) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.finished = append(c.finished, run)
+}
+
+// A Finisher is called once a run has ended, finished or stopped, with the
+// run's final state; a run still going when the manager closes is not
+// finished, since it is resumed later.
+func TestFinishersRunWhenARunEnds(t *testing.T) {
+	f := newFake()
+	m := newManager(f, "")
+	c := &finishingCompanion{}
+	m.Companions = []Companion{c}
+	ctx := context.Background()
+
+	a, err := m.Start(ctx, NewPlan(graph.AssetSelector{Type: "FQDN", Field: "name", Value: "a.example"}, Passive), "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	f.progress(a.ID, 3, 3)
+	waitState(t, m, a.ID, StateFinished)
+
+	b, err := m.Start(ctx, NewPlan(graph.AssetSelector{Type: "FQDN", Field: "name", Value: "b.example"}, Passive), "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	if _, err := m.Stop(ctx, b.ID); err != nil {
+		t.Fatal(err)
+	}
+
+	still, err := m.Start(ctx, NewPlan(graph.AssetSelector{Type: "FQDN", Field: "name", Value: "c.example"}, Passive), "t")
+	if err != nil {
+		t.Fatal(err)
+	}
+	deadline := time.Now().Add(5 * time.Second)
+	for {
+		c.mu.Lock()
+		n := len(c.finished)
+		c.mu.Unlock()
+		if n == 2 || time.Now().After(deadline) {
+			break
+		}
+		time.Sleep(5 * time.Millisecond)
+	}
+	m.Close()
+
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	if len(c.finished) != 2 {
+		t.Fatalf("finished %d runs, want 2", len(c.finished))
+	}
+	states := map[string]string{}
+	for _, r := range c.finished {
+		states[r.ID] = r.State
+	}
+	if states[a.ID] != StateFinished || states[b.ID] != StateStopped || states[still.ID] != "" {
+		t.Fatalf("finished states %v", states)
+	}
+}

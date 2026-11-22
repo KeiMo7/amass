@@ -81,6 +81,8 @@ func Decide(ctx context.Context, g oamrepo.Adapter, journalPath, decision, id, r
 			err = retractAccount(ctx, g.Repo, journalPath, id, reviewer, &out)
 		case isRelationProposal(id):
 			err = retractRelation(ctx, g.Repo, journalPath, id, reviewer, &out)
+		case isDocumentDecision(id):
+			err = retractDocument(ctx, g.Repo, journalPath, id, reviewer, &out)
 		default:
 			err = retractProposal(ctx, g, journalPath, id, reviewer, &out)
 		}

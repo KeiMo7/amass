@@ -57,18 +57,24 @@ func DocumentRoot(ctx context.Context, g DocumentRootGraph, domain, org string) 
 
 // DocumentRunOptions are the settings of one documents run.
 type DocumentRunOptions struct {
-	Model        llm.Model
-	ModelID      string
+	Model   llm.Model
+	ModelID string
+	// ModelTimeout is the time one model request may take; the model client
+	// applies it to each chunk.
 	ModelTimeout time.Duration
+	// ChunkChars is how much text one model request reads (default 12000).
+	ChunkChars int
 	// Max bounds the documents read in one run; 0 reads them all.
 	Max int
-	// Reread reads documents that already have stored statements again,
-	// undoing their earlier readings first.
+	// Reread reads documents again even when their version was read,
+	// undoing the earlier readings first.
 	Reread bool
 	// DryRun reads and validates but stores nothing.
 	DryRun bool
 	// Actor is who undoes earlier readings when Reread is set.
 	Actor string
+	// Fetcher gets a document's text; nil fetches it over HTTP.
+	Fetcher DocumentFetcher
 	// Schema gives the relationship semantics the documents are found by;
 	// nil uses the OAM catalog.
 	Schema graph.SchemaCatalog
@@ -79,7 +85,9 @@ type DocumentRunOptions struct {
 type DocumentResult struct {
 	URL        string `json:"url"`
 	FileID     string `json:"file_id"`
+	SHA256     string `json:"sha256,omitempty"`
 	Category   string `json:"category,omitempty"`
+	Chunks     int    `json:"chunks,omitempty"`
 	Statements int    `json:"statements"`
 	Rejected   int    `json:"rejected,omitempty"`
 	ReadingID  string `json:"reading_id,omitempty"`
@@ -91,49 +99,58 @@ type DocumentResult struct {
 
 // DocumentRun is the outcome of one documents run.
 type DocumentRun struct {
-	Documents  []DocumentResult `json:"documents"`
-	Read       int              `json:"read"`
-	Skipped    int              `json:"skipped"`
-	Remaining  int              `json:"remaining"`
-	Failed     int              `json:"failed"`
-	Statements int              `json:"statements"`
-	Rejected   int              `json:"rejected"`
-	DryRun     bool             `json:"dry_run,omitempty"`
+	Documents []DocumentResult `json:"documents"`
+	Read      int              `json:"read"`
+	// Skipped counts documents whose version was already read.
+	Skipped    int  `json:"skipped"`
+	Remaining  int  `json:"remaining"`
+	Failed     int  `json:"failed"`
+	Statements int  `json:"statements"`
+	Rejected   int  `json:"rejected"`
+	DryRun     bool `json:"dry_run,omitempty"`
 }
 
-// ReadDocuments has the document model read the passages of the documents the
-// root publishes, and stores the statements that pass validation on each File
-// as doc_statement properties, journaled so each reading can be undone.
-// Documents already read are skipped unless opts.Reread is set; documents past
+// ReadDocuments has the document model read the documents the root publishes,
+// all of each document's text, and stores the findings that pass validation on
+// each File as doc_statement properties, journaled so each reading can be
+// undone. The Asset Database keeps no copy of a document: each one is fetched
+// again (from the archive copy the engine read, when it read one), its text
+// extracted in memory, and the version's SHA-256 recorded, so a version is
+// read once wherever it was found unless opts.Reread is set. Documents past
 // opts.Max are counted as Remaining, so another run continues where this one
-// stopped. g must return document text as stored.
+// stopped.
 func ReadDocuments(ctx context.Context, g graph.Graph, store review.DocumentStatementStore, j *review.Journal,
 	root graph.Asset, opts DocumentRunOptions) (DocumentRun, error) {
 	run := DocumentRun{DryRun: opts.DryRun}
 	if opts.Model == nil {
 		return run, errors.New("no document model is configured (options.ai.documents)")
 	}
-	if opts.ModelTimeout <= 0 {
-		opts.ModelTimeout = DefaultDocumentModelTimeout
-	}
 	if opts.Actor == "" {
 		opts.Actor = review.InferenceSource + " (reread)"
 	}
-
+	if opts.Fetcher == nil {
+		opts.Fetcher = HTTPFetcher{}
+	}
 	if opts.Schema == nil {
 		opts.Schema = oamrepo.Catalog{}
 	}
 
-	docs, err := lens.DocumentTexts(ctx, g, opts.Schema, root, lens.LensLimits{})
+	sources, err := lens.DocumentSources(ctx, g, opts.Schema, root, lens.LensLimits{})
+	if err != nil {
+		return run, err
+	}
+	read, err := j.ReadVersions()
 	if err != nil {
 		return run, err
 	}
 
-	for _, d := range docs {
+	for _, src := range sources {
 		if ctx.Err() != nil {
 			return run, ctx.Err()
 		}
-		if d.Statements > 0 && !opts.Reread {
+		// the version the engine stored was read already (or, before
+		// versions were recorded, the File has statements)
+		if !opts.Reread && (read[src.SHA256] || (src.SHA256 == "" && src.Statements > 0)) {
 			run.Skipped++
 			continue
 		}
@@ -142,10 +159,23 @@ func ReadDocuments(ctx context.Context, g graph.Graph, store review.DocumentStat
 			continue
 		}
 
-		res := DocumentResult{URL: d.URL, FileID: d.FileID}
-		dctx, cancel := context.WithTimeout(ctx, opts.ModelTimeout)
-		reading, err := ReadDocument(dctx, opts.Model, opts.ModelID, d.URL, d.Passages)
-		cancel()
+		res := DocumentResult{URL: src.URL, FileID: src.FileID}
+		text, sha, err := opts.Fetcher.Document(ctx, src)
+		if err != nil {
+			run.Failed++
+			res.Error = err.Error()
+			run.Documents = append(run.Documents, res)
+			continue
+		}
+		res.SHA256 = sha
+		// the document changed since the engine stored it, to a version
+		// already read
+		if !opts.Reread && read[sha] {
+			run.Skipped++
+			continue
+		}
+
+		reading, err := ReadDocument(ctx, opts.Model, opts.ModelID, src.URL, text, opts.ChunkChars)
 		if err != nil {
 			run.Failed++
 			res.Error = err.Error()
@@ -154,19 +184,22 @@ func ReadDocuments(ctx context.Context, g graph.Graph, store review.DocumentStat
 		}
 
 		run.Read++
-		res.Category, res.Rejected, res.Stored = reading.Category, len(reading.Rejected), reading.Stored(d.URL)
+		res.Category, res.Chunks, res.Rejected = reading.Category, reading.Chunks, len(reading.Rejected)
+		res.Stored = reading.Stored(src.URL, sha)
 		res.Statements = len(res.Stored)
 		if !opts.DryRun {
 			if opts.Reread {
-				if err := undoReadings(ctx, store, j, d.FileID, opts.Actor); err != nil {
+				if err := undoReadings(ctx, store, j, src.FileID, sha, opts.Actor); err != nil {
 					return run, err
 				}
 			}
-			rec, err := review.StoreDocumentStatements(ctx, store, j, d.FileID, d.URL, opts.ModelID, res.Stored)
+			rec, err := review.StoreDocumentStatements(ctx, store, j, src.FileID, src.URL, sha, opts.ModelID,
+				res.Stored)
 			if err != nil {
 				return run, err
 			}
 			res.ReadingID = rec.ID
+			read[sha] = true
 		}
 		run.Statements += res.Statements
 		run.Rejected += res.Rejected
@@ -176,14 +209,25 @@ func ReadDocuments(ctx context.Context, g graph.Graph, store review.DocumentStat
 	return run, nil
 }
 
-// undoReadings undoes the stored readings of a File before it is read again.
-func undoReadings(ctx context.Context, store review.DocumentStatementStore, j *review.Journal, fileID,
+// undoReadings undoes the stored readings of a File, and of the same version
+// found elsewhere, before it is read again.
+func undoReadings(ctx context.Context, store review.DocumentStatementStore, j *review.Journal, fileID, sha256,
 	actor string) error {
-	ids, err := j.StoredDocumentReadings(fileID)
+	byFile, err := j.StoredDocumentReadings(fileID)
 	if err != nil {
 		return err
 	}
-	for _, id := range ids {
+	byVersion, err := j.StoredVersionReadings(sha256)
+	if err != nil {
+		return err
+	}
+
+	done := map[string]bool{}
+	for _, id := range append(byFile, byVersion...) {
+		if done[id] {
+			continue
+		}
+		done[id] = true
 		if err := review.UndoDocumentStatements(ctx, store, j, id, actor); err != nil {
 			return err
 		}

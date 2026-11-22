@@ -53,6 +53,10 @@ type Run struct {
 	Total          int       `json:"work_items_total"`
 	ApprovedBy     string    `json:"approved_by,omitempty"`
 	Error          string    `json:"error,omitempty"`
+	// Activity counts what the run's companions did, such as the documents
+	// the document model read and the leads it submitted. It is replaced, not
+	// changed in place, so a copy of the Run can be read without the lock.
+	Activity map[string]int `json:"activity,omitempty"`
 }
 
 // Finished reports whether the run has ended.
@@ -69,7 +73,41 @@ const (
 	settledPolls = 5
 	// maxPollErrors ends a run whose engine stops answering.
 	maxPollErrors = 12
+	// DefaultHoldLimit is the longest a run whose engine work is done is kept
+	// open for a companion's pending work.
+	DefaultHoldLimit = 15 * time.Minute
 )
+
+// Activity is what a Companion may do for a run: hand assets to the run's
+// engine session, where the engine checks them like any other lead, and
+// count what it did (Run.Activity).
+type Activity struct {
+	Submit func(ctx context.Context, asset oam.Asset) (string, error)
+	Count  func(name string, n int)
+	// Progress reports the run's work items completed and in total, a
+	// measure of its size.
+	Progress func() (completed, total int)
+}
+
+// Companion works beside a supervised run, such as the document model reading
+// the documents the run collects. Begin starts the work, which must stop when
+// ctx is done (the run ended), and returns whether work is still pending; while
+// it is, a run whose engine work is done is kept open, up to the Manager's
+// HoldLimit. Begin must return promptly and run its work in its own goroutine.
+type Companion interface {
+	Begin(ctx context.Context, run Run, act Activity) (pending func() bool)
+}
+
+// Finisher is a Companion with work to do when a run has ended (finished,
+// stopped, timed out or lost), such as settling the leads it gave the run.
+// It is not called when the manager closes with the run still going, since
+// the run is resumed later.
+type Finisher interface {
+	Finish(ctx context.Context, run Run)
+}
+
+// finishTimeout bounds a companion's Finish.
+const finishTimeout = 5 * time.Minute
 
 // Manager starts enumeration sessions for approved plans and supervises them
 // until they finish, stall, exceed their time or are stopped, then ends the
@@ -86,6 +124,10 @@ type Manager struct {
 	PollInterval time.Duration
 	MaxRunning   int
 	Now          func() time.Time
+	// Companions work beside every supervised run; HoldLimit bounds how long
+	// their pending work keeps a finished run open (default 15 minutes).
+	Companions []Companion
+	HoldLimit  time.Duration
 
 	mu      sync.Mutex
 	runs    map[string]*Run
@@ -271,16 +313,101 @@ func (m *Manager) supervise(token uuid.UUID, r *Run) {
 	ctx, cancel := context.WithCancel(context.Background())
 	m.cancels[r.ID] = cancel
 	m.wg.Add(1)
+	id := r.ID
 	go func() {
 		defer m.wg.Done()
-		m.poll(ctx, token, r.ID)
+		defer cancel()
+		pending := m.begin(ctx, token, id)
+		m.poll(ctx, token, id, pending)
+		m.finish(id)
 	}()
 }
 
-func (m *Manager) poll(ctx context.Context, token uuid.UUID, id string) {
+// finish calls the companions that finish runs, once the run has ended.
+func (m *Manager) finish(id string) {
+	m.mu.Lock()
+	r := m.runs[id]
+	if r == nil || r.State == StateRunning {
+		m.mu.Unlock()
+		return
+	}
+	run := *r
+	m.mu.Unlock()
+
+	for _, c := range m.Companions {
+		if f, ok := c.(Finisher); ok {
+			ctx, cancel := context.WithTimeout(context.Background(), finishTimeout)
+			f.Finish(ctx, run)
+			cancel()
+		}
+	}
+}
+
+// begin starts the companions for a run and returns whether any has work
+// pending, or nil when there are none.
+func (m *Manager) begin(ctx context.Context, token uuid.UUID, id string) func() bool {
+	if len(m.Companions) == 0 {
+		return nil
+	}
+
+	m.mu.Lock()
+	r := m.runs[id]
+	var run Run
+	if r != nil {
+		run = *r
+	}
+	m.mu.Unlock()
+	if r == nil {
+		return nil
+	}
+
+	act := Activity{
+		Submit: func(ctx context.Context, asset oam.Asset) (string, error) {
+			return m.Engine.CreateAsset(ctx, token, asset)
+		},
+		Progress: func() (int, int) {
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			if r := m.runs[id]; r != nil {
+				return r.Completed, r.Total
+			}
+			return 0, 0
+		},
+		Count: func(name string, n int) {
+			m.mu.Lock()
+			defer m.mu.Unlock()
+			if r := m.runs[id]; r != nil {
+				next := make(map[string]int, len(r.Activity)+1)
+				for k, v := range r.Activity {
+					next[k] = v
+				}
+				next[name] += n
+				r.Activity = next
+			}
+		},
+	}
+
+	var pendings []func() bool
+	for _, c := range m.Companions {
+		if p := c.Begin(ctx, run, act); p != nil {
+			pendings = append(pendings, p)
+		}
+	}
+	return func() bool {
+		for _, p := range pendings {
+			if p() {
+				return true
+			}
+		}
+		return false
+	}
+}
+
+func (m *Manager) poll(ctx context.Context, token uuid.UUID, id string, pending func() bool) {
 	tick := time.NewTicker(orDefault(m.PollInterval, DefaultPollInterval))
 	defer tick.Stop()
 	settled, errs := 0, 0
+	var holdFrom time.Time
 	for {
 		select {
 		case <-ctx.Done():
@@ -337,6 +464,13 @@ func (m *Manager) poll(ctx context.Context, token uuid.UUID, id string) {
 				settled = 0
 			}
 			switch {
+			case settled >= settledPolls && pending != nil && pending() &&
+				(holdFrom.IsZero() || now.Sub(holdFrom) < orDefault(m.HoldLimit, DefaultHoldLimit)):
+				// the engine is done, but a companion is still working (an
+				// unread document may yet give a lead): keep the run open
+				if holdFrom.IsZero() {
+					holdFrom = now
+				}
 			case settled >= settledPolls:
 				end = StateFinished
 			case now.Sub(r.LastProgressAt) > orDefault(m.IdleTimeout, DefaultIdleTimeout):

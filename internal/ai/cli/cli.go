@@ -153,7 +153,7 @@ func run(group string, in io.Reader, out, errout io.Writer, args []string) error
 	fs.StringVar(&docOrg, "org", "", "read-documents: the organization whose stored documents are read")
 	fs.IntVar(&docMax, "max-documents", 25, "read-documents: most documents the document model reads in one run")
 	fs.BoolVar(&docReread, "reread", false,
-		"read-documents: read documents that already have statements again, undoing their earlier readings")
+		"read-documents: read documents again even when their version was read, undoing the earlier readings")
 	fs.BoolVar(&docDryRun, "dry-run", false, "read-documents: read and validate, but store nothing")
 	fs.StringVar(&docUndo, "undo", "",
 		"read-documents: undo a stored reading by its journal ID (doc:...), removing its statements")
@@ -267,7 +267,10 @@ func run(group string, in io.Reader, out, errout io.Writer, args []string) error
 	}
 	if !explicitFlags["guidance-rounds"] {
 		_, fromEnv := os.LookupEnv("AMASS_LLM_GUIDANCE_ROUNDS")
-		if cfg.AI != nil || fromEnv {
+		// only an explicit guidance_rounds overrides the default: another
+		// options.ai setting (such as the document model) must not turn
+		// guidance off
+		if cfg.AIKeySet("guidance_rounds") || fromEnv {
 			guidanceRounds = effective.GuidanceRounds
 		}
 	}
@@ -394,7 +397,7 @@ func run(group string, in io.Reader, out, errout io.Writer, args []string) error
 	g := oamrepo.Adapter{Repo: repo, Aliases: aliases, Neo4jDatabase: oamrepo.Neo4jDatabaseName(cfg),
 		WithholdDocumentText: !cfg.AI.DocumentsShared()}
 	if operation == "read-documents" {
-		// The document model reads the passages as stored, so it gets a graph
+		// The document model's findings are read as stored, so it gets a graph
 		// that does not withhold them; no other model is given this graph.
 		dg := oamrepo.Adapter{Repo: repo, Aliases: aliases, Neo4jDatabase: oamrepo.Neo4jDatabaseName(cfg)}
 		j := &review.Journal{Path: journalPath}
@@ -415,7 +418,8 @@ func run(group string, in io.Reader, out, errout io.Writer, args []string) error
 			return err
 		}
 		docRun, err := ai.ReadDocuments(context.Background(), dg, repo, j, root, ai.DocumentRunOptions{Model: dm,
-			ModelID: modelID, ModelTimeout: timeout, Max: docMax, Reread: docReread, DryRun: docDryRun})
+			ModelID: modelID, ModelTimeout: timeout, ChunkChars: effective.Documents.ChunkChars, Max: docMax,
+			Reread: docReread, DryRun: docDryRun})
 		if werr := writeDocumentRun(out, graph.AssetLabel(root), docRun); werr != nil && err == nil {
 			err = werr
 		}

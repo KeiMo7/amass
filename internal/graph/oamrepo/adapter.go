@@ -33,8 +33,8 @@ type Adapter struct {
 	Neo4jDatabase string
 	// Stats, when set, counts the reads lenses make and their time.
 	Stats *ReadStats
-	// WithholdDocumentText replaces the text of document passages and the
-	// statements quoting them (graph.DocumentTextProperties) with a marker, for
+	// WithholdDocumentText replaces the findings a document model read, which
+	// quote the document (graph.DocumentTextProperties), with a marker, for
 	// a graph served to models the user has not allowed to read documents
 	// (options.ai.documents.share_with_assistants). Counts stay visible.
 	WithholdDocumentText bool

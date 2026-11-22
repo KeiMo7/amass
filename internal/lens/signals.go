@@ -28,30 +28,33 @@ const (
 
 // Signal matchers: how a signal is found in the graph.
 const (
-	matchSharedAttribute   = "shared_attribute"
-	matchInfrastructure    = "infrastructure_into_footprint"
-	matchColisting         = "colisting"
-	matchTXTToken          = "txt_token"
-	matchCertificateField  = "shared_certificate_field"
-	matchDNSIntoFootprint  = "dns_into_footprint"
-	matchTXTReference      = "txt_reference"
-	matchHTTPRedirect      = "http_redirect"
-	matchReverseDNS        = "reverse_dns"
-	matchNameserverSet     = "nameserver_set"
-	matchFingerprint       = "service_fingerprint"
-	matchNameToken         = "name_token"
-	matchParkedPage        = "parked_page"
-	matchEmailDomain       = "registrant_email_domain"
-	matchDKIMKey           = "dkim_key"
-	matchSecurityTxtRef    = "security_txt_reference"
-	signalCatalogMaxWeight = 1
+	matchSharedAttribute  = "shared_attribute"
+	matchInfrastructure   = "infrastructure_into_footprint"
+	matchColisting        = "colisting"
+	matchTXTToken         = "txt_token"
+	matchCertificateField = "shared_certificate_field"
+	matchDNSIntoFootprint = "dns_into_footprint"
+	matchTXTReference     = "txt_reference"
+	matchHTTPRedirect     = "http_redirect"
+	matchReverseDNS       = "reverse_dns"
+	matchNameserverSet    = "nameserver_set"
+	// matchProviderNameserverSet is a full name server set of a provider that
+	// gives each account or zone its own set (dns.json unique_set).
+	matchProviderNameserverSet = "provider_nameserver_set"
+	matchFingerprint           = "service_fingerprint"
+	matchNameToken             = "name_token"
+	matchParkedPage            = "parked_page"
+	matchEmailDomain           = "registrant_email_domain"
+	matchDKIMKey               = "dkim_key"
+	matchSecurityTxtRef        = "security_txt_reference"
+	signalCatalogMaxWeight     = 1
 )
 
 var signalMatchers = map[string]bool{matchSharedAttribute: true, matchInfrastructure: true, matchColisting: true,
 	matchTXTToken: true, matchCertificateField: true, matchDNSIntoFootprint: true, matchTXTReference: true,
 	matchHTTPRedirect: true, matchReverseDNS: true, matchNameserverSet: true, matchFingerprint: true,
 	matchNameToken: true, matchParkedPage: true, matchEmailDomain: true, matchDKIMKey: true,
-	matchSecurityTxtRef: true, matchDocumentStatement: true}
+	matchSecurityTxtRef: true, matchDocumentStatement: true, matchProviderNameserverSet: true}
 
 // SignalParams configures a signal's matcher.
 type SignalParams struct {
@@ -138,7 +141,7 @@ func validateSignals(signals []OwnershipSignal) error {
 			return fmt.Errorf("signal %s: headers required", s.ID)
 		case (s.Matcher == matchReverseDNS || s.Matcher == matchDNSIntoFootprint) && len(s.Params.Labels) == 0:
 			return fmt.Errorf("signal %s: labels required", s.ID)
-		case s.Matcher == matchNameserverSet && s.Params.MinServers < 2:
+		case (s.Matcher == matchNameserverSet || s.Matcher == matchProviderNameserverSet) && s.Params.MinServers < 2:
 			return fmt.Errorf("signal %s: min_servers must be at least 2", s.ID)
 		case s.Matcher == matchFingerprint && s.Params.Property == "":
 			return fmt.Errorf("signal %s: property required", s.ID)

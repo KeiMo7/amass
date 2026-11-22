@@ -199,6 +199,26 @@ func (g *gapSearch) nameserverSignals(dr graph.Asset) error {
 		return nil
 	}
 
+	// What sharing the set means depends on how its provider assigns name
+	// servers: a provider whose customers share servers gives no evidence, and
+	// one that gives each account or zone a set drawn from a large pool gives
+	// strong evidence when the whole set matches.
+	hosts := make([]string, 0, len(servers))
+	for _, ns := range servers {
+		hosts = append(hosts, graph.AssetLabel(ns.other))
+	}
+	via := "DomainRecord name_server set"
+	if p, ok := nameServerSetProvider(hosts); ok {
+		switch p.Assignment {
+		case AssignmentShared:
+			return nil
+		case AssignmentUniqueSet:
+			if strong, ok := firstSignal(matchProviderNameserverSet); ok && len(servers) >= strong.Params.MinServers {
+				def, via = strong, "DomainRecord name_server set ("+p.Provider+")"
+			}
+		}
+	}
+
 	var shared map[string]graph.Asset
 	for _, ns := range servers {
 		nsSteps, err := g.w.steps(ns.other)
@@ -234,7 +254,7 @@ func (g *gapSearch) nameserverSignals(dr graph.Asset) error {
 	sort.Strings(names)
 	for _, d := range shared {
 		witness := append(g.pathTo(dr.ID), matched(dr, d, "same_name_servers", strings.Join(names, ", ")))
-		g.add(d, def.ID, "DomainRecord name_server set", witness)
+		g.add(d, def.ID, via, witness)
 	}
 
 	return nil

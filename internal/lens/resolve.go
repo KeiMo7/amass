@@ -42,8 +42,24 @@ type hostProvider struct {
 	Provider string `json:"provider"`
 	Pattern  string `json:"pattern"`
 	Source   string `json:"source"`
-	re       *regexp.Regexp
+	// Assignment says, for a name server provider, what sharing its servers
+	// means (Assignment* constants).
+	Assignment string `json:"assignment,omitempty"`
+	re         *regexp.Regexp
 }
+
+// How a managed-DNS provider assigns name servers (dns.json).
+const (
+	// AssignmentShared: the whole customer base, or a few large shards of
+	// it, uses the same servers; sharing them is no evidence.
+	AssignmentShared = "shared"
+	// AssignmentAccount: each account gets its own set, but sets recur
+	// across unrelated accounts; a shared set is supporting evidence.
+	AssignmentAccount = "account"
+	// AssignmentUniqueSet: each account or zone gets a set drawn from a large
+	// pool; an identical full set is strong evidence of one account.
+	AssignmentUniqueSet = "unique_set"
+)
 
 // recordTypeName is the label for a stored record's numeric RR type, or
 // TYPE<number> when the type is not named in the configuration.
@@ -141,6 +157,11 @@ var loadDNSRules = sync.OnceValue(func() dnsRules {
 		if err != nil {
 			panic("dns.json: name server provider " + p.Provider + ": " + err.Error())
 		}
+		switch p.Assignment {
+		case AssignmentShared, AssignmentAccount, AssignmentUniqueSet:
+		default:
+			panic("dns.json: name server provider " + p.Provider + ": assignment must be shared, account or unique_set")
+		}
 
 		r.NameServerProviders[i].re = re
 	}
@@ -153,13 +174,35 @@ var loadDNSRules = sync.OnceValue(func() dnsRules {
 // shared-name-server horizontal signal can skip it regardless of how many of the
 // provider's customers are in the database.
 func isNameServerProvider(host string) bool {
+	_, ok := nameServerProvider(host)
+	return ok
+}
+
+// nameServerProvider returns the managed-DNS provider whose name server host
+// is.
+func nameServerProvider(host string) (hostProvider, bool) {
 	for _, p := range loadDNSRules().NameServerProviders {
 		if p.re != nil && p.re.MatchString(host) {
-			return true
+			return p, true
 		}
 	}
 
-	return false
+	return hostProvider{}, false
+}
+
+// nameServerSetProvider returns the provider every one of a set of name
+// servers belongs to, or ok=false when the set mixes providers or holds a
+// server no provider in dns.json recognizes.
+func nameServerSetProvider(hosts []string) (hostProvider, bool) {
+	var out hostProvider
+	for i, h := range hosts {
+		p, ok := nameServerProvider(strings.TrimSuffix(h, "."))
+		if !ok || (i > 0 && p.Provider != out.Provider) {
+			return hostProvider{}, false
+		}
+		out = p
+	}
+	return out, len(hosts) > 0
 }
 
 // resolution is what a stored name reaches through its DNS records.

@@ -29,6 +29,7 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 | [Listed on the organization's certificate](#certificate_colisting) | supporting | colisting | 0.15 |
 | [Web redirect to the organization](#web_redirect_to_organization) | supporting | operation | 0.30 |
 | [Reverse DNS in the organization's namespace](#reverse_dns_in_namespace) | supporting | operation | 0.25 |
+| [Same DNS provider delegation set](#dns_provider_unique_set) | strong | operation | 0.40 |
 | [Same DNS provider account](#shared_nameserver_set) | supporting | operation | 0.25 |
 | [Same TLS server fingerprint](#tls_fingerprint_match) | supporting (tiebreaker) | fingerprint | 0.10 |
 | [Organization name in the asset's name](#name_token) | supporting (tiebreaker) | lexical | 0.10 |
@@ -301,6 +302,26 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 - Hosting providers set PTR names a customer asks for on addresses the provider still controls.
 - Stale PTR records outlive a move to new infrastructure.
 
+<a id="dns_provider_unique_set"></a>
+## Same DNS provider delegation set
+
+`dns_provider_unique_set`: strong operation signal, weight 0.40.
+
+**Finds:** A domain registration the organization does not yet own that lists exactly the same full set of name servers as one of the organization's domain registrations, when the set belongs to a provider that gives each account or hosted zone its own set drawn from a large pool (dns.json assignment unique_set, such as an Amazon Route 53 delegation set of four servers).
+
+**Why it counts:** Route 53 gives each hosted zone four name servers chosen from thousands, and an account can reuse one delegation set across its zones. Two unrelated zones landing on the identical set of four by chance is vanishingly rare, so a shared full set is strong evidence the domains are in one account.
+
+**Guards:**
+
+- The whole set must match, at least four servers, all from the one provider.
+- None may be the organization's own servers (that is the self-hosted DNS signal).
+- A set shared by more than 50 registrations never counts.
+- Providers whose customers share servers (assignment shared) give no signal, and providers that reuse sets across accounts (assignment account, such as Cloudflare's per-account pairs) give only the supporting same-provider-account signal.
+
+**Can still mislead when:**
+
+- A reseller, agency or managed-service provider can host many clients' zones in its own account, so the domains share an operator rather than an owner.
+
 <a id="shared_nameserver_set"></a>
 ## Same DNS provider account
 
@@ -314,6 +335,7 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 
 - Only sets of at least two name servers count, and none may be the organization's own servers (that is the self-hosted DNS signal).
 - A set shared by more than 50 registrations never counts.
+- A set of a provider whose customers share servers (dns.json assignment shared) never counts; a full set of a provider that gives each account or zone its own set (unique_set) counts as the strong delegation-set signal instead.
 - Never proposes on its own; it needs a strong signal.
 
 **Can still mislead when:**

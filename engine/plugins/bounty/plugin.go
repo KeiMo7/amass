@@ -18,9 +18,7 @@ package bounty
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
-	"net/http"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -139,11 +137,9 @@ func (b *bountyScopes) load(e *et.Event) *dataset {
 	d := newDataset()
 	for _, plat := range semantics.BountyPlatforms() {
 		path := filepath.Join(b.dir, plat.Key+".json")
-		if fi, err := os.Stat(path); err != nil || time.Since(fi.ModTime()) >= feedTTL {
-			if err := b.download(e, plat.Feed, path); err != nil {
-				e.Session.Log().Warn(fmt.Sprintf("%s bug-bounty feed download failed: %v", plat.Title, err),
-					slog.Group("plugin", "name", b.name, "handler", b.name+"-Handler"))
-			}
+		if err := support.CachedDownload(e, plat.Feed, path, feedTTL, feedTimeout, 0); err != nil {
+			e.Session.Log().Warn(fmt.Sprintf("%s bug-bounty feed download failed: %v", plat.Title, err),
+				slog.Group("plugin", "name", b.name, "handler", b.name+"-Handler"))
 		}
 		f, err := os.Open(path)
 		if err != nil {
@@ -159,49 +155,6 @@ func (b *bountyScopes) load(e *et.Event) *dataset {
 	e.Session.Log().Info(fmt.Sprintf("bug-bounty programs loaded: %d", len(d.programs)),
 		slog.Group("plugin", "name", b.name, "handler", b.name+"-Handler"))
 	return b.data
-}
-
-// download streams a feed to dst through the session's paced client, writing
-// to a temporary file first so a partial download never replaces a good one.
-func (b *bountyScopes) download(e *et.Event, u, dst string) error {
-	e.Session.NetSem().Acquire()
-	defer e.Session.NetSem().Release()
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), feedTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return err
-	}
-	client := e.Session.Clients().Bulk
-	if client == nil {
-		client = e.Session.Clients().General
-	}
-	resp, err := client.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("status %s", resp.Status)
-	}
-
-	tmp := dst + ".tmp"
-	f, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return os.Rename(tmp, dst)
 }
 
 // store records one program: the Account with its name, website and

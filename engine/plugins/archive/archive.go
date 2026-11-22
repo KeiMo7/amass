@@ -118,18 +118,23 @@ func harvest(e *et.Event, src *et.Source, pname string, rows []archiveRow) ([]*d
 	return names, keepURLs(urls, rules.MaxURLsPerDomain)
 }
 
-// keepURLs caps the archived URLs at limit, preferring URLs with a query
-// string, then deeper paths, so parameters and application endpoints
-// survive the cap; ties are broken by the URL for a stable choice.
+// keepURLs caps the archived URLs at limit, preferring documents (PDF and
+// Office files, which the documents collector reads), then URLs with a query
+// string, then deeper paths, so documents, parameters and application
+// endpoints survive the cap; ties are broken by the URL for a stable choice.
 func keepURLs(urls []archivedURL, limit int) []archivedURL {
 	if len(urls) <= limit {
 		return urls
 	}
 
+	docs := semantics.Documents()
 	rank := func(u *oamurl.URL) int {
 		r := strings.Count(strings.Trim(u.Path, "/"), "/")
 		if strings.Contains(u.Raw, "?") {
 			r += 1000
+		}
+		if _, ok := docs.DocumentFor(u.Path); ok {
+			r += 2000
 		}
 		return r
 	}

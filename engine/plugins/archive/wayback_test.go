@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"slices"
 	"sync/atomic"
 	"testing"
@@ -243,5 +244,56 @@ func TestWaybackRowsResumeKey(t *testing.T) {
 
 	if _, next := waybackRows(raw[:3]); next != "" {
 		t.Errorf("the last page has no resume key, got %q", next)
+	}
+}
+
+// Over the cap, documents win first: the documents collector reads them, and
+// a site with many parameterized pages must not crowd them out.
+func TestKeepURLsPrefersDocuments(t *testing.T) {
+	mk := func(raw string) archivedURL { return archivedURL{url: support.RawURLToOAM(raw)} }
+	urls := []archivedURL{
+		mk("https://www.example.com/?p=1"),
+		mk("https://www.example.com/?p=2"),
+		mk("https://www.example.com/files/Annual-Report.PDF"),
+		mk("https://www.example.com/a/b/c"),
+	}
+
+	got := keepURLs(urls, 2)
+	if len(got) != 2 || got[0].url.Raw != "https://www.example.com/files/Annual-Report.PDF" {
+		t.Errorf("kept %v, want the document first", []string{got[0].url.Raw, got[1].url.Raw})
+	}
+}
+
+// The documents query asks the CDX server for document captures only, and
+// its answer is read like any page.
+func TestWaybackDocumentsQuery(t *testing.T) {
+	var filter string
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		filter = r.URL.Query().Get("filter")
+		_, _ = fmt.Fprint(w, `[["original","timestamp"],["https://www.example.com/a.pdf","20200101000000"]]`)
+	}))
+	t.Cleanup(srv.Close)
+
+	w, _, _, e, _ := newWayback(t, http.StatusOK, archivePage)
+	w.URL = srv.URL + "/cdx?url="
+	rows := w.documents(e, "example.com")
+	if len(rows) != 1 || rows[0].raw != "https://www.example.com/a.pdf" {
+		t.Fatalf("rows %+v", rows)
+	}
+	if filter != "original:"+documentPattern() {
+		t.Errorf("filter %q", filter)
+	}
+
+	re := regexp.MustCompile(documentPattern())
+	for _, u := range []string{"https://x.example.com/a.pdf", "https://x.example.com/B.DOCX?dl=1",
+		"http://x.example.com/deck.pptx"} {
+		if !re.MatchString(u) {
+			t.Errorf("pattern misses %s", u)
+		}
+	}
+	for _, u := range []string{"https://x.example.com/?p=1", "https://x.example.com/pdf/index.html"} {
+		if re.MatchString(u) {
+			t.Errorf("pattern matches %s", u)
+		}
 	}
 }

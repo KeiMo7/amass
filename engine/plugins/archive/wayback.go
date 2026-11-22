@@ -11,6 +11,8 @@ import (
 	"log/slog"
 	"net/http"
 	"net/url"
+	"regexp"
+	"strings"
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
@@ -100,6 +102,11 @@ func (w *wayback) check(e *et.Event) error {
 		// a refusal is not an answer: the domain is asked again later
 		return nil
 	}
+	// a domain with more captures than are read may hold documents past
+	// them: ask for its documents on their own
+	if len(rows) >= 5*semantics.ArchiveURLs().MaxURLsPerDomain {
+		rows = append(rows, w.documents(e, fqdn.Name)...)
+	}
 	support.MarkAssetMonitored(e.Session, e.Entity, w.source)
 
 	names, urls := harvest(e, w.source, w.name, rows)
@@ -173,6 +180,41 @@ func (w *wayback) page(e *et.Event, name, key string) ([]archiveRow, string, boo
 
 	rows, next := waybackRows(raw)
 	return rows, next, true
+}
+
+// documents asks for one page of the domain's captures of document types
+// (PDF and Office files, semantics/documents.json), which a domain with many
+// captures may hold past the pages read. A refusal gives none.
+func (w *wayback) documents(e *et.Event, name string) []archiveRow {
+	u := fmt.Sprintf("%s%s&limit=%d&filter=%s", w.URL, url.QueryEscape(name), waybackPageRows,
+		url.QueryEscape("original:"+documentPattern()))
+	resp, err := request(e, w.rlimit, w.backoff, waybackPageTimeout, u)
+	if err != nil || resp == nil || resp.StatusCode != http.StatusOK {
+		logRefusal(e, w.name, name, resp, err)
+		return nil
+	}
+
+	var raw [][]string
+	if err := json.Unmarshal([]byte(resp.Body), &raw); err != nil {
+		logRefusal(e, w.name, name, resp, err)
+		return nil
+	}
+	rows, _ := waybackRows(raw)
+	// the header row ("original", "timestamp") is not a capture
+	if len(rows) > 0 && rows[0].raw == "original" {
+		rows = rows[1:]
+	}
+	return rows
+}
+
+// documentPattern is the CDX filter regex matching URLs of the document types
+// Amass reads, with or without a query string.
+func documentPattern() string {
+	var exts []string
+	for _, t := range semantics.Documents().Types {
+		exts = append(exts, regexp.QuoteMeta(strings.TrimPrefix(t.Ext, ".")))
+	}
+	return `(?i).*\.(` + strings.Join(exts, "|") + `)(\?.*)?$`
 }
 
 // waybackRows reads a CDX JSON answer: the header row, then one row per

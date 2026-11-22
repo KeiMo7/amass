@@ -132,3 +132,22 @@ func TestExtractURLsUnescapesHTML(t *testing.T) {
 		t.Errorf("URL %q, want the query unescaped", got)
 	}
 }
+
+// A URL in an HTTP Link header, plain or HTML-escaped, ends at the bracket
+// that closes it: the header's "<…>; rel=shortlink" adds no ">" or ";" to it.
+func TestExtractURLsFromLinkHeaders(t *testing.T) {
+	for _, banner := range []string{
+		`link: <https://www.hartwick.edu/?p=177853>; rel=shortlink`,
+		`link: &lt;https://www.hartwick.edu/?p=177853&gt;; rel=shortlink`,
+		`link: &lt;https://www.hartwick.edu/?p=177853&gt; rel=shortlink`,
+	} {
+		urls := ExtractURLsFromString(banner)
+		if len(urls) != 1 || urls[0].Raw != "https://www.hartwick.edu/?p=177853" {
+			var got []string
+			for _, u := range urls {
+				got = append(got, u.Raw)
+			}
+			t.Errorf("%q gave %q, want only https://www.hartwick.edu/?p=177853", banner, got)
+		}
+	}
+}

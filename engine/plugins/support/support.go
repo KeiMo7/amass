@@ -96,6 +96,16 @@ func webURL(match string) *url.URL {
 	// a link read from HTML carries its character references ("&amp;"
 	// between query parameters); the URL is the unescaped text
 	match = html.UnescapeString(match)
+	// a URL ends where an unescaped bracket or quote starts: the relaxed
+	// pattern also takes the "&gt;" closing an HTTP Link header
+	// ("<https://example.edu/?p=1>; rel=shortlink"), which unescapes to ">"
+	if i := strings.IndexAny(match, "<>\"'`"); i >= 0 {
+		match = match[:i]
+	}
+	match = strings.TrimRight(match, ".,;:!?")
+	if match == "" {
+		return nil
+	}
 
 	lower := strings.ToLower(match)
 	switch {

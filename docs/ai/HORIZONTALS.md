@@ -15,6 +15,7 @@ Horizontal correlation associates more registered (apex) domains with a target o
 | [Shared registrant organization](#shared-registrant-org) | strong | identity | 0.70 |
 | [Shared certificate subject organization](#cert-subject-org) | strong | identity | 0.75 |
 | [Shared name server](#shared-name-server) | supporting | infrastructure | 0.65 |
+| [Same DNS provider delegation set](#dns-provider-delegation-set) | supporting | infrastructure | 0.70 |
 | [Shared mail exchanger](#shared-mx) | supporting | infrastructure | 0.60 |
 | [DMARC reports to the organization](#dmarc-reports-to) | strong | infrastructure | 0.70 |
 | [SPF authorizes the organization's senders](#spf-authorizes) | supporting | infrastructure | 0.55 |
@@ -80,6 +81,25 @@ Horizontal correlation associates more registered (apex) domains with a target o
 
 - Managed DNS and small hosting providers run name servers shared by many unrelated customers.
 - A registrar's default name servers are shared across its whole customer base.
+
+<a id="dns-provider-delegation-set"></a>
+## Same DNS provider delegation set
+
+`dns-provider-delegation-set`: supporting infrastructure signal, weight 0.70 (confidence 70).
+
+**Finds:** Another registered domain whose registration lists exactly the same full set of at least four name servers as one of the organization's own domains, all from a provider that gives each account or hosted zone its own set drawn from a large pool (dns.json assignment unique_set, such as an Amazon Route 53 delegation set).
+
+**Why it counts:** Route 53 gives each hosted zone four name servers chosen from thousands, and an account can reuse one delegation set across its zones. An identical full set recurring by chance is vanishingly rare, so two domains sharing it are almost certainly in one provider account. It is supporting rather than strong for scope expansion because one account shows a common operator, not a common owner: agencies, resellers and managed-service providers run many clients' zones from one account. On its own it sends the domain to review; with a strong signal it expands scope. (In ownership gaps, where nothing is collected, the same evidence is the strong dns_provider_unique_set signal.)
+
+**Guards:**
+
+- The whole set must match: every name server, at least four, all from the one unique_set provider.
+- Only name servers reached from the organization's own domain records are used as anchors.
+- A set listed by more distinct apex domains than the lens cap is skipped.
+
+**Can still mislead when:**
+
+- A reseller, agency or managed-service provider can host many clients' zones in its own account, so the domains share an operator rather than an owner.
 
 <a id="shared-mx"></a>
 ## Shared mail exchanger

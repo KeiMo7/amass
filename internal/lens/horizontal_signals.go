@@ -25,6 +25,9 @@ const (
 	SigRegistrantOrg    = "shared-registrant-org"
 	SigCertSubjectOrg   = "cert-subject-org"
 	SigSharedNameServer = "shared-name-server"
+	// SigDNSDelegationSet is another apex delegated to the same full name
+	// server set of a provider that gives each account or zone its own set.
+	SigDNSDelegationSet = "dns-provider-delegation-set"
 	SigSharedMX         = "shared-mx"
 	SigDMARCReportsTo   = "dmarc-reports-to"
 	SigSPFAuthorizes    = "spf-authorizes"
@@ -46,10 +49,12 @@ const (
 	matchHorSPF           = "spf_authorizes"
 	matchHorWebsite       = "official_website"
 	matchHorFingerprint   = "shared_service_fingerprint"
+	matchHorDelegationSet = "provider_delegation_set"
 )
 
 var horizontalMatchers = map[string]bool{matchHorRegistrantOrg: true, matchHorCertOrg: true,
-	matchHorNameServer: true, matchHorMX: true, matchHorDMARC: true, matchHorSPF: true, matchHorWebsite: true, matchHorFingerprint: true}
+	matchHorNameServer: true, matchHorMX: true, matchHorDMARC: true, matchHorSPF: true, matchHorWebsite: true,
+	matchHorFingerprint: true, matchHorDelegationSet: true}
 
 var loadHorizontalCatalog = sync.OnceValues(func() (signalCatalog, error) {
 	var c signalCatalog

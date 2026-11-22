@@ -332,3 +332,47 @@ func TestFindRelatedDomainsFingerprint(t *testing.T) {
 		t.Errorf("a shared JARM must not tie a related domain: %+v", got["jarm-twin.org"])
 	}
 }
+
+// A domain delegated to exactly the same full Route 53 delegation set as one
+// of the organization's own domains is related on the strong delegation-set
+// signal; one sharing only part of the set is not, though each server alone
+// serves both.
+func TestRelatedDomainsDelegationSet(t *testing.T) {
+	g := relatedDomainsGraph()
+	add := func(id, typ, key string, content map[string]any) {
+		g.Assets[id] = graph.Asset{ID: id, Type: typ, Key: key, Content: content}
+	}
+	link := func(from, to string) {
+		g.Links = append(g.Links, graph.Relation{ID: "ns" + from + to, FromID: from, ToID: to, Label: "name_server",
+			Type: "SimpleRelation"})
+	}
+	servers := []string{"ns-12.awsdns-01.com", "ns-1500.awsdns-58.org", "ns-700.awsdns-23.net",
+		"ns-1999.awsdns-12.co.uk"}
+	add("dr5", "DomainRecord", "acme-cloud.com", map[string]any{"domain": "acme-cloud.com"})
+	add("dr6", "DomainRecord", "partial-set.com", map[string]any{"domain": "partial-set.com"})
+	for i, ns := range servers {
+		add("r53-"+ns, "FQDN", ns, map[string]any{"name": ns})
+		link("dr2", "r53-"+ns)
+		link("dr5", "r53-"+ns)
+		if i < 3 {
+			link("dr6", "r53-"+ns)
+		}
+	}
+
+	r, err := FindRelatedDomains(context.Background(), g, nil, "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	got := map[string]HorizontalDomain{}
+	for _, d := range r.Domains {
+		got[d.Domain] = d
+	}
+	d, ok := got["acme-cloud.com"]
+	if !ok || d.Confidence != HorizontalConfidence(SigDNSDelegationSet) || len(d.SignalIDs) != 1 ||
+		d.SignalIDs[0] != SigDNSDelegationSet {
+		t.Errorf("acme-cloud.com %+v: want the delegation-set signal alone", d)
+	}
+	if _, ok := got["partial-set.com"]; ok {
+		t.Error("a domain sharing only part of the delegation set was related")
+	}
+}

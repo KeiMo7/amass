@@ -246,6 +246,15 @@ nsPivot:
 			}
 			seenNS[nse.ToID] = true
 
+			// A name server a known managed-DNS provider operates serves many
+			// unrelated customers, so it is never ownership evidence, even when
+			// few of its tenants are in the database yet (the same guard as the
+			// DNS-record pivot below); a full delegation set is weighed by
+			// delegationSetPivot instead.
+			if host, err := g.GetAsset(ctx, nse.ToID); err == nil && isNameServerProvider(graph.FQDNName(host)) {
+				continue
+			}
+
 			others, err := g.Edges(ctx, nse.ToID, "in", "name_server", time.Time{})
 			if err != nil {
 				continue
@@ -279,6 +288,13 @@ nsPivot:
 			}
 		}
 	}
+
+	// Same DNS provider delegation set: a domain delegated to exactly the
+	// same full set of a unique_set provider's name servers (a Route 53
+	// delegation set). Those servers serve thousands of zones each, so the
+	// per-server pivot above skips them; only the whole set identifies an
+	// account.
+	delegationSetPivot(ctx, g, ownDRs, add)
 
 	// Shared DNS host records resolved via DNS: an apex FQDN's dns_record NS and
 	// MX edges, extracted the same way (a name server and a mail exchanger are
@@ -698,4 +714,90 @@ func fingerprintSiblings(ctx context.Context, g graph.Graph, ownSvcID, identID, 
 	}
 
 	return true
+}
+
+// delegationMaxListings bounds the registrations read for one name server of a
+// delegation set.
+const delegationMaxListings = 5000
+
+// delegationSetPivot finds the registrations listing exactly the same full set
+// of name servers as one of the organization's own registrations, when the set
+// belongs to a provider that gives each account or zone its own set
+// (dns.json assignment unique_set), and adds their apexes.
+func delegationSetPivot(ctx context.Context, g graph.Graph, ownDRs []string,
+	add func(string, string, string, ...graph.WitnessEdge) bool) {
+	seen := map[string]bool{}
+	for _, drID := range ownDRs {
+		if seen[drID] {
+			continue
+		}
+		seen[drID] = true
+
+		nsEdges, err := g.Edges(ctx, drID, "out", "name_server", time.Time{})
+		if err != nil || len(nsEdges) < 4 {
+			continue
+		}
+		hosts := make([]string, 0, len(nsEdges))
+		for _, e := range nsEdges {
+			ns, err := g.GetAsset(ctx, e.ToID)
+			if err != nil {
+				hosts = nil
+				break
+			}
+			hosts = append(hosts, graph.FQDNName(ns))
+		}
+		if p, ok := nameServerSetProvider(hosts); !ok || p.Assignment != AssignmentUniqueSet {
+			continue
+		}
+
+		// the registrations listing every server of the set, besides this one
+		var shared map[string]graph.Relation
+		for _, nse := range nsEdges {
+			others, err := g.Edges(ctx, nse.ToID, "in", "name_server", time.Time{})
+			if err != nil || len(others) > delegationMaxListings {
+				shared = nil
+				break
+			}
+			listing := map[string]graph.Relation{}
+			for _, oe := range others {
+				if oe.FromID != drID {
+					listing[oe.FromID] = oe
+				}
+			}
+			if shared == nil {
+				shared = listing
+				continue
+			}
+			for id := range shared {
+				if _, ok := listing[id]; !ok {
+					delete(shared, id)
+				}
+			}
+		}
+
+		apexes := map[string]graph.Relation{}
+		for id, e := range shared {
+			odr, err := g.GetAsset(ctx, id)
+			if err != nil {
+				continue
+			}
+			if apex := strings.ToLower(strings.TrimSpace(graph.ContentString(odr, "domain"))); apex != "" {
+				apexes[apex] = e
+			}
+		}
+		if len(apexes) == 0 || len(apexes) > nsMaxApexes {
+			continue
+		}
+
+		ownW := graph.WitnessEdge{EdgeID: nsEdges[0].ID, Label: "name_server", RelationType: nsEdges[0].Type,
+			FromID: nsEdges[0].FromID, FromType: "DomainRecord", ToID: nsEdges[0].ToID, ToType: "FQDN"}
+		for _, apex := range sortedRelationKeys(apexes) {
+			e := apexes[apex]
+			sibW := graph.WitnessEdge{EdgeID: e.ID, Label: "name_server", RelationType: e.Type,
+				FromID: e.FromID, FromType: "DomainRecord", ToID: e.ToID, ToType: "FQDN"}
+			if !add(apex, SigDNSDelegationSet, "same DNS provider delegation set", ownW, sibW) {
+				return
+			}
+		}
+	}
 }

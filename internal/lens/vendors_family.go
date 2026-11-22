@@ -136,8 +136,8 @@ func ownLabel(name string, words map[string]bool) bool {
 
 // familyDomain reports whether a domain is the institution's: one whose
 // label spells the name of the main organization or of a member counted as
-// the institution (automattic.com for Automattic), by the family lens's
-// nameMatchesLabel.
+// the institution (automattic.com for Automattic), by
+// semantics.OrgNameMatchesLabel.
 func familyDomain(f FamilyReport, domain string) bool {
 	return familyDomainOf(f, domain, false)
 }
@@ -161,11 +161,9 @@ func familyDomainOf(f FamilyReport, domain string, affiliates bool) bool {
 		return false
 	}
 
-	rules := loadFamilyRules()
-	stop := abbreviationStopWords()
 	match := func(a graph.Asset) bool {
 		for _, name := range []string{graph.ContentString(a, "name"), graph.ContentString(a, "legal_name"), graph.AssetLabel(a)} {
-			if name != "" && nameMatchesLabel(graph.AddressWords(name), label, rules.GenericWords, stop) {
+			if name != "" && semantics.OrgNameMatchesLabel(graph.AddressWords(name), label) {
 				return true
 			}
 		}
@@ -192,13 +190,11 @@ func familyDomainOf(f FamilyReport, domain string, affiliates bool) bool {
 // lens compares names.
 func institutionName(f FamilyReport, name string) bool {
 	rules := loadFamilyRules()
-	stop := abbreviationStopWords()
 	b := semantics.OrgNameKey(name)
 	if b == "" {
 		return false
 	}
-	if label := domainLabel(f.Domain); label != "" && nameMatchesLabel(strings.Fields(b), label,
-		rules.GenericWords, stop) {
+	if label := domainLabel(f.Domain); label != "" && semantics.OrgNameMatchesLabel(strings.Fields(b), label) {
 		return true
 	}
 
@@ -226,7 +222,7 @@ func institutionName(f FamilyReport, name string) bool {
 // institution's name: the State University of New York for SUNY - Mohawk
 // Valley Community College, a system the institution belongs to.
 func initialsOfFamilyWord(name string, words map[string]bool) bool {
-	a := abbreviation(semantics.OrgNameKey(name), abbreviationStopWords())
+	a := abbreviation(semantics.OrgNameKey(name), semantics.OrgInitialsStopWords())
 	return len(a) >= 3 && words[a]
 }
 

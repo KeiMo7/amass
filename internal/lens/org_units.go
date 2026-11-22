@@ -49,10 +49,6 @@ const (
 // relation an accepted proposal creates.
 const orgUnitKind = "org_unit"
 
-// orgUnitStopWords are skipped when building an organization's acronym, so the
-// initials of "State University of New York" are SUNY, not SUONY.
-var orgUnitStopWords = []string{"of", "the", "and", "for", "a", "an"}
-
 // orgUnitProfile is what the org-unit search knows about one organization.
 type orgUnitProfile struct {
 	asset   graph.Asset
@@ -304,7 +300,7 @@ func newOrgUnitProfile(ctx context.Context, g graph.Graph, o graph.Asset, name s
 		idEdges:   map[string]graph.Relation{},
 		linked:    map[string]bool{},
 	}
-	p.acronym = abbreviation(p.brand, orgUnitStopWords)
+	p.acronym = abbreviation(p.brand, semantics.OrgInitialsStopWords())
 
 	for _, label := range []string{"legal_address", "hq_address", "street_address"} {
 		edges, err := g.Edges(ctx, o.ID, "out", label, time.Time{})

@@ -128,6 +128,8 @@ func (s *Scope) CIDRs() []string {
 	return results
 }
 
+// matchesNetblock returns the scope netblock that is the netblock or holds
+// it: a range inside an in-scope CIDR is in scope.
 func (s *Scope) matchesNetblock(nb *oamnet.Netblock) (oam.Asset, int) {
 	s.netLock.Lock()
 	defer s.netLock.Unlock()
@@ -135,6 +137,12 @@ func (s *Scope) matchesNetblock(nb *oamnet.Netblock) (oam.Asset, int) {
 	key := nb.CIDR.String()
 	if a, found := s.networks[key]; found {
 		return a, 100
+	}
+	for _, a := range s.networks {
+		if p, ok := a.(*oamnet.Netblock); ok && p.CIDR.Bits() <= nb.CIDR.Bits() &&
+			p.CIDR.Contains(nb.CIDR.Addr()) {
+			return a, 100
+		}
 	}
 
 	return nil, 0

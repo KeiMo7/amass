@@ -5,24 +5,14 @@
 package scope
 
 import (
-	"math"
-	"strings"
-
-	"github.com/adrg/strutil"
-	"github.com/adrg/strutil/metrics"
 	"github.com/caffix/stringset"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 )
 
 func (s *Scope) AddOrganization(o *oamorg.Organization) bool {
-	var names []string
-
-	for _, n := range []string{o.Name, o.LegalName} {
-		if name := strings.ToLower(n); name != "" {
-			names = append(names, name)
-		}
-	}
+	names := orgNameKeys(o)
 	if len(names) == 0 {
 		return false
 	}
@@ -63,14 +53,29 @@ func (s *Scope) Organizations() []*oamorg.Organization {
 	return results
 }
 
-func (s *Scope) matchesOrg(o *oamorg.Organization, conf int) (oam.Asset, int) {
-	var names []string
+// nearMatchAccuracy is the accuracy of a match that is not exact: an
+// organization name that is a misspelling of a scope organization's, or a
+// street address written differently.
+const nearMatchAccuracy = 90
 
+// orgNameKeys returns the name keys (semantics.OrgNameKey) of an
+// organization's name and legal name.
+func orgNameKeys(o *oamorg.Organization) []string {
+	var keys []string
 	for _, n := range []string{o.Name, o.LegalName} {
-		if name := strings.ToLower(n); name != "" {
-			names = append(names, name)
+		if k := semantics.OrgNameKey(n); k != "" {
+			keys = append(keys, k)
 		}
 	}
+	return keys
+}
+
+// matchesOrg returns the scope organization the organization is: the same
+// name once case, punctuation and legal forms are set aside (accuracy 100),
+// or a misspelling of it (nearMatchAccuracy, when that is at least conf). A
+// name that only contains a scope organization's is not a match.
+func (s *Scope) matchesOrg(o *oamorg.Organization, conf int) (oam.Asset, int) {
+	names := orgNameKeys(o)
 	if len(names) == 0 {
 		return nil, 0
 	}
@@ -78,29 +83,20 @@ func (s *Scope) matchesOrg(o *oamorg.Organization, conf int) (oam.Asset, int) {
 	s.orgLock.Lock()
 	defer s.orgLock.Unlock()
 
-	var best float64
-	var result oam.Asset
-	fconf := float64(conf)
+	for _, name := range names {
+		if val, found := s.orgs[name]; found {
+			return val, 100
+		}
+	}
+	if nearMatchAccuracy < conf {
+		return nil, 0
+	}
 	for n, val := range s.orgs {
 		for _, name := range names {
-			if strings.EqualFold(name, n) {
-				return val, 100
-			}
-
-			swg := metrics.NewSmithWatermanGotoh()
-			swg.CaseSensitive = false
-			swg.GapPenalty = -0.1
-			swg.Substitution = metrics.MatchMismatch{
-				Match:    1,
-				Mismatch: -0.5,
-			}
-
-			if sim := strutil.Similarity(name, n, swg); sim >= fconf && sim > best {
-				best = sim
-				result = val
+			if _, near := semantics.OrgNameMatch(name, n); near {
+				return val, nearMatchAccuracy
 			}
 		}
 	}
-
-	return result, int(math.Round(best))
+	return nil, 0
 }

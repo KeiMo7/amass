@@ -8,6 +8,7 @@ import (
 	"encoding/json"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 )
 
@@ -88,6 +89,32 @@ func TestOrgNamePairs(t *testing.T) {
 				t.Errorf("OrgNameMatch(%q, %q) = %s, want %s (keys %q, %q)", order[0], order[1], got, p.Want,
 					OrgNameKey(order[0]), OrgNameKey(order[1]))
 			}
+		}
+	}
+}
+
+func TestOrgNameMatchesLabel(t *testing.T) {
+	for _, c := range []struct {
+		name, label string
+		want        bool
+	}{
+		{"automattic", "automattic", true},
+		{"national grid usa service company", "nationalgridus", true},
+		{"national aeronautics and space administration", "nasa", true},
+		{"northrop grumman corporation", "ngc", true},
+		{"mohawk valley community college", "mvcc", true},
+		{"utica university", "utica", true},
+		{"salesforce", "nationalgridus", false},
+		// A generic leading word alone does not spell a label.
+		{"national grid", "national", false},
+		// A short name only matches a label it equals.
+		{"ngs", "ngsolutions", false},
+		{"rochester institute of technology", "rit", true},
+		{"national grid", "ngrid", true},
+		{"national grid", "grid", false},
+	} {
+		if got := OrgNameMatchesLabel(strings.Fields(c.name), c.label); got != c.want {
+			t.Errorf("OrgNameMatchesLabel(%q, %q) = %v, want %v", c.name, c.label, got, c.want)
 		}
 	}
 }

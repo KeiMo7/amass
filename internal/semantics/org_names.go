@@ -30,6 +30,7 @@ type orgNameCatalog struct {
 	GovernancePrefixes []string          `json:"governance_prefixes"`
 	Abbreviations      map[string]string `json:"abbreviations"`
 	GenericWords       []string          `json:"generic_words"`
+	InitialsStopWords  []string          `json:"initials_stop_words"`
 	NearSimilarity     float64           `json:"near_similarity"`
 	NearMinLength      int               `json:"near_min_length"`
 }
@@ -40,6 +41,7 @@ type orgNameRules struct {
 	abbreviations map[string]string
 	generic       map[string]bool
 	genericList   []string
+	stopWords     []string
 	near          float64
 	minLength     int
 }
@@ -77,6 +79,9 @@ var loadOrgNames = sync.OnceValue(func() orgNameRules {
 		r.generic[w] = true
 		r.genericList = append(r.genericList, w)
 	}
+	for _, w := range c.InitialsStopWords {
+		r.stopWords = append(r.stopWords, strings.ToLower(w))
+	}
 	return r
 })
 
@@ -94,6 +99,12 @@ func IsOrgLegalForm(s string) bool {
 // two of them together ("university", "services", "holdings").
 func OrgGenericWords() []string {
 	return slices.Clone(loadOrgNames().genericList)
+}
+
+// OrgInitialsStopWords returns the words skipped when a name's initials are
+// taken ("of", "the", "and").
+func OrgInitialsStopWords() []string {
+	return slices.Clone(loadOrgNames().stopWords)
 }
 
 // IsOrgGenericWord reports whether a lower-case word is one of the generic
@@ -236,4 +247,62 @@ func misspellable(w string, r orgNameRules) bool {
 		}
 	}
 	return true
+}
+
+// OrgNameMatchesLabel reports whether a domain label spells an organization's
+// name, given as its words: the leading words written together are the label
+// (automattic, uticauniversity) or begin it (national grid in
+// nationalgridus), or the label is their initials (nasa for National
+// Aeronautics and Space Administration, ngc for Northrop Grumman
+// Corporation), or their initials followed by a last word in full (ngrid for
+// National Grid). The leading words must include a word that is not generic,
+// a label they begin must be at least five letters long, and initials at
+// least three.
+func OrgNameMatchesLabel(words []string, label string) bool {
+	if label == "" {
+		return false
+	}
+	r := loadOrgNames()
+
+	var compact, all, skipped strings.Builder
+	distinctive := false
+	for k, w := range words {
+		w = strings.Map(func(c rune) rune {
+			if unicode.IsLetter(c) || unicode.IsDigit(c) {
+				return c
+			}
+
+			return -1
+		}, strings.ToLower(w))
+		if w == "" {
+			continue
+		}
+		if !r.generic[w] {
+			distinctive = true
+			// The leading words' initials and this word in full: ngrid for
+			// National Grid.
+			if k > 0 && len(w) >= 4 && (all.String()+w == label || skipped.String()+w == label) {
+				return true
+			}
+		}
+
+		compact.WriteString(w)
+		all.WriteByte(w[0])
+		if !slices.Contains(r.stopWords, w) {
+			skipped.WriteByte(w[0])
+		}
+		if !distinctive {
+			continue
+		}
+
+		c := compact.String()
+		if c == label || (len(c) >= 5 && strings.HasPrefix(label, c)) {
+			return true
+		}
+		if k > 0 && len(label) >= 3 && (all.String() == label || skipped.String() == label) {
+			return true
+		}
+	}
+
+	return false
 }

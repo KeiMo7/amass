@@ -115,8 +115,7 @@
       "tiebreaker": true,
       "matcher": "abbreviation",
       "params": {
-        "min_length": 3,
-        "stop_words": ["of", "the", "and", "for", "de", "la"]
+        "min_length": 3
       },
       "finds": "An organization whose name is the initials of the other's name, such as ISRG and Internet Security Research Group.",
       "rationale": "Organizations are often recorded under their initials. Initials are short and collide often, so this only ranks candidates and sends a pair to review together with other evidence.",

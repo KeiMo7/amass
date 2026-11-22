@@ -7,7 +7,6 @@ package lens
 import (
 	"context"
 	"fmt"
-	"strings"
 	"testing"
 
 	"github.com/owasp-amass/amass/v5/internal/graph"
@@ -95,34 +94,6 @@ func TestFindOrganizationFamilyOfCompany(t *testing.T) {
 	for id, rel := range want {
 		if got[id] != rel {
 			t.Errorf("%s: relation %q, want %q (members %v)", id, got[id], rel, got)
-		}
-	}
-}
-
-func TestNameMatchesLabel(t *testing.T) {
-	rules := loadFamilyRules()
-	stop := abbreviationStopWords()
-	for _, c := range []struct {
-		name, label string
-		want        bool
-	}{
-		{"automattic", "automattic", true},
-		{"national grid usa service company", "nationalgridus", true},
-		{"national aeronautics and space administration", "nasa", true},
-		{"northrop grumman corporation", "ngc", true},
-		{"mohawk valley community college", "mvcc", true},
-		{"utica university", "utica", true},
-		{"salesforce", "nationalgridus", false},
-		// A generic leading word alone does not spell a label.
-		{"national grid", "national", false},
-		// A short name only matches a label it equals.
-		{"ngs", "ngsolutions", false},
-		{"rochester institute of technology", "rit", true},
-		{"national grid", "ngrid", true},
-		{"national grid", "grid", false},
-	} {
-		if got := nameMatchesLabel(strings.Fields(c.name), c.label, rules.GenericWords, stop); got != c.want {
-			t.Errorf("nameMatchesLabel(%q, %q) = %v, want %v", c.name, c.label, got, c.want)
 		}
 	}
 }

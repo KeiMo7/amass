@@ -49,6 +49,12 @@ real enumerations there when tuning the catalog.
   an entity form.
 - The GLEIF, Aviato, USAspending and documents collectors, and
   `ai.CandidatePairs`.
+- The session scope (`engine/sessions/scope`): scope organizations are kept
+  by key, an exact match has accuracy 100 and a near one 90, and a
+  certificate's subject domain is named for an organization when
+  `semantics.OrgNameMatchesLabel` says its label spells the name.
+- `semantics.OrgNameMatchesLabel` is also the family and vendor lenses'
+  label test, and `initials_stop_words` the words every initials check skips.
 
 `graph.NormalizeOrganizationAlias` is separate on purpose: curated aliases
 are compared with only whitespace, case and a final full stop normalized.

@@ -6,11 +6,9 @@ package scope
 
 import (
 	"fmt"
-	"math"
 	"strings"
 
-	"github.com/adrg/strutil"
-	"github.com/adrg/strutil/metrics"
+	"github.com/owasp-amass/amass/v5/internal/graph"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamcon "github.com/owasp-amass/open-asset-model/contact"
 )
@@ -44,13 +42,18 @@ func (s *Scope) StreetAddresses() []*oamcon.StreetAddress {
 	return results
 }
 
+// matchesStreetAddress returns the scope street address the address is: the
+// same building number, street, city and province (accuracy 100), or the same
+// address written differently, "5801 Smith Avenue" and "5801 Smith Ave, Suite
+// 3110B" (graph.StreetAddressKeyOf; nearMatchAccuracy, when that is at least
+// conf).
 func (s *Scope) matchesStreetAddress(loc *oamcon.StreetAddress, conf int) (oam.Asset, int) {
 	if loc.BuildingNumber == "" {
 		return nil, 0
 	}
 
-	var bconf int
-	var best oam.Asset
+	key := graph.StreetAddressKeyOf(loc.BuildingNumber, loc.StreetName, loc.Address, loc.PostalCode)
+	var near oam.Asset
 	for _, loc2 := range s.StreetAddresses() {
 		if loc.BuildingNumber != loc2.BuildingNumber {
 			continue
@@ -61,19 +64,13 @@ func (s *Scope) matchesStreetAddress(loc *oamcon.StreetAddress, conf int) (oam.A
 		if strings.EqualFold(lstr1, lstr2) {
 			return loc2, 100
 		}
-
-		swg := metrics.NewSmithWatermanGotoh()
-		swg.CaseSensitive = false
-		swg.GapPenalty = -0.1
-		swg.Substitution = metrics.MatchMismatch{
-			Match:    1,
-			Mismatch: -0.5,
-		}
-
-		if sim := strutil.Similarity(lstr1, lstr2, swg); sim >= float64(conf) && sim > float64(bconf) {
-			best = loc2
-			bconf = int(math.Round(sim))
+		if near == nil && key != "" &&
+			key == graph.StreetAddressKeyOf(loc2.BuildingNumber, loc2.StreetName, loc2.Address, loc2.PostalCode) {
+			near = loc2
 		}
 	}
-	return best, bconf
+	if near != nil && nearMatchAccuracy >= conf {
+		return near, nearMatchAccuracy
+	}
+	return nil, 0
 }

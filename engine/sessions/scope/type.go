@@ -34,9 +34,6 @@ type Scope struct {
 
 	blLock    sync.Mutex
 	blacklist map[string]bool
-
-	//finLock      sync.Mutex
-	fingerprints map[string]map[string]*Fingerprint
 }
 
 func New(sess et.Session) et.Scope {
@@ -49,7 +46,6 @@ func New(sess et.Session) et.Scope {
 		autsystems:      make(map[int]oam.Asset),
 		streetAddresses: make(map[string]oam.Asset),
 		blacklist:       make(map[string]bool),
-		fingerprints:    make(map[string]map[string]*Fingerprint),
 	}
 }
 

@@ -12,7 +12,6 @@ import (
 	"sort"
 	"strings"
 	"sync"
-	"unicode"
 
 	"github.com/owasp-amass/amass/v5/internal/graph"
 	"github.com/owasp-amass/amass/v5/internal/semantics"
@@ -673,73 +672,15 @@ func domainLabel(domain string) string {
 }
 
 // namedLike reports whether one of an organization's names is the domain
-// label's (nameMatchesLabel).
+// label's (semantics.OrgNameMatchesLabel).
 func (s *familySearch) namedLike(p *familyProfile, label string) bool {
-	stop := abbreviationStopWords()
 	for b := range p.brands {
-		if nameMatchesLabel(strings.Fields(b), label, s.rules.GenericWords, stop) {
+		if semantics.OrgNameMatchesLabel(strings.Fields(b), label) {
 			return true
 		}
 	}
 	for _, n := range p.names {
-		if nameMatchesLabel(graph.AddressWords(n), label, s.rules.GenericWords, stop) {
-			return true
-		}
-	}
-
-	return false
-}
-
-// nameMatchesLabel reports whether a domain label spells an organization's
-// name: the leading words of the name written together are the label
-// (automattic, uticauniversity) or begin it (national grid in
-// nationalgridus), or the label is their initials (nasa for National
-// Aeronautics and Space Administration, ngc for Northrop Grumman
-// Corporation), or their initials followed by a last word in full (ngrid
-// for National Grid). The leading words must include a word that is not
-// generic, a label it begins must be at least five letters long, and
-// initials at least three.
-func nameMatchesLabel(words []string, label string, generic, stop []string) bool {
-	if label == "" {
-		return false
-	}
-
-	var compact, all, skipped strings.Builder
-	distinctive := false
-	for k, w := range words {
-		w = strings.Map(func(r rune) rune {
-			if unicode.IsLetter(r) || unicode.IsDigit(r) {
-				return r
-			}
-
-			return -1
-		}, w)
-		if w == "" {
-			continue
-		}
-		if !slices.Contains(generic, w) {
-			distinctive = true
-			// The leading words' initials and this word in full: ngrid for
-			// National Grid.
-			if k > 0 && len(w) >= 4 && (all.String()+w == label || skipped.String()+w == label) {
-				return true
-			}
-		}
-
-		compact.WriteString(w)
-		all.WriteByte(w[0])
-		if !slices.Contains(stop, w) {
-			skipped.WriteByte(w[0])
-		}
-		if !distinctive {
-			continue
-		}
-
-		c := compact.String()
-		if c == label || (len(c) >= 5 && strings.HasPrefix(label, c)) {
-			return true
-		}
-		if k > 0 && len(label) >= 3 && (all.String() == label || skipped.String() == label) {
+		if semantics.OrgNameMatchesLabel(graph.AddressWords(n), label) {
 			return true
 		}
 	}
@@ -1234,7 +1175,7 @@ func (s *familySearch) renamed(a, b string) bool {
 func renamedNames(a, b string) bool {
 	rules := loadFamilyRules()
 	wa, wb := strings.Fields(strings.ToLower(a)), strings.Fields(strings.ToLower(b))
-	stop := abbreviationStopWords()
+	stop := semantics.OrgInitialsStopWords()
 	distinct := func(ws []string) map[string]bool {
 		out := map[string]bool{}
 		for _, w := range ws {
@@ -1340,7 +1281,7 @@ func nameVariant(a, b string, generic []string) bool {
 
 	// Initials skip short joining words: SUNY is State University of New
 	// York.
-	stop := abbreviationStopWords()
+	stop := semantics.OrgInitialsStopWords()
 	for i := range wb {
 		for j := i + 2; j <= len(wb); j++ {
 			var all, skipped strings.Builder
@@ -1362,17 +1303,6 @@ func nameVariant(a, b string, generic []string) bool {
 	}
 
 	return true
-}
-
-// abbreviationStopWords are the words initials skip, from the duplicate
-// catalog's abbreviation signal.
-func abbreviationStopWords() []string {
-	var out []string
-	for _, s := range signalsOf(matchAbbreviation) {
-		out = append(out, s.Params.StopWords...)
-	}
-
-	return out
 }
 
 // isDepartment reports whether an organization's name carries a department
@@ -1412,7 +1342,7 @@ func (s *familySearch) isUnit(p *familyProfile) bool {
 // whose own name ends in a unit noun is not a unit of itself, because its
 // other spellings add no such word.
 func (s *familySearch) unitOf(p, q *familyProfile) bool {
-	stop := abbreviationStopWords()
+	stop := semantics.OrgInitialsStopWords()
 	for bp := range p.brands {
 		wp := strings.Fields(bp)
 		if len(wp) < 2 || !slices.Contains(s.rules.UnitNouns, wp[len(wp)-1]) {

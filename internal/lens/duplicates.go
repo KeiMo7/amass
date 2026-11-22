@@ -936,7 +936,7 @@ func (s *dupSearch) pairs() [][2]string {
 		for b := range p.brands {
 			add("brand:"+b, id)
 			for _, sig := range signalsOf(matchAbbreviation) {
-				if a := abbreviation(b, sig.Params.StopWords); len(a) >= sig.Params.MinLength {
+				if a := abbreviation(b, semantics.OrgInitialsStopWords()); len(a) >= sig.Params.MinLength {
 					add("brand:"+a, id)
 				}
 			}
@@ -1061,7 +1061,7 @@ func pairSignals(a, b *orgProfile) []GapSignal {
 				add(def, "address "+street)
 			}
 		case matchAbbreviation:
-			if via := abbreviates(a, b, def.Params.StopWords, def.Params.MinLength); via != "" {
+			if via := abbreviates(a, b, semantics.OrgInitialsStopWords(), def.Params.MinLength); via != "" {
 				add(def, via)
 			}
 		case matchJurisdictionConflict:

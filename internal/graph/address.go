@@ -136,12 +136,20 @@ func StreetAddressKey(a Asset) string {
 		return ""
 	}
 
-	addr := ContentString(a, "address")
-	if num, street := ContentString(a, "building_number"), ContentString(a, "street_name"); num != "" && street != "" {
-		if k := addressKey(num+" "+street+" "+addr, ContentString(a, "postal_code")); k != "" {
+	return StreetAddressKeyOf(ContentString(a, "building_number"), ContentString(a, "street_name"),
+		ContentString(a, "address"), ContentString(a, "postal_code"))
+}
+
+// StreetAddressKeyOf is addressKey for a street address given as its parsed
+// building number and street name, its full text and its postal code: "number
+// street|postal" so that two spellings of one address compare equal, or ""
+// when no street number and recognized street type are found.
+func StreetAddressKeyOf(number, street, address, postal string) string {
+	if number != "" && street != "" {
+		if k := addressKey(number+" "+street+" "+address, postal); k != "" {
 			return k
 		}
 	}
 
-	return addressKey(addr, ContentString(a, "postal_code"))
+	return addressKey(address, postal)
 }

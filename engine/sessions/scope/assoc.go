@@ -11,11 +11,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/adrg/strutil"
-	"github.com/adrg/strutil/metrics"
 	"github.com/caffix/stringset"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	amassdns "github.com/owasp-amass/amass/v5/internal/net/dns"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamcert "github.com/owasp-amass/open-asset-model/certificate"
@@ -399,32 +398,24 @@ func (s *Scope) confidence(from, to oam.AssetType) int {
 	return -1
 }
 
+// orgNameSimilarToCommon reports whether the certificate's subject domain is
+// named for the organization: its registered domain's label spells one of
+// the organization's names (semantics.OrgNameMatchesLabel).
 func (s *Scope) orgNameSimilarToCommon(o *oamorg.Organization, cert *oamcert.TLSCertificate) bool {
-	swg := metrics.NewSmithWatermanGotoh()
-	swg.CaseSensitive = false
-	swg.GapPenalty = -0.1
-	swg.Substitution = metrics.MatchMismatch{
-		Match:    1,
-		Mismatch: -0.5,
-	}
-
 	if re := amassdns.AnySubdomainRegex(); !re.MatchString(cert.SubjectCommonName) {
 		return false
 	}
 
-	dom, err := publicsuffix.EffectiveTLDPlusOne(cert.SubjectCommonName)
+	dom, err := publicsuffix.EffectiveTLDPlusOne(strings.ToLower(cert.SubjectCommonName))
 	if err != nil {
 		return false
 	}
 
-	labels := strings.Split(dom, ".")
-	if len(labels) < 2 {
-		return false
-	}
-
-	common := labels[0]
-	if sim := strutil.Similarity(o.Name, common, swg); sim >= 0.5 {
-		return true
+	label, _, _ := strings.Cut(dom, ".")
+	for _, key := range orgNameKeys(o) {
+		if semantics.OrgNameMatchesLabel(strings.Fields(key), label) {
+			return true
+		}
 	}
 	return false
 }

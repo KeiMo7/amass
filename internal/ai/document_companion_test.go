@@ -300,3 +300,28 @@ func TestCompanionSkipsFailedDocuments(t *testing.T) {
 		}
 	}
 }
+
+// The run's own target written as its domain label or acronym is not a lead;
+// other organizations, and other kinds of lead, are.
+func TestSelfReference(t *testing.T) {
+	labels := targetLabels(collect.Run{Plan: collect.Plan{ScopeType: "domain", ScopeValue: "mvcc.edu"}})
+	if !labels["mvcc"] || len(labels) != 1 {
+		t.Fatalf("labels %v", labels)
+	}
+	if uk := targetLabels(collect.Run{Plan: collect.Plan{ScopeType: "domain", ScopeValue: "www.acme.co.uk"}}); !uk["acme"] {
+		t.Errorf("labels for acme.co.uk %v", uk)
+	}
+	for name, want := range map[string]bool{"MVCC": true, "M.V.C.C.": true, "Utica Police Department": false,
+		"MVCC Foundation": false} {
+		l, ok := leadFor("Organization", name, "US")
+		if !ok {
+			t.Fatalf("leadFor(Organization, %q) gave no lead", name)
+		}
+		if got := selfReference(l, labels); got != want {
+			t.Errorf("selfReference(%q) = %v, want %v", name, got, want)
+		}
+	}
+	if l, _ := leadFor("FQDN", "mvcc.edu", "US"); selfReference(l, labels) {
+		t.Error("a host was treated as the target's own name")
+	}
+}

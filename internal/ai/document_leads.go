@@ -11,8 +11,10 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"unicode"
 
 	"github.com/nyaruka/phonenumbers"
+	"github.com/owasp-amass/amass/v5/internal/collect"
 	"github.com/owasp-amass/amass/v5/internal/graph"
 	"github.com/owasp-amass/amass/v5/internal/review"
 	oam "github.com/owasp-amass/open-asset-model"
@@ -22,6 +24,7 @@ import (
 	oamnet "github.com/owasp-amass/open-asset-model/network"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 	oamurl "github.com/owasp-amass/open-asset-model/url"
+	"golang.org/x/net/publicsuffix"
 )
 
 // documentLead is an asset a document names, as the lead handed to a running
@@ -190,6 +193,41 @@ func anchoredLead(l documentLead, anchored map[string]bool) bool {
 // orgKey folds an organization name for comparison.
 func orgKey(name string) string {
 	return strings.ToLower(strings.Join(strings.Fields(name), " "))
+}
+
+// targetLabels returns the labels of a run's target domains before their
+// public suffix ("mvcc" for mvcc.edu, "acme" for acme.co.uk), lower-cased.
+func targetLabels(run collect.Run) map[string]bool {
+	out := map[string]bool{}
+	for _, d := range documentTargets(run) {
+		d = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(d), "."))
+		apex, err := publicsuffix.EffectiveTLDPlusOne(d)
+		if err != nil {
+			continue
+		}
+		suffix, _ := publicsuffix.PublicSuffix(apex)
+		if label := strings.TrimSuffix(strings.TrimSuffix(apex, suffix), "."); label != "" {
+			out[label] = true
+		}
+	}
+	return out
+}
+
+// selfReference reports whether an organization lead is the run's own target
+// written as its domain label or acronym ("MVCC" in mvcc.edu's documents):
+// the organization the run is already about, which the registries would only
+// confuse with others of the same initials.
+func selfReference(l documentLead, labels map[string]bool) bool {
+	if _, ok := l.asset.(oamorg.Organization); !ok || len(labels) == 0 {
+		return false
+	}
+	var b strings.Builder
+	for _, r := range strings.ToLower(l.name) {
+		if unicode.IsLetter(r) || unicode.IsDigit(r) {
+			b.WriteRune(r)
+		}
+	}
+	return labels[b.String()]
 }
 
 // unitPrefixes start the names of an organization's own units.

@@ -306,12 +306,16 @@ func (c *DocumentCompanion) submitLeads(ctx context.Context, run collect.Run, ac
 	}
 
 	anchored := anchoredOrganizations(d.Stored)
+	own := targetLabels(run)
 	region := "US"
 	if u, err := url.Parse(d.URL); err == nil {
 		region = docmeta.PhoneRegion(u.Hostname())
 	}
 	for _, s := range d.Stored {
 		for _, l := range statementLeads(s, region) {
+			if selfReference(l, own) {
+				continue
+			}
 			key := strings.ToLower(string(l.asset.AssetType()) + "\x00" + l.name)
 			orgOnly := !anchoredLead(l, anchored)
 			if st.seen[key] {

@@ -44,6 +44,8 @@ type orgProfile struct {
 	// addresses are the locations' normalized street addresses.
 	addresses map[string]bool
 	related   map[string]bool
+	// parents are the organizations it is a unit or subsidiary of.
+	parents map[string]bool
 	// docs are what documents state relates this organization, by the
 	// other organization's folded name (buildDocLinks).
 	docs map[string]*docLink
@@ -715,7 +717,7 @@ func (s *dupSearch) asset(id string) (graph.Asset, error) {
 func (s *dupSearch) profile(o graph.Asset) (*orgProfile, error) {
 	p := &orgProfile{asset: o, brands: map[string]bool{}, ids: map[string]map[string]bool{},
 		contacts: map[string]bool{}, locations: map[string]bool{}, addresses: map[string]bool{},
-		related: map[string]bool{}}
+		related: map[string]bool{}, parents: map[string]bool{}}
 	p.addName(graph.ContentString(o, "name"))
 	p.addName(graph.ContentString(o, "legal_name"))
 	p.jurisdiction = strings.ToUpper(strings.TrimSpace(graph.ContentString(o, "jurisdiction")))
@@ -795,6 +797,7 @@ func (s *dupSearch) profile(o graph.Asset) (*orgProfile, error) {
 				other := e.ToID
 				if dir == "in" {
 					other = e.FromID
+					p.parents[other] = true
 				}
 
 				p.related[other] = true
@@ -1129,6 +1132,9 @@ func pairSignals(a, b *orgProfile) []GapSignal {
 		case matchParentChild:
 			if a.related[b.asset.ID] || b.related[a.asset.ID] {
 				add(def, "linked in the corporate structure")
+			} else if differentParents(a, b) {
+				// offices of one name at two organizations ("Counseling")
+				add(def, "units or subsidiaries of different organizations")
 			} else if l := docLinkTo(a, b); l != nil && l.parent {
 				// two organizations a document calls parent and unit or
 				// subsidiary are not one company
@@ -1143,6 +1149,15 @@ func pairSignals(a, b *orgProfile) []GapSignal {
 	}
 
 	return out
+}
+
+// differentParents reports whether two organizations are each a unit or
+// subsidiary of a parent, and share none.
+func differentParents(a, b *orgProfile) bool {
+	if len(a.parents) == 0 || len(b.parents) == 0 {
+		return false
+	}
+	return firstShared(a.parents, b.parents) == ""
 }
 
 // jurisdictionConflict describes how two organizations' registrations

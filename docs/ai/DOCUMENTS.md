@@ -240,6 +240,33 @@ and proposes, through the relation framework:
 
 - **Skipped pairs:** pairs already linked by the label, or for organizations
   by `org_unit` or `subsidiary` in either direction.
+- **Units of the publisher:** the prompt has the model write
+  `lens.DocumentPublisher` (`PUBLISHER`) as the object of a `unit_of` finding
+  for an office, department, campus or program of the organization that runs
+  the document's site. `validatePublisherUnit` allows the placeholder only
+  there: the unit's name must be written where it is quoted and not negated,
+  and the stored `detail` says it is implied by the publisher.
+  `documentSourcesOf` returns the publisher (the root organization, or the
+  root domain's single owner) and `docRelations.resolve` maps the placeholder
+  to it. The placeholder is never a lead (`statementLeads`) and never a name
+  in `documentFindings`.
+- **New units:** for an `org_unit` finding whose parent is the publisher,
+  a unit that is not stored, or is stored only as another organization's
+  unit or subsidiary (`unitOfOther`), becomes a candidate with
+  `RelationCandidate.NewTo` (`lens.NewAsset`): an Organization whose
+  `unique_id` is `lens.UnitKey(parent, name)` (`<parent key> / <name>`). A
+  unit already stored under that key is linked instead. The proposal ID uses
+  `new:<type>:<key>` as the destination. `review.ApplyRelation` creates the
+  asset (when the store implements `CreateAsset`) and records `CreatedID`;
+  `RetractRelation` deletes the edge and that asset.
+- **Org-group lens:** `lens.DocumentUnits` lists the units the subject's own,
+  current documents name (`unit_of` with the placeholder or the subject's
+  exact name or legal name), marking those stored as its `org_unit`s; the CLI
+  and the agent set `GroupReport.DocumentUnits` and `FormatGroupReport`
+  prints them.
+- **Duplicates:** two organizations that are each a unit or subsidiary of a
+  different parent get `parent_or_subsidiary` (negative, `differentParents`),
+  so offices of one name at two organizations aren't proposed as one.
 - **Confidence:** 2 × weight (40 first-party, 50 corroborated), written on the
   edge when accepted.
 - **Recording:** `amass db doc-relations` and `DocumentCompanion.Finish`

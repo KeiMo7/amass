@@ -16,16 +16,19 @@
       "object_type": "Organization",
       "label": "org_unit",
       "direction": "inverse",
-      "finds": "A finding that an organization is a division, department, campus or other unit of another, both stored.",
+      "finds": "A finding that an organization is a division, department, campus or other unit of another, both stored; or that an office, department, campus or program is a unit of the organization that published the document, which is proposed as a new unit when no source has stored it.",
       "rationale": "Organizations describe their own structure in annual reports, catalogs and policies, and the quote was checked against the text. A unit and its parent are often stored as separate records (a foundation and its college), and nothing else in the database may connect them.",
       "guards": [
         "Both names must resolve to exactly one stored organization by exact name or legal name; an ambiguous name gives no evidence.",
+        "A unit of the publisher that is not stored, or is stored only as another organization's unit, is proposed as a new organization whose unique ID includes its parent's, so two organizations' units of one name never become one record.",
+        "Documents older than five years give no unit, except as history.",
         "A pair already linked by org_unit or subsidiary is not proposed again.",
         "The proposal waits for a reviewer: it is never applied automatically."
       ],
       "counter_indications": [
         "An old document can describe a structure that has since changed.",
-        "A document may call an affiliated but independent body (an alumni association, a foundation with its own board) a unit."
+        "A document may call an affiliated but independent body (an alumni association, a foundation with its own board) a unit.",
+        "A unit of the publisher is implied by where the document is published rather than stated in a sentence naming both; a budget or directory line can name a fund, a committee or a service rather than an office."
       ]
     },
     {

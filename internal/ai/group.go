@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/owasp-amass/amass/v5/internal/graph"
+	"github.com/owasp-amass/amass/v5/internal/graph/oamrepo"
 	"github.com/owasp-amass/amass/v5/internal/lens"
 )
 
@@ -24,6 +25,9 @@ func (a Agent) orgGroupLens(ctx context.Context, root graph.Asset, out Investiga
 		return out, err
 	}
 
+	// the units its own documents name; a failure here leaves them out
+	report.DocumentUnits, _ = lens.DocumentUnits(ctx, a.Runner.Graph, oamrepo.Catalog{}, report.Subject,
+		lens.LensLimits{})
 	out.ToolCalls++
 	out.OrgGroupReport = &report
 	out.Incomplete = report.Truncated

@@ -16,6 +16,7 @@ import (
 	"github.com/nyaruka/phonenumbers"
 	"github.com/owasp-amass/amass/v5/internal/collect"
 	"github.com/owasp-amass/amass/v5/internal/graph"
+	"github.com/owasp-amass/amass/v5/internal/lens"
 	"github.com/owasp-amass/amass/v5/internal/review"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamcontact "github.com/owasp-amass/open-asset-model/contact"
@@ -131,6 +132,9 @@ func leadFor(t, value, region string) (documentLead, bool) {
 func statementLeads(s review.StoredStatement, region string) []documentLead {
 	var out []documentLead
 	add := func(t, v string) {
+		if v == lens.DocumentPublisher {
+			return
+		}
 		if l, ok := leadFor(t, v, region); ok {
 			out = append(out, l)
 		}

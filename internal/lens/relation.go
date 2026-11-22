@@ -44,6 +44,9 @@ type RelationCandidate struct {
 	// carry evidence, and writes are reconsidered as the story changes). A
 	// correlator should record here every relationship it read to decide.
 	Witness []graph.WitnessEdge `json:"witness,omitempty"`
+	// NewTo, when set, is the destination to create on approval (ToID is
+	// empty): a unit a document names that no source has stored.
+	NewTo *NewAsset `json:"new_to,omitempty"`
 }
 
 // RelationReport is the result of one correlator: the relationships it proposes.

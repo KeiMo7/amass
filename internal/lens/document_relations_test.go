@@ -130,8 +130,13 @@ func TestFindDocumentRelations(t *testing.T) {
 	for _, c := range r.Candidates {
 		got[c.FromID+" "+c.Label+" "+c.ToID] = c
 	}
-	if len(got) != 3 {
+	// three between stored assets, and the unstored unit of the publisher
+	if len(got) != 4 {
 		t.Fatalf("candidates %+v", r.Candidates)
+	}
+	if c := got["colgate org_unit "]; c.NewTo == nil || c.NewTo.Name != "Nowhere Institute" ||
+		c.NewTo.Key != "Colgate University / Nowhere Institute" {
+		t.Errorf("new unit candidate %+v", c)
 	}
 
 	unit, ok := got["colgate org_unit foundation"]
@@ -196,5 +201,51 @@ func TestDocumentSignalCatalog(t *testing.T) {
 		SubjectType: "Organization", ObjectType: "Organization", Label: "subsidiary", Direction: "inverse"}}}
 	if validateDocumentSignals(bad) == nil {
 		t.Error("a label that contradicts the predicate catalog was accepted")
+	}
+}
+
+// A unit the publisher's documents name with the publisher placeholder is
+// proposed under the publisher: as a new unit when it is not stored, or is
+// stored only as another organization's unit; never as a link to that other
+// organization's office of the same name.
+func TestFindDocumentRelationsPublisherUnits(t *testing.T) {
+	g := documentRelationFixture()
+	g.Assets["hamilton-counseling"] = graph.Asset{ID: "hamilton-counseling", Type: "Organization",
+		Key: "Hamilton College / Counseling Center", Content: map[string]any{"name": "Counseling Center"}}
+	g.orgs["counseling center"] = []string{"hamilton-counseling"}
+	g.Links = append(g.Links, graph.Relation{ID: "hc", FromID: "hamilton", ToID: "hamilton-counseling",
+		Label: "org_unit", Type: "SimpleRelation"})
+	g.EvidenceByID["f-catalog"] = append(g.EvidenceByID["f-catalog"],
+		graphtest.SimpleProp(propDocStatement, `{"kind":"relation","subject":"Counseling Center",`+
+			`"subject_type":"Organization","predicate":"unit_of","object":"`+DocumentPublisher+`",`+
+			`"object_type":"Organization","sha256":"v2"}`))
+
+	r, err := FindDocumentRelations(context.Background(), g, graphtest.VendorCatalog{PlanCatalog: graphtest.TestOAMCatalog},
+		g.Assets["colgate.edu"], LensLimits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	var unit *RelationCandidate
+	for i, c := range r.Candidates {
+		if c.ToID == "hamilton-counseling" {
+			t.Fatalf("linked colgate to another college's office: %+v", c)
+		}
+		if c.NewTo != nil && c.NewTo.Name == "Counseling Center" {
+			unit = &r.Candidates[i]
+		}
+	}
+	if unit == nil || unit.FromID != "colgate" || unit.Label != "org_unit" ||
+		unit.NewTo.Key != "Colgate University / Counseling Center" {
+		t.Fatalf("publisher unit %+v in %+v", unit, r.Candidates)
+	}
+	if !strings.Contains(strings.Join(unit.Signals, " "), "its publisher") {
+		t.Errorf("signals %v do not say the unit is the publisher's", unit.Signals)
+	}
+}
+
+func TestUnitKey(t *testing.T) {
+	parent := graph.Asset{ID: "7", Key: "Colgate University"}
+	if got := UnitKey(parent, "  Counseling   Center "); got != "Colgate University / Counseling Center" {
+		t.Errorf("UnitKey = %q", got)
 	}
 }

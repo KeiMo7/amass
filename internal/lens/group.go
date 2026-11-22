@@ -53,7 +53,10 @@ type GroupReport struct {
 	Tops    []graph.Asset `json:"tops"`
 	Members []GroupMember `json:"members"`
 	Labels  []string      `json:"labels"`
-	Reads   int           `json:"reads"`
+	// DocumentUnits are the units the subject's own documents name, set by
+	// the caller (DocumentUnits).
+	DocumentUnits []DocumentUnit `json:"document_units,omitempty"`
+	Reads         int            `json:"reads"`
 	// Truncated reports that the group has more than was read.
 	Truncated bool   `json:"truncated"`
 	Reason    string `json:"reason,omitempty"`
@@ -335,6 +338,7 @@ func FormatGroupReport(r GroupReport) string {
 	if len(r.Members) <= 1 {
 		fmt.Fprintf(&b, "No parent, subsidiary or unit of %s is stored. GLEIF records parents and subsidiaries "+
 			"for organizations with an LEI, and reviewed department proposals add units.\n", subject)
+		formatDocumentUnits(&b, r.DocumentUnits)
 		return b.String()
 	}
 	if len(r.Tops) > 1 {
@@ -394,5 +398,6 @@ func FormatGroupReport(r GroupReport) string {
 	}
 
 	b.WriteString("\n")
+	formatDocumentUnits(&b, r.DocumentUnits)
 	return b.String()
 }

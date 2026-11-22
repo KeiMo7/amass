@@ -94,7 +94,9 @@ func documentFindings(ctx context.Context, g graph.Graph, predicates []string) (
 			for _, v := range propertyValues(ev, propDocStatement) {
 				var st docStatement
 				if json.Unmarshal([]byte(v), &st) != nil || st.Kind != "relation" ||
-					!slices.Contains(predicates, st.Predicate) || staleFinding(stale, st.Predicate) {
+					!slices.Contains(predicates, st.Predicate) || staleFinding(stale, st.Predicate) ||
+					st.Object == DocumentPublisher || st.Subject == DocumentPublisher {
+					// the publisher placeholder names no organization by name
 					continue
 				}
 				out = append(out, docFinding{st: st, fileID: f.ID, url: fileURL})

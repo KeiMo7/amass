@@ -45,15 +45,31 @@ type DocumentSource struct {
 // organization controls, in URL order. It reads only.
 func DocumentSources(ctx context.Context, g graph.Graph, schema graph.SchemaCatalog, root graph.Asset,
 	limits LensLimits) ([]DocumentSource, error) {
+	out, _, err := documentSourcesOf(ctx, g, schema, root, limits)
+	return out, err
+}
+
+// documentSourcesOf is DocumentSources, also returning the documents'
+// publisher: root when it is an organization, otherwise the one organization
+// that owns it (none when no organization, or more than one, does).
+func documentSourcesOf(ctx context.Context, g graph.Graph, schema graph.SchemaCatalog, root graph.Asset,
+	limits LensLimits) ([]DocumentSource, graph.Asset, error) {
 	g = graph.Cached(g)
 	s, err := newScope(ctx, g, schema, root, limits, LensDocuments)
 	if err != nil {
-		return nil, err
+		return nil, graph.Asset{}, err
+	}
+	var publisher graph.Asset
+	switch {
+	case root.Type == "Organization":
+		publisher = root
+	case len(s.owners) == 1:
+		publisher = s.owners[0]
 	}
 
 	urls, err := s.ownedURLs()
 	if err != nil {
-		return nil, err
+		return nil, publisher, err
 	}
 
 	seen := map[string]bool{}
@@ -64,7 +80,7 @@ func DocumentSources(ctx context.Context, g graph.Graph, schema graph.SchemaCata
 		}
 		steps, err := s.w.steps(u)
 		if err != nil {
-			return out, err
+			return out, publisher, err
 		}
 		for _, st := range steps {
 			if !st.forward || st.other.Type != "File" || seen[st.other.ID] {
@@ -74,14 +90,14 @@ func DocumentSources(ctx context.Context, g graph.Graph, schema graph.SchemaCata
 
 			src, err := s.documentSource(st.other)
 			if err != nil {
-				return out, err
+				return out, publisher, err
 			}
 			out = append(out, src)
 		}
 	}
 
 	sort.SliceStable(out, func(i, j int) bool { return out[i].URL < out[j].URL })
-	return out, nil
+	return out, publisher, nil
 }
 
 // documentSource reads where a File came from and its content hash.

@@ -21,6 +21,7 @@ import (
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamgen "github.com/owasp-amass/open-asset-model/general"
+	oamorg "github.com/owasp-amass/open-asset-model/org"
 )
 
 // RelationProposal proposes a reviewed, reversible relationship
@@ -47,19 +48,24 @@ type RelationProposal struct {
 	// Witness holds the evidence as the stored relationships the conclusion
 	// rests on, so a re-check can re-test the proposal when the story changes
 	// (see RecheckRelations) and never has to backfill the basis later.
-	Witness   []graph.WitnessEdge `json:"witness,omitempty"`
-	Status    string              `json:"status"`
-	CreatedAt time.Time           `json:"created_at"`
+	Witness []graph.WitnessEdge `json:"witness,omitempty"`
+	// NewTo, when set, is the destination ApplyRelation creates (ToID is
+	// empty): a unit a document names that no source has stored.
+	NewTo     *lens.NewAsset `json:"new_to,omitempty"`
+	Status    string         `json:"status"`
+	CreatedAt time.Time      `json:"created_at"`
 }
 
 // RelationOutcome records a reviewer's decision on a relation proposal, and the
 // edge it created when applied, so the apply can be undone.
 type RelationOutcome struct {
-	ProposalID string    `json:"proposal_id"`
-	Status     string    `json:"status"`
-	Reviewer   string    `json:"reviewer"`
-	EdgeID     string    `json:"edge_id,omitempty"`
-	At         time.Time `json:"at"`
+	ProposalID string `json:"proposal_id"`
+	Status     string `json:"status"`
+	Reviewer   string `json:"reviewer"`
+	EdgeID     string `json:"edge_id,omitempty"`
+	// CreatedID is the asset the apply created (NewTo), removed on undo.
+	CreatedID string    `json:"created_id,omitempty"`
+	At        time.Time `json:"at"`
 }
 
 // RelationProposalID is a stable identifier for a proposed relationship, built
@@ -84,11 +90,15 @@ func RelationProposals(r lens.RelationReport) []RelationProposal {
 	var out []RelationProposal
 	now := time.Now().UTC()
 	for _, c := range r.Candidates {
-		if c.FromID == "" || c.ToID == "" || c.Label == "" {
+		to := c.ToID
+		if to == "" && c.NewTo != nil && c.NewTo.Key != "" {
+			to = "new:" + c.NewTo.Type + ":" + c.NewTo.Key
+		}
+		if c.FromID == "" || to == "" || c.Label == "" {
 			continue
 		}
 		out = append(out, RelationProposal{
-			ID:          RelationProposalID(r.Kind, c.FromID, c.Label, c.ToID),
+			ID:          RelationProposalID(r.Kind, c.FromID, c.Label, to),
 			Kind:        r.Kind,
 			FromID:      c.FromID,
 			From:        c.From,
@@ -99,6 +109,7 @@ func RelationProposals(r lens.RelationReport) []RelationProposal {
 			Signals:     c.Signals,
 			EvidenceIDs: c.EvidenceIDs,
 			Witness:     c.Witness,
+			NewTo:       c.NewTo,
 			Status:      ProposalPending,
 			CreatedAt:   now,
 		})
@@ -144,7 +155,7 @@ func (j *Journal) SubmitRelations(proposals []RelationProposal) ([]RelationPropo
 
 	var added []RelationProposal
 	for _, p := range proposals {
-		if p.ID == "" || p.Kind == "" || p.FromID == "" || p.ToID == "" || p.Label == "" {
+		if p.ID == "" || p.Kind == "" || p.FromID == "" || (p.ToID == "" && p.NewTo == nil) || p.Label == "" {
 			return added, errors.New("relation proposal needs an ID, kind, endpoints and label")
 		}
 		if seen[p.ID] {
@@ -257,8 +268,13 @@ func (j *Journal) AppliedRelation(id string) (RelationProposal, string, error) {
 		return RelationProposal{}, "", fmt.Errorf("relation proposal %s is not applied", id)
 	}
 
+	return p, j.appliedOutcome(id).EdgeID, nil
+}
+
+// appliedOutcome returns the latest apply recorded for a relation proposal.
+func (j *Journal) appliedOutcome(id string) RelationOutcome {
 	hist, _ := j.History()
-	var edgeID string
+	var out RelationOutcome
 	for _, raw := range hist {
 		var head struct {
 			Kind string          `json:"kind"`
@@ -269,11 +285,10 @@ func (j *Journal) AppliedRelation(id string) (RelationProposal, string, error) {
 		}
 		var o RelationOutcome
 		if json.Unmarshal(head.Data, &o) == nil && o.ProposalID == id && o.Status == ProposalApplied {
-			edgeID = o.EdgeID
+			out = o
 		}
 	}
-
-	return p, edgeID, nil
+	return out
 }
 
 // RelationEntry is a relation proposal paired with its latest status, for
@@ -348,12 +363,31 @@ type RelationDeleter interface {
 	DeleteEdge(ctx context.Context, id string) error
 }
 
+// assetCreator creates the asset a proposal with NewTo adds; assetDeleter
+// removes it on undo. Repositories implement both.
+type assetCreator interface {
+	CreateAsset(ctx context.Context, asset oam.Asset) (*dbt.Entity, error)
+}
+
+type assetDeleter interface {
+	DeleteEntity(ctx context.Context, id string) error
+}
+
+// newAsset returns the OAM asset a proposal's NewTo describes.
+func newAsset(n *lens.NewAsset) (oam.Asset, error) {
+	switch n.Type {
+	case string(oam.Organization):
+		return &oamorg.Organization{ID: n.Key, Name: n.Name}, nil
+	}
+	return nil, fmt.Errorf("a relation proposal cannot create a %s", n.Type)
+}
+
 // ApplyRelation creates the proposed From --Label--> To edge, tagged amass-ai
 // with the proposal's confidence, and records the apply so it can be undone. It
 // is only ever called for a proposal a human has approved.
 func ApplyRelation(ctx context.Context, w RelationApplier, j *Journal, p RelationProposal,
 	reviewer string) (string, error) {
-	if p.FromID == "" || p.ToID == "" || p.Label == "" {
+	if p.FromID == "" || (p.ToID == "" && p.NewTo == nil) || p.Label == "" {
 		return "", errors.New("relation proposal needs endpoints and a label")
 	}
 
@@ -361,8 +395,22 @@ func ApplyRelation(ctx context.Context, w RelationApplier, j *Journal, p Relatio
 	if err != nil || from == nil {
 		return "", fmt.Errorf("from asset %s not found: %w", p.FromID, err)
 	}
-	to, err := w.FindEntityById(ctx, p.ToID)
-	if err != nil || to == nil {
+	var to *dbt.Entity
+	createdID := ""
+	if p.ToID == "" {
+		creator, ok := w.(assetCreator)
+		if !ok {
+			return "", errors.New("this store cannot create the proposal's new asset")
+		}
+		asset, err := newAsset(p.NewTo)
+		if err != nil {
+			return "", err
+		}
+		if to, err = creator.CreateAsset(ctx, asset); err != nil || to == nil {
+			return "", fmt.Errorf("create %s %s: %w", p.NewTo.Type, p.NewTo.Name, err)
+		}
+		createdID = to.ID
+	} else if to, err = w.FindEntityById(ctx, p.ToID); err != nil || to == nil {
 		return "", fmt.Errorf("to asset %s not found: %w", p.ToID, err)
 	}
 
@@ -377,7 +425,7 @@ func ApplyRelation(ctx context.Context, w RelationApplier, j *Journal, p Relatio
 	_, _ = w.CreateEdgeProperty(ctx, edge, &oamgen.SourceProperty{Source: InferenceSource, Confidence: p.Confidence})
 
 	if err := j.RecordRelation(RelationOutcome{ProposalID: p.ID, Status: ProposalApplied, Reviewer: reviewer,
-		EdgeID: edge.ID}); err != nil {
+		EdgeID: edge.ID, CreatedID: createdID}); err != nil {
 		return edge.ID, fmt.Errorf("%s --%s--> %s was linked but the journal was not updated: %w", p.From, p.Label,
 			p.To, err)
 	}
@@ -395,6 +443,14 @@ func RetractRelation(ctx context.Context, w RelationDeleter, j *Journal, id, rev
 	if edgeID != "" {
 		if err := w.DeleteEdge(ctx, edgeID); err != nil {
 			return fmt.Errorf("undo relation %s: %w", id, err)
+		}
+	}
+	// the asset the apply created goes too
+	if created := j.appliedOutcome(id).CreatedID; created != "" {
+		if d, ok := w.(assetDeleter); ok {
+			if err := d.DeleteEntity(ctx, created); err != nil {
+				return fmt.Errorf("undo relation %s: remove %s: %w", id, p.To, err)
+			}
 		}
 	}
 	if err := j.RecordRelation(RelationOutcome{ProposalID: id, Status: ProposalRetracted, Reviewer: reviewer}); err != nil {

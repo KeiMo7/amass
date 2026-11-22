@@ -34,6 +34,8 @@ func listGroup(ctx context.Context, graph groupGraph, domain, org, format string
 	if err != nil {
 		return err
 	}
+	// the units its own documents name; a failure here leaves them out
+	r.DocumentUnits, _ = lens.DocumentUnits(ctx, graph, oamrepo.Catalog{}, r.Subject, lens.LensLimits{})
 
 	switch {
 	case !explicit || format == "text":

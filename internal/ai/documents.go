@@ -16,6 +16,7 @@ import (
 	"unicode/utf8"
 
 	"github.com/owasp-amass/amass/v5/internal/ai/llm"
+	"github.com/owasp-amass/amass/v5/internal/lens"
 	"github.com/owasp-amass/amass/v5/internal/review"
 	"github.com/owasp-amass/amass/v5/internal/semantics"
 )
@@ -195,6 +196,11 @@ func readDocument(ctx context.Context, model llm.Model, modelID, url, text strin
 			s := DocumentStatement{Kind: FindingRelation, Subject: collapse(r.Subject), SubjectType: r.SubjectType,
 				Predicate: r.Predicate, Object: collapse(r.Object), ObjectType: r.ObjectType,
 				Detail: collapse(r.Detail), Quote: collapse(r.Quote)}
+			if s.Object == lens.DocumentPublisher {
+				// implied by where the document is published, not stated
+				// in a sentence naming both
+				s.Detail = "a unit of the document's publisher"
+			}
 			keep(s, v.validateRelation(s, chunk))
 		}
 		for _, a := range limit(reply.Attributes) {
@@ -302,6 +308,9 @@ func (q quoteSite) has(name string) bool { return q.find(name) >= 0 }
 
 // validateAsset returns why an asset finding is rejected, or "".
 func (v *docVocabulary) validateAsset(s DocumentStatement, chunk string) string {
+	if s.Subject == lens.DocumentPublisher {
+		return "asset: the publisher placeholder is no asset"
+	}
 	if !v.assetTypes[s.SubjectType] {
 		return fmt.Sprintf("asset: %q is not a type documents are read for", s.SubjectType)
 	}
@@ -320,6 +329,9 @@ func (v *docVocabulary) validateAsset(s DocumentStatement, chunk string) string 
 
 // validateRelation returns why a relation finding is rejected, or "".
 func (v *docVocabulary) validateRelation(s DocumentStatement, chunk string) string {
+	if s.Subject == lens.DocumentPublisher || s.Object == lens.DocumentPublisher {
+		return v.validatePublisherUnit(s, chunk)
+	}
 	if !v.allows(s.SubjectType, s.Predicate, s.ObjectType) {
 		return fmt.Sprintf("%s does not relate %s to %s", s.Predicate, s.SubjectType, s.ObjectType)
 	}
@@ -344,6 +356,33 @@ func (v *docVocabulary) validateRelation(s DocumentStatement, chunk string) stri
 	// the opposite, or nothing
 	if negated(site.text, si, si+len(strings.ToLower(s.Subject)), oi, oi+len(strings.ToLower(s.Object))) {
 		return fmt.Sprintf("%s: the document negates it", s.Predicate)
+	}
+	return ""
+}
+
+// validatePublisherUnit returns why a finding that names the document's
+// publisher (lens.DocumentPublisher) is rejected, or "". The placeholder may
+// only be the parent of a unit_of finding; the unit's own name must be
+// written where it is quoted, and not negated there.
+func (v *docVocabulary) validatePublisherUnit(s DocumentStatement, chunk string) string {
+	if s.Predicate != "unit_of" || s.SubjectType != "Organization" || s.ObjectType != "Organization" ||
+		s.Object != lens.DocumentPublisher || s.Subject == lens.DocumentPublisher {
+		return "the publisher placeholder is only the parent of a unit_of finding"
+	}
+	if reason := checkValue(s.SubjectType, s.Subject); reason != "" {
+		return "unit_of: " + reason
+	}
+	site, ok := located(s.Quote, chunk)
+	if !ok {
+		return "unit_of: the quote is not in the document"
+	}
+	si := site.find(s.Subject)
+	if si < 0 {
+		return "unit_of: the unit is not written where it is quoted"
+	}
+	end := si + len(strings.ToLower(s.Subject))
+	if negated(site.text, si, end, si, end) {
+		return "unit_of: the document negates it"
 	}
 	return ""
 }
@@ -454,6 +493,7 @@ Rules:
 - statements: relationships between two assets, using a relation listed below for those two types.
 - attributes: a value the text gives for one of an asset's fields listed below.
 - category is what the whole document appears to be.
+- The organization that published the document runs the site in the Document line. When the text names an office, department, campus, program, center or other unit of that organization, give a unit_of statement with the unit as subject (an Organization) and object "` + lens.DocumentPublisher + `" (object_type Organization), and quote the line that names the unit. Use "` + lens.DocumentPublisher + `" for nothing else, and never for an organization the text presents as separate from the publisher: a contractor, a vendor, an agency, a partner or a funder.
 Asset types and the values to give:
 `)
 	for _, t := range v.types {

@@ -199,7 +199,8 @@
       "finds": "Two organizations already linked as parent and subsidiary or as an organizational unit.",
       "rationale": "The graph records them as distinct organizations in a corporate structure. Merging them would erase that structure, so the pair is never merged automatically; when the link itself came from a bad match, a person can still merge them.",
       "guards": [
-        "Applies to a direct link in either direction."
+        "Applies to a direct link in either direction.",
+        "Also applies to two organizations that are each a unit or subsidiary of a different parent, such as offices of one name at two colleges."
       ],
       "counter_indications": [
         "A subsidiary link created by an enrichment that matched the organization to its own record."

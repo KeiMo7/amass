@@ -222,13 +222,13 @@ func FindDocumentRelations(ctx context.Context, g graph.Graph, schema graph.Sche
 		return report, errors.New("document relations need exact organization and asset lookups")
 	}
 
-	sources, err := DocumentSources(ctx, g, schema, root, limits)
+	sources, publisher, err := documentSourcesOf(ctx, g, schema, root, limits)
 	if err != nil {
 		return report, err
 	}
 
-	r := &docRelations{ctx: ctx, g: dg, resolved: map[string]docEnd{}, found: map[string]*docRelation{},
-		linked: map[string]bool{}}
+	r := &docRelations{ctx: ctx, g: dg, publisher: publisher, resolved: map[string]docEnd{},
+		found: map[string]*docRelation{}, linked: map[string]bool{}}
 	for _, src := range sources {
 		if ctx.Err() != nil {
 			return report, ctx.Err()
@@ -272,7 +272,8 @@ type docEnd struct {
 	ok    bool
 }
 
-// docRelation is one proposed relationship and the documents stating it.
+// docRelation is one proposed relationship and the documents stating it. A
+// destination with no ID is a unit to create on approval.
 type docRelation struct {
 	signal   DocumentSignal
 	from, to graph.Asset
@@ -288,7 +289,7 @@ func (d *docRelation) candidate() RelationCandidate {
 		files = append(files, id)
 	}
 	sort.Strings(files)
-	return RelationCandidate{
+	c := RelationCandidate{
 		FromID:      d.from.ID,
 		From:        graph.AssetLabel(d.from),
 		Label:       d.signal.Label,
@@ -298,6 +299,12 @@ func (d *docRelation) candidate() RelationCandidate {
 		Signals:     d.cited,
 		EvidenceIDs: files,
 	}
+	if d.to.ID == "" {
+		name := graph.ContentString(d.to, "name")
+		c.To = name + " (new unit)"
+		c.NewTo = &NewAsset{Type: d.to.Type, Key: d.to.Key, Name: name}
+	}
+	return c
 }
 
 // documentConfidence is the confidence written on an accepted edge: twice the
@@ -309,11 +316,14 @@ func documentConfidence(weight float64) int {
 }
 
 type docRelations struct {
-	ctx      context.Context
-	g        docRelationGraph
-	resolved map[string]docEnd
-	found    map[string]*docRelation
-	linked   map[string]bool
+	ctx context.Context
+	g   docRelationGraph
+	// publisher is the organization that published the documents read, for
+	// findings that name it as DocumentPublisher
+	publisher graph.Asset
+	resolved  map[string]docEnd
+	found     map[string]*docRelation
+	linked    map[string]bool
 }
 
 // add counts one finding of one document toward the relationship it states.
@@ -322,13 +332,34 @@ func (r *docRelations) add(src DocumentSource, st docStatement) error {
 	if !ok {
 		return nil
 	}
-	subj, err := r.resolve(st.SubjectType, st.Subject)
-	if err != nil || !subj.ok {
-		return err
+	if st.Subject == DocumentPublisher {
+		return nil
 	}
 	obj, err := r.resolve(st.ObjectType, st.Object)
 	if err != nil || !obj.ok {
 		return err
+	}
+	subj, err := r.resolve(st.SubjectType, st.Subject)
+	if err != nil {
+		return err
+	}
+	// a unit of the publisher: one no source has stored, or one of that
+	// name stored under another organization, is proposed as a new unit
+	if sig.Label == "org_unit" && sig.Direction == "inverse" && r.publisher.ID != "" &&
+		obj.asset.ID == r.publisher.ID {
+		if subj.ok {
+			other, err := r.unitOfOther(subj.asset, obj.asset)
+			if err != nil {
+				return err
+			}
+			subj.ok = !other
+		}
+		if !subj.ok {
+			return r.addNewUnit(src, st, sig, obj.asset)
+		}
+	}
+	if !subj.ok {
+		return nil
 	}
 
 	from, to := subj.asset, obj.asset
@@ -343,7 +374,13 @@ func (r *docRelations) add(src DocumentSource, st docStatement) error {
 		return err
 	}
 
-	key := from.ID + "\x00" + sig.Label + "\x00" + to.ID
+	r.count(src, st, sig, from.ID+"\x00"+sig.Label+"\x00"+to.ID, from, to)
+	return nil
+}
+
+// count adds one document's finding to the relationship found under key.
+func (r *docRelations) count(src DocumentSource, st docStatement, sig DocumentSignal, key string,
+	from, to graph.Asset) {
 	d, ok := r.found[key]
 	if !ok {
 		d = &docRelation{signal: sig, from: from, to: to, versions: map[string]bool{}, files: map[string]bool{}}
@@ -360,11 +397,14 @@ func (r *docRelations) add(src DocumentSource, st docStatement) error {
 	if !d.files[src.FileID] {
 		d.files[src.FileID] = true
 		if len(d.cited) < docRelationMaxCited {
+			object := st.Object
+			if object == DocumentPublisher {
+				object = "its publisher, " + graph.AssetLabel(from)
+			}
 			d.cited = append(d.cited, fmt.Sprintf("%s: %q %s %q, in %s", sig.Title, st.Subject, st.Predicate,
-				st.Object, src.URL))
+				object, src.URL))
 		}
 	}
-	return nil
 }
 
 // resolve finds the one stored asset a name in a finding names, by exact
@@ -375,6 +415,9 @@ func (r *docRelations) resolve(assetType, name string) (docEnd, error) {
 	name = strings.Join(strings.Fields(name), " ")
 	if name == "" {
 		return docEnd{}, nil
+	}
+	if name == DocumentPublisher {
+		return docEnd{asset: r.publisher, ok: assetType == "Organization" && r.publisher.ID != ""}, nil
 	}
 	key := assetType + "\x00" + strings.ToLower(name)
 	if end, ok := r.resolved[key]; ok {

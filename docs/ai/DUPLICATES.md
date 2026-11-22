@@ -219,6 +219,7 @@ Sources record one company several times: a certificate, an RDAP lookup and GLEI
 **Guards:**
 
 - Applies to a direct link in either direction.
+- Also applies to two organizations that are each a unit or subsidiary of a different parent, such as offices of one name at two colleges.
 
 **Can still mislead when:**
 

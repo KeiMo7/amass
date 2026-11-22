@@ -20,8 +20,10 @@ or `~<publisher>` for an unscoped package.
 **Storage (`store`):**
 - `Account{unique_id: <registry>:<namespace>, account_type: package_namespace}`;
   `namespace_domain` → the apex FQDN for a Maven group (named for it) or an npm
-  namespace with a maintainer address at it, which is also stored as a
-  `package_maintainer` property.
+  namespace with a maintainer address at it. Those addresses are the
+  namespace's `ContactRecord` (`Account --contact--> ContactRecord --id-->`
+  email `Identifier`), keyed by the registry's namespace page
+  (`pkg.namespacePage`).
 - `Product{unique_id: purl, product_name, product_type: software_package,
   category: maven|npm}` joined by `package`, with `id` → a `purl` Identifier.
 - Each http(s) URL becomes `Product --website--> URL` with a `url_role` edge

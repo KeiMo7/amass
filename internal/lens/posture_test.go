@@ -409,10 +409,18 @@ func TestFindCertificatesMarkCertificate(t *testing.T) {
 		"id": "5493001KJTIIGC8Y1R12", "id_type": "lei"})
 	link("cr-vmc", "id", "tm")
 	link("cr-vmc", "id", "lei")
-	g.EvidenceByID["cert-vmc"] = []graph.Evidence{graphtest.SimpleProp("bimi_logo", "https://colgate.edu/logo.svg")}
+	// the BIMI record's logo, and the trademark office as the registration's
+	// issuing authority
+	add("logo", "URL", "https://colgate.edu/logo.svg", map[string]any{"url": "https://colgate.edu/logo.svg",
+		"host": "colgate.edu", "path": "/logo.svg"})
+	link("cr-vmc", "url", "logo")
+	add("cr-office", "ContactRecord", "x509 Certificate: 77, Trademark Office", map[string]any{
+		"discovered_at": "x509 Certificate: 77, Trademark Office"})
+	add("uspto", "Organization", "uspto", map[string]any{"name": "USPTO"})
+	link("tm", "issuing_authority", "cr-office")
+	link("cr-office", "organization", "uspto")
 	g.EvidenceByID["cr-vmc"] = []graph.Evidence{graphtest.SimpleProp("mark_type", "Registered Mark"),
 		graphtest.SimpleProp("word_mark", "COLGATE")}
-	g.EvidenceByID["tm"] = []graph.Evidence{graphtest.SimpleProp("trademark_office", "USPTO")}
 
 	r, err := FindCertificates(context.Background(), g, postureCatalog(), g.Assets["colgate.edu"], LensLimits{})
 	if err != nil {

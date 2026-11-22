@@ -112,3 +112,16 @@ func TestOwnAddressAndHost(t *testing.T) {
 		t.Error("ownHost")
 	}
 }
+
+func TestNamespacePage(t *testing.T) {
+	for _, c := range []struct{ registry, namespace, want string }{
+		{"npm", "@example", "https://www.npmjs.com/org/example"},
+		{"npm", "~builder", "https://www.npmjs.com/~builder"},
+		{"maven", "com.example", "https://central.sonatype.com/namespace/com.example"},
+		{"pypi", "example", ""},
+	} {
+		if got := (pkg{registry: c.registry, namespace: c.namespace}).namespacePage(); got != c.want {
+			t.Errorf("%s %s: %q, want %q", c.registry, c.namespace, got, c.want)
+		}
+	}
+}

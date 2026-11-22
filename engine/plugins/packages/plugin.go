@@ -41,9 +41,6 @@ const (
 	// named: its homepage, its project page, its source repository, or its
 	// publisher's organization page.
 	PropURLRole = "url_role"
-	// PropMaintainer on a namespace Account is a maintainer's email address
-	// at the domain, the reason an npm package was kept.
-	PropMaintainer = "package_maintainer"
 )
 
 // URL roles.
@@ -117,6 +114,21 @@ type pkg struct {
 	nameTied bool
 }
 
+// namespacePage returns the registry's page for the package's namespace, the
+// locator of what the registry publishes about the namespace.
+func (k pkg) namespacePage() string {
+	switch k.registry {
+	case "npm":
+		if scope, ok := strings.CutPrefix(k.namespace, "@"); ok {
+			return "https://www.npmjs.com/org/" + scope
+		}
+		return "https://www.npmjs.com/" + k.namespace
+	case "maven":
+		return "https://central.sonatype.com/namespace/" + k.namespace
+	}
+	return ""
+}
+
 type pkgURL struct {
 	raw, role string
 }
@@ -154,8 +166,15 @@ func (p *packagesPlugin) store(e *et.Event, apex string, k pkg) {
 			support.Link(ctx, sess, acct, "namespace_domain", dom, p.source)
 		}
 	}
-	for _, m := range k.maintainers {
-		support.AddProperty(ctx, sess, acct, PropMaintainer, m)
+	// The maintainers' addresses at the domain, the reason an npm package was
+	// kept, as the namespace's ContactRecord (Account --contact-->
+	// ContactRecord --id--> Identifier).
+	if len(k.maintainers) > 0 {
+		if cr := support.LinkContactRecord(ctx, sess, acct, "contact", k.namespacePage(), p.source); cr != nil {
+			for _, m := range k.maintainers {
+				support.LinkEmail(ctx, sess, cr, "id", m, p.source)
+			}
+		}
 	}
 
 	prod, err := db.CreateAsset(ctx, &platform.Product{ID: k.purl, Name: k.title,
@@ -190,8 +209,7 @@ func (p *packagesPlugin) store(e *et.Event, apex string, k pkg) {
 		if edge == nil {
 			continue
 		}
-		_, _ = db.CreateEdgeProperty(ctx, edge, &general.SimpleProperty{PropertyName: PropURLRole,
-			PropertyValue: u.role})
+		support.AddEdgeProperty(ctx, sess, edge, PropURLRole, u.role)
 		_ = e.Dispatcher.DispatchEvent(&et.Event{Name: ou.Raw, Entity: ent, Session: sess})
 	}
 	sess.Log().Info(fmt.Sprintf("package %s found for %s", k.purl, apex),

@@ -20,6 +20,7 @@ import (
 	"github.com/owasp-amass/open-asset-model/account"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
 	"github.com/owasp-amass/open-asset-model/general"
+	oamurl "github.com/owasp-amass/open-asset-model/url"
 )
 
 func platform(t *testing.T, key string) semantics.BountyPlatform {
@@ -160,9 +161,25 @@ func TestStore(t *testing.T) {
 			got[sp.PropertyName] = sp.PropertyValue
 		}
 	}
-	if got[PropProgramName] != "Acme Corp" || got[PropProgramWebsite] != "https://www.acme.com" ||
-		got[PropPlatform] != "HackerOne" {
+	if got[PropProgramName] != "Acme Corp" || got[PropPlatform] != "HackerOne" {
 		t.Errorf("account properties = %v", got)
+	}
+
+	// The website is the program's ContactRecord URL.
+	crs, err := sess.DB().OutgoingEdges(ctx, acct, time.Time{}, "contact")
+	if err != nil || len(crs) != 1 {
+		t.Fatalf("contact edges: %d, %v", len(crs), err)
+	}
+	urls, err := sess.DB().OutgoingEdges(ctx, crs[0].ToEntity, time.Time{}, "url")
+	if err != nil || len(urls) != 1 {
+		t.Fatalf("contact url edges: %d, %v", len(urls), err)
+	}
+	site, err := sess.DB().FindEntityById(ctx, urls[0].ToEntity.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if u, ok := site.Asset.(*oamurl.URL); !ok || u.Raw != "https://www.acme.com" {
+		t.Errorf("website = %+v", site.Asset)
 	}
 
 	// Only in-scope names other than the apex itself are dispatched.

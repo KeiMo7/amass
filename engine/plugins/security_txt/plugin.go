@@ -14,7 +14,6 @@ package securitytxt
 
 import (
 	"context"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -23,9 +22,7 @@ import (
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	"github.com/owasp-amass/open-asset-model/contact"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
-	oamgen "github.com/owasp-amass/open-asset-model/general"
 	"golang.org/x/net/publicsuffix"
 	"golang.org/x/time/rate"
 )
@@ -204,14 +201,12 @@ func (p *securityTxt) store(e *et.Event, apex *dbt.Entity, raw string, file *Sec
 	support.AddSource(ctx, sess, urlEnt, p.source)
 	support.Link(ctx, sess, urlEnt, "domain", apex, p.source)
 
-	cr, err := db.CreateAsset(ctx, &contact.ContactRecord{DiscoveredAt: raw})
-	if err != nil || cr == nil {
+	cr := support.LinkContactRecord(ctx, sess, urlEnt, "contact", raw, p.source)
+	if cr == nil {
 		return nil
 	}
-	support.AddSource(ctx, sess, cr, p.source)
-	support.Link(ctx, sess, urlEnt, "contact", cr, p.source)
 	for _, c := range file.Contacts {
-		p.storeContact(ctx, e, cr, c)
+		support.LinkContactValue(ctx, sess, cr, c, p.source)
 	}
 
 	// The URL-valued fields, each a URL off the record named by its field.
@@ -231,10 +226,7 @@ func (p *securityTxt) store(e *et.Event, apex *dbt.Entity, raw string, file *Sec
 			if err != nil || a == nil {
 				continue
 			}
-			if edge := support.Link(ctx, sess, cr, "url", a, p.source); edge != nil {
-				_, _ = db.CreateEdgeProperty(ctx, edge, &oamgen.SimpleProperty{PropertyName: PropField,
-					PropertyValue: field})
-			}
+			support.AddEdgeProperty(ctx, sess, support.Link(ctx, sess, cr, "url", a, p.source), PropField, field)
 		}
 	}
 	support.AddProperty(ctx, sess, cr, PropExpires, file.Expires)
@@ -243,31 +235,4 @@ func (p *securityTxt) store(e *et.Event, apex *dbt.Entity, raw string, file *Sec
 	sess.Log().Info("security.txt stored", "url", raw, "contacts", len(file.Contacts),
 		slog.Group("plugin", "name", p.name, "handler", p.name+"-Handler"))
 	return cr
-}
-
-// storeContact records one Contact value under the contact record: a mailto as
-// an email identifier, a tel as a phone, and anything else as a URL.
-func (p *securityTxt) storeContact(ctx context.Context, e *et.Event, cr *dbt.Entity, value string) {
-	switch {
-	case strings.HasPrefix(strings.ToLower(value), "mailto:"):
-		email := strings.ToLower(strings.TrimPrefix(value[len("mailto:"):], " "))
-		if a, err := e.Session.DB().CreateAsset(ctx, &oamgen.Identifier{
-			UniqueID: fmt.Sprintf("%s:%s", oamgen.EmailAddress, email), ID: email, Type: oamgen.EmailAddress,
-		}); err == nil && a != nil {
-			support.Link(ctx, e.Session, cr, "id", a, p.source)
-		}
-	case strings.HasPrefix(strings.ToLower(value), "tel:"):
-		if phone := support.PhoneToOAMPhone(strings.TrimPrefix(value[len("tel:"):], " "), "", ""); phone != nil {
-			phone.Type = contact.PhoneTypeRegular
-			if a, err := e.Session.DB().CreateAsset(ctx, phone); err == nil && a != nil {
-				support.Link(ctx, e.Session, cr, "phone", a, p.source)
-			}
-		}
-	default:
-		if u := support.RawURLToOAM(value); u != nil {
-			if a, err := e.Session.DB().CreateAsset(ctx, u); err == nil && a != nil {
-				support.Link(ctx, e.Session, cr, "url", a, p.source)
-			}
-		}
-	}
 }

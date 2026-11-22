@@ -9,6 +9,7 @@ import (
 	"fmt"
 	"sort"
 	"strings"
+	"time"
 
 	"github.com/owasp-amass/amass/v5/internal/graph"
 )
@@ -193,6 +194,29 @@ func (r ContactsReport) Facts() []string {
 	}
 	for _, p := range r.People {
 		out = append(out, "contact "+p)
+	}
+	return out
+}
+
+// contactTargets returns the assets an owner's ContactRecord names through
+// label: owner --via--> ContactRecord --label--> asset, where via is the
+// owner's relation to the record, such as contact or issuing_authority.
+func contactTargets(ctx context.Context, g graph.Graph, ownerID, via, label string) []graph.Asset {
+	crs, err := g.Edges(ctx, ownerID, "out", via, time.Time{})
+	if err != nil {
+		return nil
+	}
+	var out []graph.Asset
+	for _, ce := range crs {
+		targets, err := g.Edges(ctx, ce.ToID, "out", label, time.Time{})
+		if err != nil {
+			continue
+		}
+		for _, te := range targets {
+			if a, err := g.GetAsset(ctx, te.ToID); err == nil {
+				out = append(out, a)
+			}
+		}
 	}
 	return out
 }

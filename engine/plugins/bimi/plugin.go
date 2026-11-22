@@ -30,20 +30,23 @@ import (
 
 	"github.com/miekg/dns"
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
+	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	"github.com/owasp-amass/open-asset-model/contact"
 	"github.com/owasp-amass/open-asset-model/general"
+	oamorg "github.com/owasp-amass/open-asset-model/org"
 	"golang.org/x/time/rate"
 )
 
-// Properties this plugin stores.
+// Properties this plugin stores on the mark certificate's subject
+// ContactRecord. The BIMI record's logo is the record's URL (ContactRecord
+// --url--> URL), and the trademark office is the trademark Identifier's
+// issuing authority (Identifier --issuing_authority--> ContactRecord
+// --organization--> Organization).
 const (
 	PropMarkType   = "mark_type"
 	PropWordMark   = "word_mark"
-	PropTMOffice   = "trademark_office"
-	PropBIMILogo   = "bimi_logo"
 	maxEvidenceLen = 256 << 10
 )
 
@@ -84,9 +87,10 @@ func (b *bimiPlugin) Start(r et.Registry) error {
 		Name:         b.name + "-Handler",
 		Position:     41,
 		MaxInstances: support.MinHandlerInstances,
-		Transforms:   []string{string(oam.TLSCertificate), string(oam.ContactRecord), string(oam.Identifier)},
-		EventType:    oam.FQDN,
-		Callback:     b.check,
+		Transforms: []string{string(oam.TLSCertificate), string(oam.ContactRecord), string(oam.Identifier),
+			string(oam.URL), string(oam.Organization)},
+		EventType: oam.FQDN,
+		Callback:  b.check,
 	}); err != nil {
 		return err
 	}
@@ -248,28 +252,27 @@ func (b *bimiPlugin) store(e *et.Event, cert *x509.Certificate, rec bimiRecord) 
 		return
 	}
 	support.AddSource(ctx, e.Session, certEnt, b.source)
-	if rec.logo != "" {
-		support.AddProperty(ctx, e.Session, certEnt, PropBIMILogo, rec.logo)
-	}
 
-	cr, err := db.CreateAsset(ctx, &contact.ContactRecord{DiscoveredAt: support.X509ContactKey(cert, "Subject")})
-	if err == nil && cr != nil {
-		support.Link(ctx, e.Session, certEnt, "subject_contact", cr, b.source)
+	cr := support.LinkContactRecord(ctx, e.Session, certEnt, "subject_contact",
+		support.X509ContactKey(cert, "Subject"), b.source)
+	if cr != nil {
 		d := subjectDetails(cert)
-		if d.markType != "" {
-			support.AddProperty(ctx, e.Session, cr, PropMarkType, d.markType)
-		}
-		if d.wordMark != "" {
-			support.AddProperty(ctx, e.Session, cr, PropWordMark, d.wordMark)
+		support.AddProperty(ctx, e.Session, cr, PropMarkType, d.markType)
+		support.AddProperty(ctx, e.Session, cr, PropWordMark, d.wordMark)
+		if u := support.RawURLToOAM(rec.logo); u != nil {
+			support.LinkAsset(ctx, e.Session, cr, "url", u, b.source)
 		}
 		if d.trademark != "" && d.country != "" {
-			id := d.country + ":" + d.trademark
-			if ident := b.identifier(ctx, e, cr, general.TrademarkRegistration, id); ident != nil && d.office != "" {
-				support.AddProperty(ctx, e.Session, ident, PropTMOffice, d.office)
+			ident := support.LinkAsset(ctx, e.Session, cr, "id", &general.Identifier{
+				UniqueID: general.TrademarkRegistration + ":" + d.country + ":" + d.trademark,
+				ID:       d.country + ":" + d.trademark, Type: general.TrademarkRegistration}, b.source)
+			if ident != nil && d.office != "" {
+				b.storeOffice(ctx, e, cert, ident, d.office)
 			}
 		}
 		if d.lei != "" {
-			b.identifier(ctx, e, cr, general.LEICode, d.lei)
+			support.LinkAsset(ctx, e.Session, cr, "id", &general.Identifier{UniqueID: general.LEICode + ":" + d.lei,
+				ID: d.lei, Type: general.LEICode}, b.source)
 		}
 	}
 
@@ -284,12 +287,14 @@ func (b *bimiPlugin) store(e *et.Event, cert *x509.Certificate, rec bimiRecord) 
 		slog.Group("plugin", "name", b.name, "handler", b.name+"-Handler"))
 }
 
-func (b *bimiPlugin) identifier(ctx context.Context, e *et.Event, cr *dbt.Entity, kind, id string) *dbt.Entity {
-	ent, err := e.Session.DB().CreateAsset(ctx, &general.Identifier{UniqueID: kind + ":" + id, ID: id, Type: kind})
-	if err != nil || ent == nil {
-		return nil
+// storeOffice records the trademark office the certificate names as the
+// trademark registration's issuing authority.
+func (b *bimiPlugin) storeOffice(ctx context.Context, e *et.Event, cert *x509.Certificate, ident *dbt.Entity,
+	office string) {
+	cr := support.LinkContactRecord(ctx, e.Session, ident, "issuing_authority",
+		support.X509ContactKey(cert, "Trademark Office"), b.source)
+	if cr != nil {
+		_, _ = org.CreateOrgAsset(e.Session, cr, &general.SimpleRelation{Name: "organization"},
+			&oamorg.Organization{Name: office}, b.source)
 	}
-	support.AddSource(ctx, e.Session, ent, b.source)
-	support.Link(ctx, e.Session, cr, "id", ent, b.source)
-	return ent
 }

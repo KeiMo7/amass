@@ -22,6 +22,7 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
+	"strings"
 	"sync"
 	"time"
 
@@ -32,7 +33,6 @@ import (
 	oam "github.com/owasp-amass/open-asset-model"
 	"github.com/owasp-amass/open-asset-model/account"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
-	"github.com/owasp-amass/open-asset-model/general"
 	oamnet "github.com/owasp-amass/open-asset-model/network"
 )
 
@@ -48,11 +48,11 @@ const (
 	maxScope = 200
 )
 
-// Property names stored on a program Account.
+// Property names stored on a program Account. The program's website is the
+// Account's ContactRecord (Account --contact--> ContactRecord --url--> URL).
 const (
-	PropProgramName    = "bounty_program_name"
-	PropProgramWebsite = "bounty_program_website"
-	PropPlatform       = "bounty_platform"
+	PropProgramName = "bounty_program_name"
+	PropPlatform    = "bounty_platform"
 )
 
 type bountyScopes struct {
@@ -85,9 +85,10 @@ func (b *bountyScopes) Start(r et.Registry) error {
 		Name:         b.name + "-Handler",
 		Position:     41,
 		MaxInstances: support.MinHandlerInstances,
-		Transforms:   []string{string(oam.Account), string(oam.FQDN), string(oam.Netblock), string(oam.URL)},
-		EventType:    oam.FQDN,
-		Callback:     b.check,
+		Transforms: []string{string(oam.Account), string(oam.ContactRecord), string(oam.FQDN),
+			string(oam.Netblock), string(oam.URL)},
+		EventType: oam.FQDN,
+		Callback:  b.check,
 	}); err != nil {
 		return err
 	}
@@ -157,8 +158,8 @@ func (b *bountyScopes) load(e *et.Event) *dataset {
 	return b.data
 }
 
-// store records one program: the Account with its name, website and
-// platform, its page, and the assets its scope lists. In-scope names are
+// store records one program: the Account with its name and platform, its
+// website, its page, and the assets its scope lists. In-scope names are
 // dispatched; the rest are stored and linked only.
 func (b *bountyScopes) store(e *et.Event, apex string, p *program) *dbt.Entity {
 	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
@@ -172,13 +173,9 @@ func (b *bountyScopes) store(e *et.Event, apex string, p *program) *dbt.Entity {
 		return nil
 	}
 	support.AddSource(ctx, e.Session, acct, b.source)
-	for name, value := range map[string]string{
-		PropProgramName: p.name, PropProgramWebsite: p.website, PropPlatform: p.platform.Title,
-	} {
-		if value != "" {
-			_, _ = db.CreateEntityProperty(ctx, acct, &general.SimpleProperty{PropertyName: name, PropertyValue: value})
-		}
-	}
+	support.AddProperty(ctx, e.Session, acct, PropProgramName, p.name)
+	support.AddProperty(ctx, e.Session, acct, PropPlatform, p.platform.Title)
+	b.storeWebsite(ctx, e, acct, p)
 
 	if u := support.RawURLToOAM(p.page); u != nil {
 		if ent, err := db.CreateAsset(ctx, u); err == nil && ent != nil {
@@ -230,4 +227,27 @@ func netblockType(pf netip.Prefix) string {
 		return "IPv4"
 	}
 	return "IPv6"
+}
+
+// storeWebsite records the website the platform lists for a program as the
+// program Account's ContactRecord, keyed by the program's page.
+func (b *bountyScopes) storeWebsite(ctx context.Context, e *et.Event, acct *dbt.Entity, p *program) {
+	site := strings.TrimSpace(p.website)
+	if site == "" {
+		return
+	}
+	if !strings.Contains(site, "://") {
+		site = "https://" + site
+	}
+	u := support.RawURLToOAM(site)
+	if u == nil {
+		return
+	}
+	key := p.page
+	if key == "" {
+		key = p.id()
+	}
+	if cr := support.LinkContactRecord(ctx, e.Session, acct, "contact", key, b.source); cr != nil {
+		support.LinkAsset(ctx, e.Session, cr, "url", u, b.source)
+	}
 }

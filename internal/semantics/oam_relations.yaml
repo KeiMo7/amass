@@ -44,6 +44,9 @@ relations:
   - {source: Account, label: id, relation_type: SimpleRelation, destination: Identifier,
      attribution: attribute, purpose: identity,
      note: "Identifier of the account."}
+  - {source: Account, label: contact, relation_type: SimpleRelation, destination: ContactRecord,
+     attribution: attribute, purpose: contact,
+     note: "Contact information published for the account: a package namespace's maintainer addresses, a bug-bounty program's website, or the business name and domain an ad system's sellers.json lists for a seller account. What it names may be the operator, a parent company or an agency, so control does not flow through it; the lenses weigh it."}
   - {source: Account, label: in_scope, relation_type: SimpleRelation, destination: FQDN,
      attribution: shared, purpose: corporate,
      note: "A name a bug-bounty program lists as in scope. Programs normally list their own assets, but some list a vendor-hosted tenant or a partner's system, so the listing alone confers no ownership; the ownership-gap lens weighs it only when the program is tied to an organization."}
@@ -293,6 +296,9 @@ relations:
   - {source: Netblock, label: irr_maintainer, relation_type: SimpleRelation, destination: Identifier,
      attribution: attribute, purpose: network,
      note: "The routing registry (IRR) maintainer that keeps the netblock's route object: the account an operator files its route objects under. Providers keep route objects for customers, so the maintainer shows who files them, not who holds the space."}
+  - {source: Netblock, label: irr_origin, relation_type: SimpleRelation, destination: AutonomousSystem,
+     attribution: infrastructure, purpose: network,
+     note: "The origin AS the netblock's routing registry (IRR) route object names: the AS its maintainer expects to announce it. Anyone holding a maintainer can file a route object, so it shows intended routing, not who holds the space."}
   - {source: Netblock, label: provider, relation_type: SimpleRelation, destination: Organization,
      attribution: infrastructure, purpose: network,
      note: "The cloud or CDN provider that publishes this prefix as its own, from the provider's authoritative IP-range feed. It operates the network, like an AS announcing the block, and does not own the addresses' tenants; hosting, not ownership."}
@@ -448,7 +454,7 @@ relations:
      note: "Certificate subject (engine scope association). Names the organization for OV/EV certificates; DV certificates usually have none."}
   - {source: URL, label: contact, relation_type: SimpleRelation, destination: ContactRecord,
      attribution: attribute, purpose: contact,
-     note: "Contact information the page or file at the URL publishes (an ads.txt file's owner domain and contact). What it names may belong to the publisher, a parent company or an agency, so control does not flow through it; the lenses weigh it."}
+     note: "Contact information the page or file at the URL publishes (a security.txt file's contacts and links, an ads.txt file's owner domain and contact). What it names may belong to the publisher, a parent company or an agency, so control does not flow through it; the lenses weigh it."}
   - {source: URL, label: domain, relation_type: SimpleRelation, destination: FQDN,
      attribution: same_subject, purpose: web,
      note: "The host of the URL; controlled by the same party for first-party URLs."}

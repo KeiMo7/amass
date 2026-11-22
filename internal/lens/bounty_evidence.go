@@ -34,11 +34,9 @@ const matchBountyScope = "bounty_program_scope"
 // BountyAccountType is the account_type of a bug-bounty program Account.
 const BountyAccountType = "bug_bounty_program"
 
-// The program Account properties the bounty plugin stores.
-const (
-	bountyPropName    = "bounty_program_name"
-	bountyPropWebsite = "bounty_program_website"
-)
+// bountyPropName is the program Account property the bounty plugin stores
+// for the program's name. Its website is the Account's ContactRecord URL.
+const bountyPropName = "bounty_program_name"
 
 // Bug-bounty bounds: the programs read per search, the scope entries read
 // per program, and the hosts read under one apex for horizontal correlation.
@@ -81,15 +79,15 @@ func BountyAnchor(ctx context.Context, gr graph.Graph, program, apex graph.Asset
 		return ""
 	}
 
-	if ev, err := gr.Evidence(ctx, program.ID, 50); err == nil {
-		for _, w := range propertyValues(ev, bountyPropWebsite) {
-			host := webHost(w)
-			for _, d := range ownDomains {
-				if host != "" && HostWithin(host, d) {
-					return "the program's website " + host + " is the organization's"
-				}
+	for _, site := range contactTargets(ctx, gr, program.ID, "contact", "url") {
+		host := graph.ContentString(site, "host")
+		for _, d := range ownDomains {
+			if host != "" && HostWithin(host, d) {
+				return "the program's website " + host + " is the organization's"
 			}
 		}
+	}
+	if ev, err := gr.Evidence(ctx, program.ID, 50); err == nil {
 		if fold := docFold(orgName); fold != "" {
 			for _, n := range propertyValues(ev, bountyPropName) {
 				if docFold(n) == fold {

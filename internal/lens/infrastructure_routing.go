@@ -26,11 +26,11 @@ const (
 	routingMaxMaintainers = 10
 )
 
-// irr maintainer properties the routing plugin stores.
-const (
-	propIRRRoutes = "irr_routes"
-	propIRROrigin = "irr_origin"
-)
+// propIRRRoutes is the irr maintainer property the routing plugin stores: how
+// many route objects the maintainer keeps. The route netblocks it keeps (at
+// most max_routes) carry their origin AS (Netblock --irr_origin-->
+// AutonomousSystem).
+const propIRRRoutes = "irr_routes"
 
 func routingSecurity(ctx context.Context, g graph.Graph, name string, ownAS map[string]graph.WitnessEdge,
 	ownASNumbers, ownNetblocks map[string]bool,
@@ -75,16 +75,16 @@ func routingSecurity(ctx context.Context, g graph.Graph, name string, ownAS map[
 				continue
 			}
 			seen[me.ToID] = true
-			sig, ok := maintainerSignal(ctx, g, me.ToID, ownASNumbers, catalog)
+			others, err := g.Edges(ctx, me.ToID, "in", "irr_maintainer", time.Time{})
+			if err != nil || len(others) > catalog.MaxRoutes {
+				continue
+			}
+			sig, ok := maintainerSignal(ctx, g, me.ToID, others, ownASNumbers, catalog)
 			if !ok {
 				continue
 			}
 			ownW := graph.WitnessEdge{EdgeID: me.ID, Label: "irr_maintainer", RelationType: me.Type,
 				FromID: me.FromID, FromType: "Netblock", ToID: me.ToID, ToType: "Identifier"}
-			others, err := g.Edges(ctx, me.ToID, "in", "irr_maintainer", time.Time{})
-			if err != nil || len(others) > catalog.MaxRoutes {
-				continue
-			}
 			label := "kept by the routing registry maintainer of the organization's netblocks"
 			for _, oe := range others {
 				if oe.FromID == nbID {
@@ -106,11 +106,12 @@ func routingSecurity(ctx context.Context, g graph.Graph, name string, ownAS map[
 
 // maintainerSignal returns the signal a maintainer of the organization's
 // netblocks gives its other netblocks: the strong one when every route it
-// keeps is originated by the organization's ASes, the supporting one
-// otherwise. A maintainer keeping more than max_routes routes, or routes from
-// more than max_origins ASes, gives none: it is an ISP, host or registry.
-func maintainerSignal(ctx context.Context, g graph.Graph, id string, ownASNumbers map[string]bool,
-	catalog semantics.RoutingRegistries) (string, bool) {
+// keeps (routes, its route netblocks) is originated by the organization's
+// ASes, the supporting one otherwise. A maintainer keeping more than
+// max_routes routes, or routes from more than max_origins ASes, gives none:
+// it is an ISP, host or registry.
+func maintainerSignal(ctx context.Context, g graph.Graph, id string, routes []graph.Relation,
+	ownASNumbers map[string]bool, catalog semantics.RoutingRegistries) (string, bool) {
 	ev, err := g.Evidence(ctx, id, 50)
 	if err != nil {
 		return "", false
@@ -120,12 +121,23 @@ func maintainerSignal(ctx context.Context, g graph.Graph, id string, ownASNumber
 			return "", false
 		}
 	}
-	origins := propertyValues(ev, propIRROrigin)
-	if len(origins) > catalog.MaxOrigins {
-		return "", false
+	origins := map[string]bool{}
+	for _, re := range routes {
+		oes, err := g.Edges(ctx, re.FromID, "out", "irr_origin", time.Time{})
+		if err != nil {
+			continue
+		}
+		for _, oe := range oes {
+			if as, err := g.GetAsset(ctx, oe.ToID); err == nil && as.Type == "AutonomousSystem" {
+				origins["AS"+graph.ContentString(as, "number")] = true
+			}
+		}
+		if len(origins) > catalog.MaxOrigins {
+			return "", false
+		}
 	}
 	own := len(origins) > 0
-	for _, o := range origins {
+	for o := range origins {
 		if !ownASNumbers[o] {
 			own = false
 		}

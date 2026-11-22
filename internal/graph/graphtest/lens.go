@@ -16,10 +16,12 @@ import (
 // subset. Regenerate it when the table changes.
 var oamSemantics = map[string]graph.RelationMeaning{
 	"Account|id|SimpleRelation|Identifier":                             {Attribution: "attribute", Purpose: "identity", Vendor: true},
+	"Account|contact|SimpleRelation|ContactRecord":                     {Attribution: "attribute", Purpose: "contact", Vendor: true},
 	"FQDN|soa_rname|SimpleRelation|Identifier":                         {Attribution: "attribute", Purpose: "dns", Vendor: true},
 	"FQDN|spf_authorizes|SimpleRelation|Netblock":                      {Attribution: "shared", Purpose: "dns", Vendor: true},
 	"FQDN|spf_authorizes|SimpleRelation|IPAddress":                     {Attribution: "shared", Purpose: "dns", Vendor: true},
 	"Netblock|irr_maintainer|SimpleRelation|Identifier":                {Attribution: "attribute", Purpose: "network", Vendor: true},
+	"Netblock|irr_origin|SimpleRelation|AutonomousSystem":              {Attribution: "infrastructure", Purpose: "network", Vendor: true},
 	"Netblock|rpki_origin|SimpleRelation|AutonomousSystem":             {Attribution: "infrastructure", Purpose: "network", Vendor: true},
 	"Account|in_scope|SimpleRelation|FQDN":                             {Attribution: "shared", Purpose: "corporate", Vendor: true},
 	"Account|in_scope|SimpleRelation|Netblock":                         {Attribution: "shared", Purpose: "corporate", Vendor: true},

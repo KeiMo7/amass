@@ -47,9 +47,25 @@ func TestAdsSellerPivot(t *testing.T) {
 	link("sib", "fingerprint", "pub")
 	link("own", "fingerprint", "house")
 	link("other", "fingerprint", "house")
-	g.EvidenceByID["pub"] = []graph.Evidence{graphtest.SimpleProp(adsPropSellerType, "PUBLISHER"),
-		graphtest.SimpleProp(adsPropSellerDomain, "acme-corp.com")}
-	g.EvidenceByID["house"] = []graph.Evidence{graphtest.SimpleProp(adsPropSellerType, "INTERMEDIARY")}
+	// the seller Accounts sellers.json lists, with the publisher's domain
+	add("acct-pub", "Account", "google.com:pub-1", map[string]any{"unique_id": "google.com:pub-1",
+		"account_type": "ads_seller", "username": "pub-1"})
+	add("acct-house", "Account", "rubiconproject.com:5678", map[string]any{"unique_id": "rubiconproject.com:5678",
+		"account_type": "ads_seller", "username": "5678"})
+	link("acct-pub", "id", "pub")
+	link("acct-house", "id", "house")
+	g.EvidenceByID["acct-pub"] = []graph.Evidence{graphtest.SimpleProp(adsPropSellerType, "PUBLISHER")}
+	g.EvidenceByID["acct-house"] = []graph.Evidence{graphtest.SimpleProp(adsPropSellerType, "INTERMEDIARY")}
+	add("cr-pub", "ContactRecord", "https://google.com/sellers.json#pub-1",
+		map[string]any{"discovered_at": "https://google.com/sellers.json#pub-1"})
+	add("acme-corp.com", "FQDN", "acme-corp.com", map[string]any{"name": "acme-corp.com"})
+	link("acct-pub", "contact", "cr-pub")
+	link("cr-pub", "fqdn", "acme-corp.com")
+	add("cr-house", "ContactRecord", "https://rubiconproject.com/sellers.json#5678",
+		map[string]any{"discovered_at": "https://rubiconproject.com/sellers.json#5678"})
+	add("saleshouse.com", "FQDN", "saleshouse.com", map[string]any{"name": "saleshouse.com"})
+	link("acct-house", "contact", "cr-house")
+	link("cr-house", "fqdn", "saleshouse.com")
 	// the organization's ads.txt names its owner's domain
 	add("cr-own", "ContactRecord", "https://acme.com/ads.txt", map[string]any{"discovered_at": "https://acme.com/ads.txt"})
 	add("acme-holdings.com", "FQDN", "acme-holdings.com", map[string]any{"name": "acme-holdings.com"})

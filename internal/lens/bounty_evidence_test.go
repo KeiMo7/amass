@@ -36,7 +36,13 @@ func TestBountyAnchor(t *testing.T) {
 	}
 
 	g = base()
-	g.EvidenceByID["h1"] = []graph.Evidence{graphtest.SimpleProp(bountyPropWebsite, "https://www.acme.com/")}
+	g.Assets["cr-h1"] = graph.Asset{ID: "cr-h1", Type: "ContactRecord", Key: "https://hackerone.com/acme",
+		Content: map[string]any{"discovered_at": "https://hackerone.com/acme"}}
+	g.Assets["site"] = graph.Asset{ID: "site", Type: "URL", Key: "https://www.acme.com/",
+		Content: map[string]any{"url": "https://www.acme.com/", "host": "www.acme.com"}}
+	g.Links = append(g.Links,
+		graph.Relation{ID: "h1-contact", FromID: "h1", ToID: "cr-h1", Label: "contact", Type: "SimpleRelation"},
+		graph.Relation{ID: "cr-h1-url", FromID: "cr-h1", ToID: "site", Label: "url", Type: "SimpleRelation"})
 	if got := BountyAnchor(ctx, g, g.Assets["h1"], g.Assets["apex"], "Acme Corp", own); !strings.Contains(got, "website") {
 		t.Errorf("website anchor = %q", got)
 	}

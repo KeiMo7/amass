@@ -23,7 +23,6 @@ import (
 	"net"
 	"net/netip"
 	"net/url"
-	"sort"
 	"strconv"
 	"strings"
 	"sync"
@@ -45,10 +44,11 @@ const (
 	// PropRPKIStatus is a netblock's RPKI validity for its announced origin:
 	// valid, invalid or unknown (no ROA covers it).
 	PropRPKIStatus = "rpki_status"
-	// PropIRRRoutes is how many route objects a maintainer keeps, and
-	// PropIRROrigin each origin AS among them (at most max_origins + 1).
+	// PropIRRRoutes is how many route objects a maintainer keeps; only a
+	// maintainer keeping at most max_routes has its routes stored, each as a
+	// Netblock --irr_maintainer--> the maintainer Identifier and
+	// Netblock --irr_origin--> the route object's origin AS.
 	PropIRRRoutes = "irr_routes"
-	PropIRROrigin = "irr_origin"
 )
 
 const (
@@ -200,10 +200,10 @@ func (r *routingRecords) storeMaintainer(e *et.Event, nbent *dbt.Entity, m maint
 }
 
 // expand asks the routing registry for every route object the maintainer
-// keeps, once a day. It records how many there are and their origin ASes on
-// the maintainer, and links each route's netblock to it unless the maintainer
-// keeps more than max_routes: an ISP, host or registry keeping objects for
-// many customers.
+// keeps, once a day. It records how many there are on the maintainer and,
+// unless the maintainer keeps more than max_routes (an ISP, host or registry
+// keeping objects for many customers), links each route's netblock to it and
+// to the route's origin AS.
 func (r *routingRecords) expand(e *et.Event, id *dbt.Entity, m maintainer) {
 	r.mu.Lock()
 	if t, ok := r.asked[m.id()]; ok && time.Since(t) < maintainerTTL {
@@ -229,21 +229,6 @@ func (r *routingRecords) expand(e *et.Event, id *dbt.Entity, m maintainer) {
 	ctx, cancel := context.WithTimeout(e.Session.Ctx(), time.Minute)
 	defer cancel()
 	support.AddProperty(ctx, e.Session, id, PropIRRRoutes, strconv.Itoa(len(routes)))
-	origins := map[int]bool{}
-	for _, o := range routes {
-		origins[o.origin] = true
-	}
-	var nums []int
-	for n := range origins {
-		nums = append(nums, n)
-	}
-	sort.Ints(nums)
-	for i, n := range nums {
-		if i > r.catalog.MaxOrigins {
-			break
-		}
-		support.AddProperty(ctx, e.Session, id, PropIRROrigin, fmt.Sprintf("AS%d", n))
-	}
 	if len(routes) > r.catalog.MaxRoutes {
 		return
 	}
@@ -259,6 +244,10 @@ func (r *routingRecords) expand(e *et.Event, id *dbt.Entity, m maintainer) {
 		}
 		support.AddSource(ctx, e.Session, nbent, r.source)
 		support.Link(ctx, e.Session, nbent, "irr_maintainer", id, r.source)
+		if o.origin > 0 {
+			support.LinkAsset(ctx, e.Session, nbent, "irr_origin", &oamnet.AutonomousSystem{Number: o.origin},
+				r.source)
+		}
 	}
 	e.Session.Log().Info("routing registry maintainer read", "maintainer", m.id(), "routes", len(routes),
 		slog.Group("plugin", "name", r.name, "handler", r.name+"-Handler"))

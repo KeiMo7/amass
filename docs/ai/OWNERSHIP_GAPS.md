@@ -61,8 +61,8 @@ The bug-bounty signal (`bug_bounty_scope`, matcher `bounty_program_scope`)
 runs for every controlled FQDN: an `Account` of type `bug_bounty_program`
 (stored by `engine/plugins/bounty`) with an `in_scope` edge to the name is
 read once per search, at most 10 programs. `lens.BountyAnchor` must tie the
-program to the subject (its `bounty_program_website` property in the
-subject's namespace, its `bounty_program_name` equal to the subject's name
+program to the subject (its website, `Account --contact--> ContactRecord
+--url--> URL`, in the subject's namespace, its `bounty_program_name` equal to the subject's name
 after case and white-space folding, the platform's `txt_prefix` record on the
 apex, or a policy, acknowledgments, hiring or contact URL in the apex's
 security.txt (the `URL --contact--> ContactRecord --url--> URL` layout read

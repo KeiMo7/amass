@@ -32,6 +32,16 @@ func AddProperty(ctx context.Context, sess et.Session, ent *dbt.Entity, name, va
 		PropertyValue: value})
 }
 
+// AddEdgeProperty stores a simple property on an edge, such as the role or
+// field that qualifies a relation.
+func AddEdgeProperty(ctx context.Context, sess et.Session, edge *dbt.Edge, name, value string) {
+	if edge == nil || name == "" || value == "" {
+		return
+	}
+	_, _ = sess.DB().CreateEdgeProperty(ctx, edge, &general.SimpleProperty{PropertyName: name,
+		PropertyValue: value})
+}
+
 // Link creates a simple relation labeled label from one entity to another
 // with src as its source, and returns the edge, or nil when it was not
 // created.

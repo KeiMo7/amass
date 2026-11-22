@@ -26,30 +26,33 @@ func routingInfraGraph() graphtest.FakeGraph {
 		g.Links = append(g.Links, graph.Relation{ID: label + from + to, FromID: from, ToID: to,
 			Label: label, Type: "SimpleRelation"})
 	}
-	mnt := func(id string, routes string, origins ...string) {
+	mnt := func(id string, routes string) {
 		g.Assets[id] = graph.Asset{ID: id, Type: "Identifier", Key: "irr_maintainer:" + id,
 			Content: map[string]any{"unique_id": "irr_maintainer:" + id, "id": id, "id_type": "irr_maintainer"}}
-		ev := []graph.Evidence{graphtest.SimpleProp(propIRRRoutes, routes)}
-		for _, o := range origins {
-			ev = append(ev, graphtest.SimpleProp(propIRROrigin, o))
-		}
-		g.EvidenceByID[id] = ev
+		g.EvidenceByID[id] = []graph.Evidence{graphtest.SimpleProp(propIRRRoutes, routes)}
 	}
+	// each route netblock names its origin AS
+	g.Assets["as-other"] = graph.Asset{ID: "as-other", Type: "AutonomousSystem", Key: "64511",
+		Content: map[string]any{"number": "64511"}}
 
 	nb("nb-roa", "198.18.0.0/24")
 	link("nb-roa", "as1", "rpki_origin")
 
-	mnt("RADB:MAINT-ACME", "2", "AS64500")
+	link("nb1", "as1", "irr_origin")
+
+	mnt("RADB:MAINT-ACME", "2")
 	link("nb1", "RADB:MAINT-ACME", "irr_maintainer")
 	nb("nb-own", "198.18.8.0/24")
 	link("nb-own", "RADB:MAINT-ACME", "irr_maintainer")
+	link("nb-own", "as1", "irr_origin")
 
-	mnt("RADB:MAINT-HOSTER", "3", "AS64500", "AS64511")
+	mnt("RADB:MAINT-HOSTER", "2")
 	link("nb1", "RADB:MAINT-HOSTER", "irr_maintainer")
 	nb("nb-shared", "198.18.16.0/24")
 	link("nb-shared", "RADB:MAINT-HOSTER", "irr_maintainer")
+	link("nb-shared", "as-other", "irr_origin")
 
-	mnt("RADB:MAINT-ISP", "5000", "AS64511")
+	mnt("RADB:MAINT-ISP", "5000")
 	link("nb1", "RADB:MAINT-ISP", "irr_maintainer")
 	nb("nb-isp", "198.18.24.0/24")
 	link("nb-isp", "RADB:MAINT-ISP", "irr_maintainer")

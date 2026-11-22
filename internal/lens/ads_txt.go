@@ -17,12 +17,14 @@ import (
 
 // Advertising seller accounts (engine plugin adstxt): a domain's ads.txt URL
 // carries a fingerprint Identifier (ads_seller, "<ad system>:<account>") for
-// each DIRECT account it lists, with the ad system's sellers.json details as
-// properties on the Identifier.
+// each DIRECT account it lists. An account the ad system's sellers.json lists
+// is a seller Account (Account --id--> Identifier) carrying its seller type,
+// with the business domain listed for it as the Account's ContactRecord
+// (Account --contact--> ContactRecord --fqdn--> FQDN).
 const (
-	adsPropSellerType   = "seller_type"
-	adsPropSellerDomain = "seller_domain"
-	adsIntermediary     = "INTERMEDIARY"
+	adsPropSellerType = "seller_type"
+	adsIntermediary   = "INTERMEDIARY"
+	adsSellerAccount  = "ads_seller"
 )
 
 // adsSellerPivot finds the other registered domains tied to the
@@ -146,15 +148,7 @@ func adsAccounts(ctx context.Context, g graph.Graph, file graph.Asset, ownDomain
 		seen[ident.ID] = true
 		value := graph.ContentString(ident, "id")
 
-		var sellerType, sellerDomain string
-		if ev, err := g.Evidence(ctx, ident.ID, 20); err == nil {
-			if v := propertyValues(ev, adsPropSellerType); len(v) > 0 {
-				sellerType = strings.ToUpper(v[0])
-			}
-			if v := propertyValues(ev, adsPropSellerDomain); len(v) > 0 {
-				sellerDomain = v[0]
-			}
-		}
+		sellerType, sellerDomain, sellerW := adsSeller(ctx, g, ident.ID)
 		if sellerType == adsIntermediary {
 			continue
 		}
@@ -172,9 +166,57 @@ func adsAccounts(ctx context.Context, g graph.Graph, file graph.Asset, ownDomain
 		if dom == "" || withinAny(host, ownDomains) || dom == graph.RegisteredDomain(system) {
 			continue
 		}
-		if !add(dom, SigAdsSellerDomain, "the domain "+system+" lists for ad seller account "+value, ownW) {
+		if !add(dom, SigAdsSellerDomain, "the domain "+system+" lists for ad seller account "+value,
+			append([]graph.WitnessEdge{ownW}, sellerW...)...) {
 			return false
 		}
 	}
 	return true
+}
+
+// adsSeller returns the seller type and business domain the ad system's
+// sellers.json lists for an ads_seller Identifier, read from its seller
+// Account, with the edges from the Identifier to the domain.
+func adsSeller(ctx context.Context, g graph.Graph, identID string) (string, string, []graph.WitnessEdge) {
+	ids, err := g.Edges(ctx, identID, "in", "id", time.Time{})
+	if err != nil {
+		return "", "", nil
+	}
+	for _, ie := range ids {
+		acct, err := g.GetAsset(ctx, ie.FromID)
+		if err != nil || acct.Type != "Account" || graph.ContentString(acct, "account_type") != adsSellerAccount {
+			continue
+		}
+		var sellerType string
+		if ev, err := g.Evidence(ctx, acct.ID, 20); err == nil {
+			if v := propertyValues(ev, adsPropSellerType); len(v) > 0 {
+				sellerType = strings.ToUpper(v[0])
+			}
+		}
+		idW := graph.WitnessEdge{EdgeID: ie.ID, Label: "id", RelationType: ie.Type, FromID: acct.ID,
+			FromType: "Account", ToID: identID, ToType: "Identifier"}
+		contacts, err := g.Edges(ctx, acct.ID, "out", "contact", time.Time{})
+		if err != nil {
+			return sellerType, "", nil
+		}
+		for _, ce := range contacts {
+			doms, err := g.Edges(ctx, ce.ToID, "out", "fqdn", time.Time{})
+			if err != nil {
+				continue
+			}
+			for _, de := range doms {
+				dom, err := g.GetAsset(ctx, de.ToID)
+				if err != nil || graph.FQDNName(dom) == "" {
+					continue
+				}
+				return sellerType, graph.FQDNName(dom), []graph.WitnessEdge{idW,
+					{EdgeID: ce.ID, Label: "contact", RelationType: ce.Type, FromID: acct.ID, FromType: "Account",
+						ToID: ce.ToID, ToType: "ContactRecord"},
+					{EdgeID: de.ID, Label: "fqdn", RelationType: de.Type, FromID: ce.ToID, FromType: "ContactRecord",
+						ToID: de.ToID, ToType: "FQDN", To: graph.FQDNName(dom)}}
+			}
+		}
+		return sellerType, "", nil
+	}
+	return "", "", nil
 }

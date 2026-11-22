@@ -121,16 +121,16 @@ type certificateRules struct {
 	} `json:"max_validity"`
 	MaxValiditySource string `json:"max_validity_source"`
 	MarkCertificates  struct {
-		Usage                   string `json:"usage"`
-		SubjectLabel            string `json:"subject_label"`
-		OrganizationLabel       string `json:"organization_label"`
-		IdentifierLabel         string `json:"identifier_label"`
-		TrademarkIDType         string `json:"trademark_id_type"`
-		LEIIDType               string `json:"lei_id_type"`
-		LogoProperty            string `json:"logo_property"`
-		MarkTypeProperty        string `json:"mark_type_property"`
-		WordMarkProperty        string `json:"word_mark_property"`
-		TrademarkOfficeProperty string `json:"trademark_office_property"`
+		Usage             string `json:"usage"`
+		SubjectLabel      string `json:"subject_label"`
+		OrganizationLabel string `json:"organization_label"`
+		IdentifierLabel   string `json:"identifier_label"`
+		TrademarkIDType   string `json:"trademark_id_type"`
+		LEIIDType         string `json:"lei_id_type"`
+		LogoLabel         string `json:"logo_label"`
+		AuthorityLabel    string `json:"authority_label"`
+		MarkTypeProperty  string `json:"mark_type_property"`
+		WordMarkProperty  string `json:"word_mark_property"`
 	} `json:"mark_certificates"`
 }
 
@@ -448,12 +448,6 @@ func (s *scope) markCertificate(cert graph.Asset, rules certificateRules, issuer
 	mr := rules.MarkCertificates
 	m := MarkCertificate{Subject: graph.ContentString(cert, rules.Fields["subject"]), ID: cert.ID, Issuer: issuer,
 		NotAfter: graph.ContentString(cert, rules.Fields["not_after"])}
-	if ev, err := s.w.graph.Evidence(s.w.ctx, cert.ID, 50); err == nil && mr.LogoProperty != "" {
-		if v := propertyValues(ev, mr.LogoProperty); len(v) > 0 {
-			m.Logo = v[0]
-		}
-	}
-
 	steps, err := s.w.steps(cert)
 	if err != nil {
 		return m, err
@@ -501,15 +495,18 @@ func (s *scope) markSubject(cr graph.Asset, rules certificateRules, m *MarkCerti
 			if m.Organization == "" {
 				m.Organization = graph.AssetLabel(st.other)
 			}
+		case mr.LogoLabel:
+			if m.Logo == "" && st.other.Type == "URL" {
+				m.Logo = graph.ContentString(st.other, "url")
+			}
 		case mr.IdentifierLabel:
 			id := graph.ContentString(st.other, "id")
 			switch graph.ContentString(st.other, "id_type") {
 			case mr.TrademarkIDType:
 				m.Trademark = id
-				if ev, err := s.w.graph.Evidence(s.w.ctx, st.other.ID, 20); err == nil {
-					if v := propertyValues(ev, mr.TrademarkOfficeProperty); len(v) > 0 {
-						m.TrademarkOffice = v[0]
-					}
+				if offices := contactTargets(s.w.ctx, s.w.graph, st.other.ID, mr.AuthorityLabel,
+					mr.OrganizationLabel); len(offices) > 0 {
+					m.TrademarkOffice = graph.AssetLabel(offices[0])
 				}
 			case mr.LEIIDType:
 				m.LEI = id

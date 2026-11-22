@@ -10,6 +10,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -18,9 +19,9 @@ import (
 	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	oamacct "github.com/owasp-amass/open-asset-model/account"
 	oamfin "github.com/owasp-amass/open-asset-model/financial"
 	"github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
@@ -162,7 +163,7 @@ func (h *awards) store(e *et.Event, orgent *dbt.Entity, a *award) {
 	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
 	defer cancel()
 
-	orgacc := h.orgCheckingAccount(e, orgent)
+	orgacc := org.OrgCheckingAccount(e.Session, orgent, h.plugin.source)
 	if orgacc == nil {
 		return
 	}
@@ -190,7 +191,8 @@ func (h *awards) store(e *et.Event, orgent *dbt.Entity, a *award) {
 	}
 
 	// The contracting authority (buyer) is the funding party.
-	if buyer := h.buyerOrg(e, a.buyer); buyer != nil {
+	if buyer, err := org.CreateOrgAsset(e.Session, nil, nil,
+		&oamorg.Organization{Name: strings.TrimSpace(a.buyer)}, h.plugin.source); err == nil {
 		_ = h.plugin.createRelation(ctx, e.Session, fundent,
 			&general.SimpleRelation{Name: "third_party"}, buyer, h.plugin.source.Confidence)
 	}
@@ -200,73 +202,10 @@ func (h *awards) store(e *et.Event, orgent *dbt.Entity, a *award) {
 	})
 }
 
-func (h *awards) buyerOrg(e *et.Event, name string) *dbt.Entity {
-	if strings.TrimSpace(name) == "" {
-		return nil
-	}
-	orgent, err := org.CreateOrgAsset(e.Session, nil, nil, &oamorg.Organization{Name: name}, h.plugin.source)
-	if err != nil || orgent == nil {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, orgent, &general.SourceProperty{
-		Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
-	})
-	return orgent
-}
-
-func (h *awards) orgCheckingAccount(e *et.Event, orgent *dbt.Entity) *dbt.Entity {
-	o := orgent.Asset.(*oamorg.Organization)
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	var accountent *dbt.Entity
-	if edges, err := e.Session.DB().OutgoingEdges(ctx, orgent, time.Time{}, "account"); err == nil {
-		for _, edge := range edges {
-			if a, err := e.Session.DB().FindEntityById(ctx, edge.ToEntity.ID); err == nil && a != nil {
-				if acc, ok := a.Asset.(*oamacct.Account); ok && acc.Type == oamacct.Checking && acc.Number == "default" {
-					accountent = a
-					break
-				}
-			}
-		}
-	}
-	if accountent == nil {
-		ent, err := e.Session.DB().CreateAsset(ctx, &oamacct.Account{
-			ID:     "org-account:" + o.Name,
-			Type:   oamacct.Checking,
-			Number: "default",
-			Active: o.Active,
-		})
-		if err != nil || ent == nil {
-			return nil
-		}
-		accountent = ent
-	}
-
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, accountent, &general.SourceProperty{
-		Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
-	})
-	_ = h.plugin.createRelation(ctx, e.Session, orgent,
-		&general.SimpleRelation{Name: "account"}, accountent, h.plugin.source.Confidence)
-	return accountent
-}
-
 // winnerMatches reports whether any winner name on a notice is the subject
-// organization, compared on normalized text.
+// organization's name (semantics.SameOrgName).
 func winnerMatches(orgName string, winners []string) bool {
-	want := normalizeName(orgName)
-	if want == "" {
-		return false
-	}
-	for _, w := range winners {
-		if normalizeName(w) == want {
-			return true
-		}
-	}
-	return false
+	return slices.ContainsFunc(winners, func(w string) bool { return semantics.SameOrgName(orgName, w) })
 }
 
 // flexStrings extracts the string values from a TED field, whatever shape it
@@ -330,22 +269,4 @@ func firstNonEmpty(a, b string) string {
 		return a
 	}
 	return b
-}
-
-// normalizeName lowercases a name and collapses runs of non-alphanumeric
-// characters to a single space.
-func normalizeName(s string) string {
-	var b strings.Builder
-	space := false
-	for _, r := range strings.ToLower(s) {
-		switch {
-		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
-			b.WriteRune(r)
-			space = false
-		case !space:
-			b.WriteByte(' ')
-			space = true
-		}
-	}
-	return strings.TrimSpace(b.String())
 }

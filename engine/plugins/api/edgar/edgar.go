@@ -16,11 +16,12 @@ import (
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
+	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	oamacct "github.com/owasp-amass/open-asset-model/account"
 	"github.com/owasp-amass/open-asset-model/contact"
 	oamfin "github.com/owasp-amass/open-asset-model/financial"
 	"github.com/owasp-amass/open-asset-model/general"
@@ -37,18 +38,31 @@ type tickerEntry struct {
 	Title  string `json:"title"`
 }
 
-// parseTickers maps each company title to its 10-digit CIK.
+// parseTickers maps each company title's name key (semantics.OrgNameKey) to
+// its 10-digit CIK. A key that titles of different companies share is left
+// out, since it cannot say which company an organization is.
 func parseTickers(body []byte) (map[string]string, error) {
 	var raw map[string]tickerEntry
 	if err := json.Unmarshal(body, &raw); err != nil {
 		return nil, err
 	}
+
 	out := make(map[string]string, len(raw))
+	shared := map[string]bool{}
 	for _, t := range raw {
-		if t.Title == "" || t.CIK == 0 {
+		key := semantics.OrgNameKey(t.Title)
+		if key == "" || t.CIK == 0 {
 			continue
 		}
-		out[normalizeName(t.Title)] = fmt.Sprintf("%010d", t.CIK)
+
+		cik := fmt.Sprintf("%010d", t.CIK)
+		if prev, ok := out[key]; ok && prev != cik {
+			shared[key] = true
+		}
+		out[key] = cik
+	}
+	for key := range shared {
+		delete(out, key)
 	}
 	return out, nil
 }
@@ -157,7 +171,7 @@ func (h *filings) cik(e *et.Event, name string) string {
 		h.plugin.cikByOrg = m
 	}
 
-	return h.plugin.cikByOrg[normalizeName(name)]
+	return h.plugin.cikByOrg[semantics.OrgNameKey(name)]
 }
 
 func (h *filings) collect(e *et.Event, orgent *dbt.Entity, cik string) {
@@ -319,7 +333,7 @@ func (h *filings) storeTransfer(e *et.Event, orgent *dbt.Entity, accession, date
 	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
 	defer cancel()
 
-	orgacc := h.orgCheckingAccount(e, orgent)
+	orgacc := org.OrgCheckingAccount(e.Session, orgent, h.plugin.source)
 	if orgacc == nil {
 		return
 	}
@@ -346,44 +360,6 @@ func (h *filings) storeTransfer(e *et.Event, orgent *dbt.Entity, accession, date
 	})
 }
 
-func (h *filings) orgCheckingAccount(e *et.Event, orgent *dbt.Entity) *dbt.Entity {
-	o := orgent.Asset.(*oamorg.Organization)
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	var accountent *dbt.Entity
-	if edges, err := e.Session.DB().OutgoingEdges(ctx, orgent, time.Time{}, "account"); err == nil {
-		for _, edge := range edges {
-			if a, err := e.Session.DB().FindEntityById(ctx, edge.ToEntity.ID); err == nil && a != nil {
-				if acc, ok := a.Asset.(*oamacct.Account); ok && acc.Type == oamacct.Checking && acc.Number == "default" {
-					accountent = a
-					break
-				}
-			}
-		}
-	}
-	if accountent == nil {
-		ent, err := e.Session.DB().CreateAsset(ctx, &oamacct.Account{
-			ID:     "org-account:" + o.Name,
-			Type:   oamacct.Checking,
-			Number: "default",
-			Active: o.Active,
-		})
-		if err != nil || ent == nil {
-			return nil
-		}
-		accountent = ent
-	}
-
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, accountent, &general.SourceProperty{
-		Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
-	})
-	_ = h.plugin.createRelation(ctx, e.Session, orgent,
-		&general.SimpleRelation{Name: "account"}, accountent, h.plugin.source.Confidence)
-	return accountent
-}
-
 // businessAddress builds a StreetAddress from a filer's business address, or nil
 // when the address is empty.
 func businessAddress(a *address) *contact.StreetAddress {
@@ -397,22 +373,4 @@ func businessAddress(a *address) *contact.StreetAddress {
 		Province:   a.StateOrCountry,
 		PostalCode: a.ZipCode,
 	}
-}
-
-// normalizeName lowercases a name and collapses runs of non-alphanumeric
-// characters to a single space.
-func normalizeName(s string) string {
-	var b strings.Builder
-	space := false
-	for _, r := range strings.ToLower(s) {
-		switch {
-		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
-			b.WriteRune(r)
-			space = false
-		case !space:
-			b.WriteByte(' ')
-			space = true
-		}
-	}
-	return strings.TrimSpace(b.String())
 }

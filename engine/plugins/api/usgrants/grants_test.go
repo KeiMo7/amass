@@ -121,12 +121,3 @@ func TestFlexNumStr(t *testing.T) {
 		t.Error("flexStr should render number and string")
 	}
 }
-
-func TestRecipientMatches(t *testing.T) {
-	if !recipientMatches("Colgate University", "COLGATE UNIVERSITY") {
-		t.Error("case-insensitive match expected")
-	}
-	if recipientMatches("Colgate University", "Colgate Research LLC") {
-		t.Error("different entity should not match")
-	}
-}

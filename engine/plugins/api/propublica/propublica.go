@@ -15,11 +15,12 @@ import (
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
+	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	oamacct "github.com/owasp-amass/open-asset-model/account"
 	"github.com/owasp-amass/open-asset-model/contact"
 	oamfin "github.com/owasp-amass/open-asset-model/financial"
 	"github.com/owasp-amass/open-asset-model/general"
@@ -98,9 +99,8 @@ func (h *filings) resolve(e *et.Event, name string) string {
 	if err != nil {
 		return ""
 	}
-	want := normalizeName(name)
 	for _, o := range res.Organizations {
-		if o.EIN != 0 && normalizeName(o.Name) == want {
+		if o.EIN != 0 && semantics.SameOrgName(name, o.Name) {
 			return strconv.FormatInt(o.EIN, 10)
 		}
 	}
@@ -217,7 +217,7 @@ func (h *filings) storeFilings(e *et.Event, orgent *dbt.Entity, o *pubOrg) {
 		year := flexStr(f["tax_prd_yr"])
 
 		if orgacc == nil {
-			if orgacc = h.orgCheckingAccount(e, orgent); orgacc == nil {
+			if orgacc = org.OrgCheckingAccount(e.Session, orgent, h.plugin.source); orgacc == nil {
 				return
 			}
 		}
@@ -239,40 +239,6 @@ func (h *filings) storeFilings(e *et.Event, orgent *dbt.Entity, o *pubOrg) {
 		}
 		cancel()
 	}
-}
-
-func (h *filings) orgCheckingAccount(e *et.Event, orgent *dbt.Entity) *dbt.Entity {
-	o := orgent.Asset.(*oamorg.Organization)
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	var accountent *dbt.Entity
-	if edges, err := e.Session.DB().OutgoingEdges(ctx, orgent, time.Time{}, "account"); err == nil {
-		for _, edge := range edges {
-			if a, err := e.Session.DB().FindEntityById(ctx, edge.ToEntity.ID); err == nil && a != nil {
-				if acc, ok := a.Asset.(*oamacct.Account); ok && acc.Type == oamacct.Checking && acc.Number == "default" {
-					accountent = a
-					break
-				}
-			}
-		}
-	}
-	if accountent == nil {
-		ent, err := e.Session.DB().CreateAsset(ctx, &oamacct.Account{
-			ID: "org-account:" + o.Name, Type: oamacct.Checking, Number: "default", Active: o.Active,
-		})
-		if err != nil || ent == nil {
-			return nil
-		}
-		accountent = ent
-	}
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, accountent, &general.SourceProperty{
-		Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
-	})
-	_ = h.plugin.createRelation(ctx, e.Session, orgent,
-		&general.SimpleRelation{Name: "account"}, accountent, h.plugin.source.Confidence)
-	return accountent
 }
 
 // flexStr renders a JSON value that may be a string or a number as a string.
@@ -298,22 +264,4 @@ func flexNum(raw json.RawMessage) float64 {
 		return 0
 	}
 	return v
-}
-
-// normalizeName lowercases a name and collapses runs of non-alphanumeric
-// characters to a single space.
-func normalizeName(s string) string {
-	var b strings.Builder
-	space := false
-	for _, r := range strings.ToLower(s) {
-		switch {
-		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
-			b.WriteRune(r)
-			space = false
-		case !space:
-			b.WriteByte(' ')
-			space = true
-		}
-	}
-	return strings.TrimSpace(b.String())
 }

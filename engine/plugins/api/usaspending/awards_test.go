@@ -49,22 +49,3 @@ func TestParseAwardsEmpty(t *testing.T) {
 		t.Fatalf("rows=%v hasNext=%v err=%v", rows, hasNext, err)
 	}
 }
-
-func TestRecipientMatches(t *testing.T) {
-	cases := []struct {
-		org, recipient string
-		want           bool
-	}{
-		{"Colgate University", "COLGATE UNIVERSITY", true},
-		{"Colgate University", "Colgate University, Inc.", true},   // org is a prefix
-		{"Colgate University", "Colgate-Palmolive Company", false}, // different entity
-		{"Colgate University", "University of Colgate", false},     // reordered, not a prefix
-		{"Acme Corp", "", false},
-		{"", "Acme Corp", false},
-	}
-	for _, c := range cases {
-		if got := recipientMatches(c.org, c.recipient); got != c.want {
-			t.Errorf("recipientMatches(%q,%q) = %v, want %v", c.org, c.recipient, got, c.want)
-		}
-	}
-}

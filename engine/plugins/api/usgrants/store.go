@@ -17,7 +17,6 @@ import (
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
 	dbt "github.com/owasp-amass/asset-db/types"
-	oamacct "github.com/owasp-amass/open-asset-model/account"
 	oamfin "github.com/owasp-amass/open-asset-model/financial"
 	"github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
@@ -77,7 +76,7 @@ func (h *source) store(e *et.Event, orgent *dbt.Entity, g *grant) *dbt.Entity {
 	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
 	defer cancel()
 
-	orgacc := h.orgCheckingAccount(e, orgent)
+	orgacc := org.OrgCheckingAccount(e.Session, orgent, h.src)
 	if orgacc == nil {
 		return nil
 	}
@@ -101,7 +100,8 @@ func (h *source) store(e *et.Event, orgent *dbt.Entity, g *grant) *dbt.Entity {
 		&general.SimpleRelation{Name: "recipient"}, orgacc, h.src); err != nil {
 		return nil
 	}
-	if agency := h.agencyOrg(e, g.agency); agency != nil {
+	if agency, err := org.CreateOrgAsset(e.Session, nil, nil,
+		&oamorg.Organization{Name: strings.TrimSpace(g.agency)}, h.src); err == nil {
 		_ = h.createRelation(ctx, e.Session, fundent,
 			&general.SimpleRelation{Name: "third_party"}, agency, h.src)
 	}
@@ -110,86 +110,4 @@ func (h *source) store(e *et.Event, orgent *dbt.Entity, g *grant) *dbt.Entity {
 		Name: fmt.Sprintf("%f:%s", g.amount, g.id), Entity: fundent, Session: e.Session,
 	})
 	return fundent
-}
-
-func (h *source) orgCheckingAccount(e *et.Event, orgent *dbt.Entity) *dbt.Entity {
-	o := orgent.Asset.(*oamorg.Organization)
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	var accountent *dbt.Entity
-	if edges, err := e.Session.DB().OutgoingEdges(ctx, orgent, time.Time{}, "account"); err == nil {
-		for _, edge := range edges {
-			if a, err := e.Session.DB().FindEntityById(ctx, edge.ToEntity.ID); err == nil && a != nil {
-				if acc, ok := a.Asset.(*oamacct.Account); ok && acc.Type == oamacct.Checking && acc.Number == "default" {
-					accountent = a
-					break
-				}
-			}
-		}
-	}
-	if accountent == nil {
-		ent, err := e.Session.DB().CreateAsset(ctx, &oamacct.Account{
-			ID:     "org-account:" + o.Name,
-			Type:   oamacct.Checking,
-			Number: "default",
-			Active: o.Active,
-		})
-		if err != nil || ent == nil {
-			return nil
-		}
-		accountent = ent
-	}
-
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, accountent, &general.SourceProperty{
-		Source: h.src.Name, Confidence: h.src.Confidence,
-	})
-	_ = h.createRelation(ctx, e.Session, orgent,
-		&general.SimpleRelation{Name: "account"}, accountent, h.src)
-	return accountent
-}
-
-func (h *source) agencyOrg(e *et.Event, name string) *dbt.Entity {
-	if strings.TrimSpace(name) == "" {
-		return nil
-	}
-	orgent, err := org.CreateOrgAsset(e.Session, nil, nil, &oamorg.Organization{Name: name}, h.src)
-	if err != nil || orgent == nil {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, orgent, &general.SourceProperty{
-		Source: h.src.Name, Confidence: h.src.Confidence,
-	})
-	return orgent
-}
-
-// recipientMatches reports whether an API recipient name is the subject
-// organization, compared on normalized text.
-func recipientMatches(orgName, recipient string) bool {
-	a, b := normalizeName(orgName), normalizeName(recipient)
-	if a == "" || b == "" {
-		return false
-	}
-	return a == b || strings.HasPrefix(b, a+" ") || strings.HasPrefix(a, b+" ")
-}
-
-// normalizeName lowercases a name and collapses runs of non-alphanumeric
-// characters to a single space.
-func normalizeName(s string) string {
-	var b strings.Builder
-	space := false
-	for _, r := range strings.ToLower(s) {
-		switch {
-		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
-			b.WriteRune(r)
-			space = false
-		case !space:
-			b.WriteByte(' ')
-			space = true
-		}
-	}
-	return strings.TrimSpace(b.String())
 }

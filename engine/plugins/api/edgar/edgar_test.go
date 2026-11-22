@@ -4,28 +4,36 @@
 
 package edgar
 
-import "testing"
+import (
+	"testing"
+
+	"github.com/owasp-amass/amass/v5/internal/semantics"
+)
 
 func TestParseTickers(t *testing.T) {
 	body := []byte(`{
       "0": {"cik_str": 320193, "ticker": "AAPL", "title": "Apple Inc."},
       "1": {"cik_str": 789019, "ticker": "MSFT", "title": "Microsoft Corporation"},
-      "2": {"cik_str": 0, "ticker": "", "title": ""}
+      "2": {"cik_str": 0, "ticker": "", "title": ""},
+      "3": {"cik_str": 1111, "ticker": "GIZA", "title": "Gizmo Corp"},
+      "4": {"cik_str": 2222, "ticker": "GIZB", "title": "GIZMO INC"},
+      "5": {"cik_str": 789019, "ticker": "MSFT2", "title": "MICROSOFT CORP"}
     }`)
 
 	m, err := parseTickers(body)
 	if err != nil {
 		t.Fatal(err)
 	}
-	if got := m[normalizeName("Apple Inc.")]; got != "0000320193" {
+	if got := m[semantics.OrgNameKey("Apple Inc.")]; got != "0000320193" {
 		t.Errorf("apple cik = %q", got)
 	}
-	if got := m[normalizeName("MICROSOFT CORPORATION")]; got != "0000789019" {
+	if got := m[semantics.OrgNameKey("MICROSOFT CORPORATION")]; got != "0000789019" {
 		t.Errorf("microsoft cik = %q", got)
 	}
-	// The empty row is skipped.
+	// The empty row is skipped, two companies sharing the key "gizmo" are
+	// left out, and one company listed twice keeps its key.
 	if len(m) != 2 {
-		t.Errorf("entries = %d, want 2", len(m))
+		t.Errorf("entries = %v, want apple and microsoft", m)
 	}
 }
 

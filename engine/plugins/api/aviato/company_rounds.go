@@ -14,7 +14,6 @@ import (
 	"strings"
 	"time"
 
-	"github.com/google/uuid"
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
@@ -63,7 +62,9 @@ func (cr *companyRounds) check(e *et.Event) error {
 		Confidence: cr.plugin.source.Confidence,
 	}
 	if support.AssetMonitoredWithinTTL(e.Session, e.Entity, src, since) {
-		fundents = cr.lookup(e, e.Entity, since)
+		if orgent := cr.plugin.identOrg(e, e.Entity); orgent != nil {
+			fundents = org.OrgTransfersReceived(e.Session, orgent, since, cr.plugin.source)
+		}
 	} else {
 		fundents = cr.query(e, e.Entity, keys)
 		support.MarkAssetMonitored(e.Session, e.Entity, src)
@@ -73,63 +74,6 @@ func (cr *companyRounds) check(e *et.Event) error {
 		cr.process(e, fundents)
 	}
 	return nil
-}
-
-func (cr *companyRounds) lookup(e *et.Event, ident *dbt.Entity, since time.Time) []*dbt.Entity {
-	var orgent *dbt.Entity
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	if edges, err := e.Session.DB().IncomingEdges(ctx, ident, since, "id"); err == nil {
-		for _, edge := range edges {
-			if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, since, cr.plugin.source.Name); err != nil || len(tags) == 0 {
-				continue
-			}
-			if a, err := e.Session.DB().FindEntityById(ctx, edge.FromEntity.ID); err == nil && a != nil {
-				if _, ok := a.Asset.(*oamorg.Organization); ok {
-					orgent = a
-					break
-				}
-			}
-		}
-	}
-
-	var fundents []*dbt.Entity
-	if orgent == nil {
-		return fundents
-	}
-
-	var accountents []*dbt.Entity
-	if edges, err := e.Session.DB().OutgoingEdges(ctx, orgent, since, "account"); err == nil {
-		for _, edge := range edges {
-			if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, since, cr.plugin.source.Name); err != nil || len(tags) == 0 {
-				continue
-			}
-			if a, err := e.Session.DB().FindEntityById(ctx, edge.ToEntity.ID); err == nil && a != nil {
-				if acc, ok := a.Asset.(*oamacct.Account); ok && acc.Type == oamacct.Checking && acc.Number == "default" {
-					accountents = append(accountents, a)
-				}
-			}
-		}
-	}
-
-	for _, ent := range accountents {
-		if edges, err := e.Session.DB().IncomingEdges(ctx, ent, since, "recipient"); err == nil {
-			for _, edge := range edges {
-				if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, since, cr.plugin.source.Name); err != nil || len(tags) == 0 {
-					continue
-				}
-				if a, err := e.Session.DB().FindEntityById(ctx, edge.FromEntity.ID); err == nil && a != nil {
-					if _, ok := a.Asset.(*oamfin.FundsTransfer); ok {
-						fundents = append(fundents, a)
-					}
-				}
-			}
-		}
-	}
-
-	return fundents
 }
 
 func (cr *companyRounds) query(e *et.Event, ident *dbt.Entity, apikey []string) []*dbt.Entity {
@@ -218,7 +162,7 @@ func (cr *companyRounds) store(e *et.Event, ident, orgent *dbt.Entity, funds *co
 	defer cancel()
 
 	for _, round := range funds.FundingRounds {
-		orgacc := cr.orgCheckingAccount(e, orgent)
+		orgacc := org.OrgCheckingAccount(e.Session, orgent, cr.plugin.source)
 		if orgacc == nil {
 			msg := fmt.Sprintf("failed to create the checking account for %s", o.Name)
 			e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
@@ -274,60 +218,6 @@ func (cr *companyRounds) store(e *et.Event, ident, orgent *dbt.Entity, funds *co
 	}
 
 	return fundents
-}
-
-func (cr *companyRounds) orgCheckingAccount(e *et.Event, orgent *dbt.Entity) *dbt.Entity {
-	var accountent *dbt.Entity
-	o := orgent.Asset.(*oamorg.Organization)
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	if edges, err := e.Session.DB().OutgoingEdges(ctx, orgent, time.Time{}, "account"); err == nil {
-		for _, edge := range edges {
-			if a, err := e.Session.DB().FindEntityById(ctx, edge.ToEntity.ID); err == nil && a != nil {
-				if acc, ok := a.Asset.(*oamacct.Account); ok && acc.Type == oamacct.Checking && acc.Number == "default" {
-					accountent = a
-					break
-				}
-			}
-		}
-	}
-
-	if accountent == nil {
-		ent, err := e.Session.DB().CreateAsset(ctx, &oamacct.Account{
-			ID:      uuid.New().String(),
-			Type:    oamacct.Checking,
-			Number:  "default",
-			Balance: 0,
-			Active:  o.Active,
-		})
-		if err != nil {
-			msg := fmt.Sprintf("failed to create the Account asset for %s: %s", o.Name, err)
-			e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
-			return nil
-		}
-
-		accountent = ent
-	}
-
-	_, err := e.Session.DB().CreateEntityProperty(ctx, accountent, &oamgen.SourceProperty{
-		Source:     cr.plugin.source.Name,
-		Confidence: cr.plugin.source.Confidence,
-	})
-	if err != nil {
-		msg := fmt.Sprintf("failed to create the Account asset source property for %s: %s", o.Name, err)
-		e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
-		return nil
-	}
-
-	if err := cr.plugin.createRelation(ctx, e.Session, orgent,
-		oamgen.SimpleRelation{Name: "account"}, accountent, cr.plugin.source.Confidence); err != nil {
-		msg := fmt.Sprintf("failed to create the account relation for %s: %s", o.Name, err)
-		e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
-	}
-
-	return accountent
 }
 
 func (cr *companyRounds) createSeedAccount(e *et.Event, round *companyFundingRound) *dbt.Entity {
@@ -423,16 +313,6 @@ func (cr *companyRounds) createOrgInvestors(e *et.Event, round *companyFundingRo
 		orgent, err = org.CreateOrgAsset(e.Session, nil, nil, o, cr.plugin.source)
 		if err != nil {
 			msg := fmt.Sprintf("failed to create the Organization asset for %s: %s", o.Name, err)
-			e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
-			continue
-		}
-
-		_, err = e.Session.DB().CreateEntityProperty(ctx, orgent, &oamgen.SourceProperty{
-			Source:     cr.plugin.source.Name,
-			Confidence: cr.plugin.source.Confidence,
-		})
-		if err != nil {
-			msg := fmt.Sprintf("failed to create the Organization asset source property for %s: %s", o.Name, err)
 			e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
 			continue
 		}

@@ -89,6 +89,9 @@ func TestOrgNamePairs(t *testing.T) {
 				t.Errorf("OrgNameMatch(%q, %q) = %s, want %s (keys %q, %q)", order[0], order[1], got, p.Want,
 					OrgNameKey(order[0]), OrgNameKey(order[1]))
 			}
+			if same := SameOrgName(order[0], order[1]); same != (p.Want != "none") {
+				t.Errorf("SameOrgName(%q, %q) = %v for a %s match", order[0], order[1], same, p.Want)
+			}
 		}
 	}
 }

@@ -11,6 +11,7 @@ import (
 	"strconv"
 
 	et "github.com/owasp-amass/amass/v5/engine/types"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 )
 
@@ -101,7 +102,7 @@ func queryNIH(h *source, e *et.Event, orgent *dbt.Entity, name string) {
 	seen := map[string]bool{}
 	for i := range grants {
 		g := &grants[i]
-		if !recipientMatches(name, g.recipient) || seen[g.id] {
+		if !semantics.SameOrgName(name, g.recipient) || seen[g.id] {
 			continue
 		}
 		seen[g.id] = true

@@ -47,8 +47,11 @@ real enumerations there when tuning the catalog.
 - The family lens's generic words are `semantics.OrgGenericWords`.
 - `semantics.GenericOrganizationName` (document leads) treats a legal form as
   an entity form.
-- The GLEIF, Aviato, USAspending and documents collectors, and
-  `ai.CandidatePairs`.
+- The GLEIF, Aviato and documents collectors, and `ai.CandidatePairs`.
+- `semantics.SameOrgName` (an exact or near match) is how the funding and
+  contract collectors (USAspending, US grants, OCDS, TED, ProPublica) decide a
+  record's recipient, supplier or winner is the organization, and EDGAR keys
+  its company index by `OrgNameKey`, leaving out a key two companies share.
 - The session scope (`engine/sessions/scope`): scope organizations are kept
   by key, an exact match has accuracy 100 and a near one 90, and a
   certificate's subject domain is named for an organization when

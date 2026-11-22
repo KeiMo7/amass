@@ -49,15 +49,6 @@ func TestParseOrg(t *testing.T) {
 	}
 }
 
-func TestNormalizeName(t *testing.T) {
-	if normalizeName("Colgate University") != normalizeName("COLGATE  university.") {
-		t.Error("normalization should ignore case and punctuation")
-	}
-	if normalizeName("A.B") != "a b" {
-		t.Errorf("got %q", normalizeName("A.B"))
-	}
-}
-
 func TestFlexStr(t *testing.T) {
 	cases := map[string]string{
 		`"hello"`: "hello",
@@ -75,12 +66,12 @@ func TestFlexStr(t *testing.T) {
 
 func TestFlexNum(t *testing.T) {
 	cases := map[string]float64{
-		`1234`:      1234,
-		`"1234"`:    1234,
-		`" 12.5 "`:  12.5,
-		`"abc"`:     0,
-		`null`:      0,
-		`"1,000"`:   0, // commas are not stripped; not a valid float
+		`1234`:     1234,
+		`"1234"`:   1234,
+		`" 12.5 "`: 12.5,
+		`"abc"`:    0,
+		`null`:     0,
+		`"1,000"`:  0, // commas are not stripped; not a valid float
 	}
 	for raw, want := range cases {
 		if got := flexNum([]byte(raw)); got != want {

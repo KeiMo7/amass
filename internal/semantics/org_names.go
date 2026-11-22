@@ -185,6 +185,13 @@ func OrgNameMatch(a, b string) (exact, near bool) {
 	return false, nearKeys(strings.Fields(ka), strings.Fields(kb))
 }
 
+// SameOrgName reports whether two organization names are the same
+// organization's: an exact or near OrgNameMatch.
+func SameOrgName(a, b string) bool {
+	exact, near := OrgNameMatch(a, b)
+	return exact || near
+}
+
 func nearKeys(wa, wb []string) bool {
 	r := loadOrgNames()
 	if len(wa) != len(wb) {

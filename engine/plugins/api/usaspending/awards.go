@@ -20,7 +20,6 @@ import (
 	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	oamacct "github.com/owasp-amass/open-asset-model/account"
 	oamfin "github.com/owasp-amass/open-asset-model/financial"
 	oamgen "github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
@@ -94,7 +93,7 @@ func (h *awards) check(e *et.Event) error {
 	src := &et.Source{Name: h.name, Confidence: h.plugin.source.Confidence}
 	var fundents []*dbt.Entity
 	if support.AssetMonitoredWithinTTL(e.Session, e.Entity, src, since) {
-		fundents = h.lookup(e, e.Entity, since)
+		fundents = org.OrgTransfersReceived(e.Session, e.Entity, since, h.plugin.source)
 	} else {
 		fundents = h.query(e, e.Entity, o.Name)
 		support.MarkAssetMonitored(e.Session, e.Entity, src)
@@ -129,7 +128,7 @@ func (h *awards) query(e *et.Event, orgent *dbt.Entity, name string) []*dbt.Enti
 			for i := range rows {
 				a := &rows[i]
 				// Guard against same-name recipients that are not this org.
-				if !recipientMatches(name, a.RecipientName) {
+				if !semantics.SameOrgName(name, a.RecipientName) {
 					continue
 				}
 				id := a.transferID()
@@ -207,7 +206,7 @@ func (h *awards) store(e *et.Event, orgent *dbt.Entity, a *award, id string) *db
 	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
 	defer cancel()
 
-	orgacc := h.orgCheckingAccount(e, orgent)
+	orgacc := org.OrgCheckingAccount(e.Session, orgent, h.plugin.source)
 	if orgacc == nil {
 		return nil
 	}
@@ -243,7 +242,8 @@ func (h *awards) store(e *et.Event, orgent *dbt.Entity, a *award, id string) *db
 	}
 
 	// The awarding agency is the funding party, surfaced by the funding lens.
-	if agency := h.agencyOrg(e, a.Agency); agency != nil {
+	if agency, err := org.CreateOrgAsset(e.Session, nil, nil,
+		&oamorg.Organization{Name: strings.TrimSpace(a.Agency)}, h.plugin.source); err == nil {
 		if err := h.plugin.createRelation(ctx, e.Session, fundent,
 			oamgen.SimpleRelation{Name: "third_party"}, agency, h.plugin.source.Confidence); err != nil {
 			msg := fmt.Sprintf("failed to create the third_party relation for %s: %s", id, err)
@@ -252,124 +252,6 @@ func (h *awards) store(e *et.Event, orgent *dbt.Entity, a *award, id string) *db
 	}
 
 	return fundent
-}
-
-// orgCheckingAccount returns the organization's default checking account,
-// creating it and the Organization --account--> Account edge when absent.
-func (h *awards) orgCheckingAccount(e *et.Event, orgent *dbt.Entity) *dbt.Entity {
-	o := orgent.Asset.(*oamorg.Organization)
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	var accountent *dbt.Entity
-	if edges, err := e.Session.DB().OutgoingEdges(ctx, orgent, time.Time{}, "account"); err == nil {
-		for _, edge := range edges {
-			if a, err := e.Session.DB().FindEntityById(ctx, edge.ToEntity.ID); err == nil && a != nil {
-				if acc, ok := a.Asset.(*oamacct.Account); ok && acc.Type == oamacct.Checking && acc.Number == "default" {
-					accountent = a
-					break
-				}
-			}
-		}
-	}
-
-	if accountent == nil {
-		ent, err := e.Session.DB().CreateAsset(ctx, &oamacct.Account{
-			ID:     "org-account:" + o.Name,
-			Type:   oamacct.Checking,
-			Number: "default",
-			Active: o.Active,
-		})
-		if err != nil || ent == nil {
-			msg := fmt.Sprintf("failed to create the Account asset for %s: %s", o.Name, err)
-			e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
-			return nil
-		}
-		accountent = ent
-	}
-
-	if _, err := e.Session.DB().CreateEntityProperty(ctx, accountent, &oamgen.SourceProperty{
-		Source:     h.plugin.source.Name,
-		Confidence: h.plugin.source.Confidence,
-	}); err != nil {
-		msg := fmt.Sprintf("failed to create the Account source property for %s: %s", o.Name, err)
-		e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
-		return nil
-	}
-
-	if err := h.plugin.createRelation(ctx, e.Session, orgent,
-		oamgen.SimpleRelation{Name: "account"}, accountent, h.plugin.source.Confidence); err != nil {
-		msg := fmt.Sprintf("failed to create the account relation for %s: %s", o.Name, err)
-		e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
-	}
-
-	return accountent
-}
-
-// agencyOrg returns the awarding agency as an Organization, creating it when
-// absent, or nil when the award named no agency.
-func (h *awards) agencyOrg(e *et.Event, name string) *dbt.Entity {
-	name = strings.TrimSpace(name)
-	if name == "" {
-		return nil
-	}
-
-	orgent, err := org.CreateOrgAsset(e.Session, nil, nil, &oamorg.Organization{Name: name}, h.plugin.source)
-	if err != nil || orgent == nil {
-		msg := fmt.Sprintf("failed to create the agency Organization %s: %s", name, err)
-		e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
-		return nil
-	}
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-	if _, err := e.Session.DB().CreateEntityProperty(ctx, orgent, &oamgen.SourceProperty{
-		Source:     h.plugin.source.Name,
-		Confidence: h.plugin.source.Confidence,
-	}); err != nil {
-		msg := fmt.Sprintf("failed to create the agency source property for %s: %s", name, err)
-		e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
-	}
-
-	return orgent
-}
-
-func (h *awards) lookup(e *et.Event, orgent *dbt.Entity, since time.Time) []*dbt.Entity {
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	var accountents []*dbt.Entity
-	if edges, err := e.Session.DB().OutgoingEdges(ctx, orgent, since, "account"); err == nil {
-		for _, edge := range edges {
-			if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, since, h.plugin.source.Name); err != nil || len(tags) == 0 {
-				continue
-			}
-			if a, err := e.Session.DB().FindEntityById(ctx, edge.ToEntity.ID); err == nil && a != nil {
-				if acc, ok := a.Asset.(*oamacct.Account); ok && acc.Type == oamacct.Checking && acc.Number == "default" {
-					accountents = append(accountents, a)
-				}
-			}
-		}
-	}
-
-	var fundents []*dbt.Entity
-	for _, ent := range accountents {
-		if edges, err := e.Session.DB().IncomingEdges(ctx, ent, since, "recipient"); err == nil {
-			for _, edge := range edges {
-				if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, since, h.plugin.source.Name); err != nil || len(tags) == 0 {
-					continue
-				}
-				if a, err := e.Session.DB().FindEntityById(ctx, edge.FromEntity.ID); err == nil && a != nil {
-					if _, ok := a.Asset.(*oamfin.FundsTransfer); ok {
-						fundents = append(fundents, a)
-					}
-				}
-			}
-		}
-	}
-
-	return fundents
 }
 
 func (h *awards) process(e *et.Event, fundents []*dbt.Entity) {
@@ -381,14 +263,4 @@ func (h *awards) process(e *et.Event, fundents []*dbt.Entity) {
 			Session: e.Session,
 		})
 	}
-}
-
-// recipientMatches reports whether a USAspending recipient name is the same
-// organization as the one enumerated: the same name once case, punctuation
-// and legal forms are set aside, or a misspelling of it (semantics.
-// OrgNameMatch). A name that only begins with the other's is a different
-// recipient.
-func recipientMatches(orgName, recipient string) bool {
-	exact, near := semantics.OrgNameMatch(orgName, recipient)
-	return exact || near
 }

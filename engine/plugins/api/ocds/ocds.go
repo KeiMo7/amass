@@ -30,7 +30,6 @@ import (
 	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	oamacct "github.com/owasp-amass/open-asset-model/account"
 	oamfin "github.com/owasp-amass/open-asset-model/financial"
 	"github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
@@ -375,7 +374,7 @@ func (h *handler) query(e *et.Event, orgent *dbt.Entity, name string, pub publis
 	seen := map[string]bool{}
 	for i := range awards {
 		a := &awards[i]
-		if !supplierMatches(name, a.supplier) {
+		if !semantics.SameOrgName(name, a.supplier) {
 			continue
 		}
 		id := "ocds:" + a.ocid + ":" + a.id
@@ -417,7 +416,7 @@ func (h *handler) queryBulk(e *et.Event, orgent *dbt.Entity, name string, pub pu
 
 	seen := map[string]bool{}
 	truncated, err := scanBulk(r,
-		func(supplier string) bool { return supplierMatches(name, supplier) },
+		func(supplier string) bool { return semantics.SameOrgName(name, supplier) },
 		func(a award) {
 			if e.Session.Ctx().Err() != nil {
 				return
@@ -532,7 +531,7 @@ func (h *handler) store(e *et.Event, orgent *dbt.Entity, a *award, id string) {
 	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
 	defer cancel()
 
-	orgacc := h.orgCheckingAccount(e, orgent)
+	orgacc := org.OrgCheckingAccount(e.Session, orgent, h.plugin.source)
 	if orgacc == nil {
 		return
 	}
@@ -558,88 +557,11 @@ func (h *handler) store(e *et.Event, orgent *dbt.Entity, a *award, id string) {
 		&general.SimpleRelation{Name: "recipient"}, orgacc, h.plugin.source.Confidence); err != nil {
 		return
 	}
-	if buyer := h.buyerOrg(e, a.buyer); buyer != nil {
+	if buyer, err := org.CreateOrgAsset(e.Session, nil, nil,
+		&oamorg.Organization{Name: strings.TrimSpace(a.buyer)}, h.plugin.source); err == nil {
 		_ = h.plugin.createRelation(ctx, e.Session, fundent,
 			&general.SimpleRelation{Name: "third_party"}, buyer, h.plugin.source.Confidence)
 	}
 
 	_ = e.Dispatcher.DispatchEvent(&et.Event{Name: fmt.Sprintf("%f:%s", a.amount, id), Entity: fundent, Session: e.Session})
-}
-
-func (h *handler) buyerOrg(e *et.Event, name string) *dbt.Entity {
-	if strings.TrimSpace(name) == "" {
-		return nil
-	}
-	orgent, err := org.CreateOrgAsset(e.Session, nil, nil, &oamorg.Organization{Name: name}, h.plugin.source)
-	if err != nil || orgent == nil {
-		return nil
-	}
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, orgent, &general.SourceProperty{
-		Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
-	})
-	return orgent
-}
-
-func (h *handler) orgCheckingAccount(e *et.Event, orgent *dbt.Entity) *dbt.Entity {
-	o := orgent.Asset.(*oamorg.Organization)
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	var accountent *dbt.Entity
-	if edges, err := e.Session.DB().OutgoingEdges(ctx, orgent, time.Time{}, "account"); err == nil {
-		for _, edge := range edges {
-			if a, err := e.Session.DB().FindEntityById(ctx, edge.ToEntity.ID); err == nil && a != nil {
-				if acc, ok := a.Asset.(*oamacct.Account); ok && acc.Type == oamacct.Checking && acc.Number == "default" {
-					accountent = a
-					break
-				}
-			}
-		}
-	}
-	if accountent == nil {
-		ent, err := e.Session.DB().CreateAsset(ctx, &oamacct.Account{
-			ID: "org-account:" + o.Name, Type: oamacct.Checking, Number: "default", Active: o.Active,
-		})
-		if err != nil || ent == nil {
-			return nil
-		}
-		accountent = ent
-	}
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, accountent, &general.SourceProperty{
-		Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
-	})
-	_ = h.plugin.createRelation(ctx, e.Session, orgent,
-		&general.SimpleRelation{Name: "account"}, accountent, h.plugin.source.Confidence)
-	return accountent
-}
-
-// supplierMatches reports whether an OCDS supplier name is the subject
-// organization, compared on normalized text.
-func supplierMatches(orgName, supplier string) bool {
-	a, b := normalizeName(orgName), normalizeName(supplier)
-	if a == "" || b == "" {
-		return false
-	}
-	return a == b || strings.HasPrefix(b, a+" ") || strings.HasPrefix(a, b+" ")
-}
-
-// normalizeName lowercases a name and collapses runs of non-alphanumeric
-// characters to a single space.
-func normalizeName(s string) string {
-	var b strings.Builder
-	space := false
-	for _, r := range strings.ToLower(s) {
-		switch {
-		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
-			b.WriteRune(r)
-			space = false
-		case !space:
-			b.WriteByte(' ')
-			space = true
-		}
-	}
-	return strings.TrimSpace(b.String())
 }

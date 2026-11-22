@@ -9,6 +9,8 @@ import (
 	"compress/gzip"
 	"strings"
 	"testing"
+
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 )
 
 func TestBulkApplies(t *testing.T) {
@@ -79,15 +81,6 @@ func TestParseOCDSRecordPackage(t *testing.T) {
 	}
 }
 
-func TestSupplierMatches(t *testing.T) {
-	if !supplierMatches("Acme Brasil Ltda", "ACME BRASIL LTDA") {
-		t.Error("case-insensitive match expected")
-	}
-	if supplierMatches("Acme Brasil Ltda", "Acme Servicios SA") {
-		t.Error("different entity should not match")
-	}
-}
-
 func TestPublishersCatalogLoads(t *testing.T) {
 	pubs := loadPublishers()
 	if len(pubs) == 0 {
@@ -125,7 +118,7 @@ func TestScanBulkGzippedJSONL(t *testing.T) {
 	}
 	var got []award
 	trunc, err := scanBulk(r,
-		func(s string) bool { return supplierMatches("Gamma SA de CV", s) },
+		func(s string) bool { return semantics.SameOrgName("Gamma SA de CV", s) },
 		func(a award) { got = append(got, a) })
 	if err != nil || trunc {
 		t.Fatalf("scanBulk err=%v truncated=%v", err, trunc)
@@ -153,7 +146,7 @@ func TestScanBulkNuevoLeonShape(t *testing.T) {
 
 	var got []award
 	if _, err := scanBulk(strings.NewReader(line),
-		func(s string) bool { return supplierMatches("PROMOCIONES RAC, S.A. DE C.V.", s) },
+		func(s string) bool { return semantics.SameOrgName("PROMOCIONES RAC, S.A. DE C.V.", s) },
 		func(a award) { got = append(got, a) }); err != nil {
 		t.Fatal(err)
 	}

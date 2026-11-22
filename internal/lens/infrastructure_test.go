@@ -6,6 +6,7 @@ package lens
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/owasp-amass/amass/v5/internal/graph"
@@ -73,21 +74,43 @@ func TestFindRelatedInfrastructure(t *testing.T) {
 		t.Errorf("AS from the AutnumRecord registrant should be present: %+v", r.Assets)
 	}
 
-	// The announced-only netblock is a supporting signal, so it surfaces for
-	// review rather than auto-expanding.
+	// The organization's AS announces only this prefix: an enterprise
+	// network, so its announcement is the strong small-AS signal.
 	ann, ok := got["Netblock 203.0.113.0/24"]
-	if !ok || ann.Confidence != InfrastructureConfidence(SigASNAnnouncedNetblock) {
-		t.Errorf("announced netblock should surface at the supporting confidence: %+v", r.Assets)
+	if !ok || ann.Confidence != InfrastructureConfidence(SigSmallASNAnnounced) {
+		t.Errorf("announced netblock should surface at the small-AS confidence: %+v", r.Assets)
 	}
 
-	// The two RIR-registered assets expand; the announced-only netblock needs
-	// review.
+	// The two RIR-registered assets and the small AS's netblock expand.
 	expand, review := InfrastructureExpansion(r)
-	if len(expand) != 2 {
-		t.Errorf("the registrant-backed netblock and AS should expand: %+v", expand)
+	if len(expand) != 3 || len(review) != 0 {
+		t.Errorf("expand %+v, review %+v: want all three to expand", expand, review)
 	}
-	if len(review) != 1 || review[0].Asset != "203.0.113.0/24" {
-		t.Errorf("the announced-only netblock should need review: %+v", review)
+}
+
+// An AS that announces many prefixes may be carrying others' routes, so its
+// announcements are the supporting signal and need review.
+func TestFindRelatedInfrastructureLargeAS(t *testing.T) {
+	g := relatedInfraGraph()
+	for i := 0; i <= asnSmallNetblocks; i++ {
+		id := fmt.Sprintf("nb-many-%d", i)
+		cidr := fmt.Sprintf("198.19.%d.0/24", i)
+		g.Assets[id] = graph.Asset{ID: id, Type: "Netblock", Key: cidr, Content: map[string]any{"cidr": cidr}}
+		g.Links = append(g.Links, graph.Relation{ID: "ann" + id, FromID: "as1", ToID: id, Label: "announces",
+			Type: "SimpleRelation"})
+	}
+	r, err := FindRelatedInfrastructure(context.Background(), g, "acme")
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, a := range r.Assets {
+		if a.Asset == "203.0.113.0/24" && a.Confidence != InfrastructureConfidence(SigASNAnnouncedNetblock) {
+			t.Errorf("a large AS's netblock %+v should be the supporting signal", a)
+		}
+	}
+	_, review := InfrastructureExpansion(r)
+	if len(review) != asnSmallNetblocks+2 {
+		t.Errorf("want every announced-only netblock to need review, got %d", len(review))
 	}
 }
 

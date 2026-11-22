@@ -37,6 +37,10 @@ const (
 	// SigSPFDeclaredRange is a netblock the SPF record of one of the
 	// organization's domains authorizes to send its mail.
 	SigSPFDeclaredRange = "spf-declared-range"
+	// SigSmallASNAnnounced is a netblock announced by an AS registered to the
+	// organization that announces few prefixes: an enterprise network, not a
+	// transit or hosting one.
+	SigSmallASNAnnounced = "small-asn-announced-netblock"
 )
 
 // Infrastructure signal matchers: how each signal is found in the graph.
@@ -48,11 +52,12 @@ const (
 	matchInfraIRROwn      = "irr_maintainer_own_origins"
 	matchInfraIRRShared   = "irr_maintainer"
 	matchInfraSPFRange    = "spf_range"
+	matchInfraSmallASN    = "small_asn_announced_netblock"
 )
 
 var infrastructureMatchers = map[string]bool{matchInfraIPNetReg: true, matchInfraASNReg: true,
 	matchInfraASNAnnounce: true, matchInfraROA: true, matchInfraIRROwn: true, matchInfraIRRShared: true,
-	matchInfraSPFRange: true}
+	matchInfraSPFRange: true, matchInfraSmallASN: true}
 
 var loadInfrastructureCatalog = sync.OnceValues(func() (signalCatalog, error) {
 	var c signalCatalog

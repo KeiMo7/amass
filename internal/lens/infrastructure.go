@@ -40,6 +40,11 @@ import (
 // evidence of the organization's ownership.
 const asnMaxNetblocks = 512
 
+// asnSmallNetblocks is the most prefixes an organization's AS may announce
+// for its announcements to be the strong small-AS signal: an enterprise or
+// campus network announces a handful, a transit or hosting network many.
+const asnSmallNetblocks = 32
+
 // InfrastructureAsset is a netblock or autonomous system an infrastructure
 // signal ties to the subject organization, with the evidence and confidence
 // behind it. AssetType is the OAM type ("Netblock" or "AutonomousSystem") and
@@ -192,6 +197,12 @@ contacts:
 					if err != nil || len(anns) > asnMaxNetblocks {
 						continue // a very large or transit AS is not evidence of ownership
 					}
+					annSigID, annLabel := SigASNAnnouncedNetblock, announceSig
+					if len(anns) <= asnSmallNetblocks {
+						annSigID = SigSmallASNAnnounced
+						annLabel = fmt.Sprintf("announced by an AS registered to %s that announces %d prefixes",
+							name, len(anns))
+					}
 					for _, ann := range anns {
 						nb, err := g.GetAsset(ctx, ann.ToID)
 						if err != nil {
@@ -200,8 +211,7 @@ contacts:
 						ownNetblocks[ann.ToID] = true
 						annW := graph.WitnessEdge{EdgeID: ann.ID, Label: "announces", RelationType: ann.Type,
 							FromID: ann.FromID, FromType: "AutonomousSystem", ToID: ann.ToID, ToType: "Netblock"}
-						if !add("Netblock", graph.ContentString(nb, "cidr"), SigASNAnnouncedNetblock,
-							announceSig, regW, annW) {
+						if !add("Netblock", graph.ContentString(nb, "cidr"), annSigID, annLabel, regW, annW) {
 							break contacts
 						}
 					}

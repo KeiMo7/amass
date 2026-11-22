@@ -48,6 +48,7 @@
       "finds": "A netblock announced (originated) by an autonomous system whose RIR registration names the target organization.",
       "rationale": "A prefix originated by the organization's own AS is routed by its network, corroborating that the address space is operated by it. It is supporting rather than strong because an AS routinely announces space it does not own — transit and customer routes among them — so announcement is operation, not registration. Combined with an RIR registration naming the organization (ipnet-registrant-org) it raises a netblock's confidence; announcement alone needs review.",
       "guards": [
+        "Counts only when the AS announces more than 32 prefixes; a smaller AS gives the strong small-asn-announced-netblock signal instead.",
         "Counts only for a netblock announced by an AS that is itself registered to the organization (asn-registrant-org).",
         "A privacy or proxy registrant organization on the AS is never an anchor."
       ],
@@ -128,6 +129,24 @@
       ],
       "counter_indications": [
         "A bulk-mail or ticketing vendor's sending range is listed exactly like the organization's own."
+      ]
+    },
+    {
+      "id": "small-asn-announced-netblock",
+      "title": "Netblock announced by the organization's small AS",
+      "kind": "infrastructure",
+      "strength": "strong",
+      "weight": 0.7,
+      "matcher": "small_asn_announced_netblock",
+      "finds": "A netblock announced by an autonomous system registered to the target organization that announces at most 32 prefixes.",
+      "rationale": "An enterprise, campus or government network announces a handful of its own prefixes; carrying other networks' routes is what transit and hosting networks do, and they announce many. A prefix originated by the organization's own small AS is routed for the organization.",
+      "guards": [
+        "Counts only for an AS registered to the organization (asn-registrant-org).",
+        "The AS must announce at most 32 prefixes; one announcing more gives the supporting asn-announced-netblock signal instead."
+      ],
+      "counter_indications": [
+        "A small AS can announce a customer's or affiliate's prefix, such as a university announcing a hospital's space.",
+        "Route leaks and hijacks announce prefixes the AS has no claim to."
       ]
     }
   ]

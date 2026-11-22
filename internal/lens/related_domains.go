@@ -231,6 +231,18 @@ contacts:
 		}
 	}
 
+	// ownDomains are the organization's registered domains: a name server or
+	// mail exchanger inside them is the organization's own, the strong tier
+	// of the shared-host signals.
+	var ownDomains []string
+	for _, drID := range ownDRs {
+		if dr, err := g.GetAsset(ctx, drID); err == nil {
+			if d := strings.ToLower(strings.TrimSpace(graph.ContentString(dr, "domain"))); d != "" {
+				ownDomains = append(ownDomains, d)
+			}
+		}
+	}
+
 	// Shared name server: domains served by the same non-provider name server
 	// as one of the organization's own domains.
 	seenNS := map[string]bool{}
@@ -251,8 +263,13 @@ nsPivot:
 			// few of its tenants are in the database yet (the same guard as the
 			// DNS-record pivot below); a full delegation set is weighed by
 			// delegationSetPivot instead.
-			if host, err := g.GetAsset(ctx, nse.ToID); err == nil && isNameServerProvider(graph.FQDNName(host)) {
+			host, err := g.GetAsset(ctx, nse.ToID)
+			if err == nil && isNameServerProvider(graph.FQDNName(host)) {
 				continue
+			}
+			nsSig, nsLabel := SigSharedNameServer, "shared name server"
+			if err == nil && withinAny(graph.FQDNName(host), ownDomains) {
+				nsSig, nsLabel = SigNameServerOwn, "name server run by the organization: "+graph.FQDNName(host)
 			}
 
 			others, err := g.Edges(ctx, nse.ToID, "in", "name_server", time.Time{})
@@ -282,7 +299,7 @@ nsPivot:
 			for _, s := range sibs {
 				sibW := graph.WitnessEdge{EdgeID: s.edge.ID, Label: "name_server", RelationType: s.edge.Type,
 					FromID: s.edge.FromID, FromType: "DomainRecord", ToID: s.edge.ToID, ToType: "FQDN"}
-				if !add(s.apex, SigSharedNameServer, "shared name server", nsW, sibW) {
+				if !add(s.apex, nsSig, nsLabel, nsW, sibW) {
 					break nsPivot
 				}
 			}
@@ -320,16 +337,18 @@ nsPivot:
 	bountyScopePivot(ctx, g, name, ownApexes, add)
 	soaMailboxPivot(ctx, g, ownApexes, add)
 	sharedDNSHostPivot(ctx, g, ownApexes, RRTypeNS, SigSharedNameServer, "shared name server", nsMaxApexes,
-		isNameServerProvider, add)
+		isNameServerProvider, ownHostTier{signalID: SigNameServerOwn, label: "name server run by the organization",
+			domains: ownDomains}, add)
 	sharedDNSHostPivot(ctx, g, ownApexes, rrTypeMX, SigSharedMX, "shared mail exchanger", mxMaxApexes,
-		isMailProvider, add)
+		isMailProvider, ownHostTier{signalID: SigMXOwn, label: "mail exchanger run by the organization",
+			domains: ownDomains}, add)
 
 	// Mail-policy references: another domain that points its DMARC reporting or
 	// SPF sending at one of the organization's own domains.
 	policyReferencePivot(ctx, g, ownApexes, "dmarc_reports_to", SigDMARCReportsTo, "shared DMARC reporting",
-		dmarcMaxPublishers, isPolicyProvider, add)
+		dmarcMaxPublishers, isPolicyProvider, nil, add)
 	policyReferencePivot(ctx, g, ownApexes, "spf_authorizes", SigSPFAuthorizes, "SPF authorization",
-		spfMaxPublishers, isPolicyProvider, add)
+		spfMaxPublishers, isPolicyProvider, ownDomains, add)
 
 	// Official website: domains the organization publishes as its own site
 	// (Organization --website--> URL --domain--> FQDN).
@@ -402,8 +421,13 @@ func isMailProvider(host string) bool {
 // domain pointed at by more than maxPublishers distinct apexes, or one a known
 // mail-policy provider operates (isProvider), is shared mail-policy
 // infrastructure and is skipped, not scored.
+//
+// For SPF, exclusive (the organization's domains) sets the strong tier: a
+// publisher that sends all its mail through the organization (every name and
+// range its SPF record authorizes is inside exclusive), when at most
+// spfExclusiveMaxPublishers domains reference the organization's domain.
 func policyReferencePivot(ctx context.Context, g graph.Graph, ownApexes []string, label,
-	signalID, signalLabel string, maxPublishers int, isProvider func(string) bool,
+	signalID, signalLabel string, maxPublishers int, isProvider func(string) bool, exclusive []string,
 	add func(string, string, string, ...graph.WitnessEdge) bool) {
 	for _, apexID := range ownApexes {
 		target, err := g.GetAsset(ctx, apexID)
@@ -443,11 +467,54 @@ func policyReferencePivot(ctx context.Context, g graph.Graph, ownApexes []string
 		for _, p := range pubs {
 			w := graph.WitnessEdge{EdgeID: p.edge.ID, Label: label, RelationType: p.edge.Type,
 				FromID: p.edge.FromID, FromType: "FQDN", ToID: p.edge.ToID, ToType: "FQDN"}
-			if !add(p.apex, signalID, signalLabel, w) {
+			sig, sigLabel := signalID, signalLabel
+			if len(exclusive) > 0 && len(apexSet) <= spfExclusiveMaxPublishers &&
+				sendsOnlyThrough(ctx, g, p.edge.FromID, exclusive) {
+				sig, sigLabel = SigSPFExclusive, "sends all its mail through the organization (SPF)"
+			}
+			if !add(p.apex, sig, sigLabel, w) {
 				return
 			}
 		}
 	}
+}
+
+// spfExclusiveMaxPublishers is the most domains that may reference one of the
+// organization's domains in SPF for one of them to count as sending only
+// through it: an email or IT provider is referenced by many.
+const spfExclusiveMaxPublishers = 5
+
+// sendsOnlyThrough reports whether every name and address range a domain's
+// SPF record authorizes is inside the given domains.
+func sendsOnlyThrough(ctx context.Context, g graph.Graph, apexID string, domains []string) bool {
+	edges, err := g.Edges(ctx, apexID, "out", "spf_authorizes", time.Time{})
+	if err != nil || len(edges) == 0 {
+		return false
+	}
+	for _, e := range edges {
+		a, err := g.GetAsset(ctx, e.ToID)
+		if err != nil || a.Type != "FQDN" || !withinAny(graph.FQDNName(a), domains) {
+			return false
+		}
+	}
+	return true
+}
+
+// withinAny reports whether host is one of domains or a name below one.
+func withinAny(host string, domains []string) bool {
+	for _, d := range domains {
+		if HostWithin(host, d) {
+			return true
+		}
+	}
+	return false
+}
+
+// ownHostTier is the strong tier of a shared-host signal: a host inside the
+// organization's own domains.
+type ownHostTier struct {
+	signalID, label string
+	domains         []string
 }
 
 // sharedDNSHostPivot adds related domains that share a DNS host record of the
@@ -460,7 +527,7 @@ func policyReferencePivot(ctx context.Context, g graph.Graph, ownApexes []string
 // infrastructure the list does not yet name and is skipped too. Neither is
 // scored. add returning false (the domain cap) stops the pivot.
 func sharedDNSHostPivot(ctx context.Context, g graph.Graph, ownApexes []string, rrType int,
-	signalID, signalLabel string, maxApexes int, isProvider func(string) bool,
+	signalID, signalLabel string, maxApexes int, isProvider func(string) bool, own ownHostTier,
 	add func(string, string, string, ...graph.WitnessEdge) bool) {
 	seenHost := map[string]bool{}
 	for _, apexID := range ownApexes {
@@ -477,8 +544,13 @@ func sharedDNSHostPivot(ctx context.Context, g graph.Graph, ownApexes []string, 
 			// A name server or mail exchanger a known provider operates serves
 			// many unrelated customers, so it is never ownership evidence, even
 			// when few of its tenants are in the database yet.
-			if host, err := g.GetAsset(ctx, he.ToID); err == nil && isProvider(graph.FQDNName(host)) {
+			host, err := g.GetAsset(ctx, he.ToID)
+			if err == nil && isProvider(graph.FQDNName(host)) {
 				continue
+			}
+			sig, sigLabel := signalID, signalLabel
+			if err == nil && withinAny(graph.FQDNName(host), own.domains) {
+				sig, sigLabel = own.signalID, own.label+": "+graph.FQDNName(host)
 			}
 
 			others, err := g.Edges(ctx, he.ToID, "in", "dns_record", time.Time{})
@@ -515,7 +587,7 @@ func sharedDNSHostPivot(ctx context.Context, g graph.Graph, ownApexes []string, 
 			for _, s := range sibs {
 				sibW := graph.WitnessEdge{EdgeID: s.edge.ID, Label: "dns_record", RelationType: s.edge.Type,
 					FromID: s.edge.FromID, FromType: "FQDN", ToID: s.edge.ToID, ToType: "FQDN"}
-				if !add(s.apex, signalID, signalLabel, hostW, sibW) {
+				if !add(s.apex, sig, sigLabel, hostW, sibW) {
 					return
 				}
 			}

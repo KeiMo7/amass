@@ -119,6 +119,10 @@ func relatedDomainsGraph() graphtest.FakeGraph {
 	link("fq_dmarc_pub", "fq_acme_net", "dmarc_reports_to")
 	fqdn("fq_spf_pub", "spf-pub.example")
 	link("fq_spf_pub", "fq_acme_net", "spf_authorizes")
+	// spf-pub.example also sends through an outside mailer, so it does not
+	// send only through the organization
+	fqdn("fq_spf_mailer", "_spf.mailer.example")
+	link("fq_spf_pub", "fq_spf_mailer", "spf_authorizes")
 
 	return g
 }

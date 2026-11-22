@@ -17,6 +17,7 @@ Infrastructure correlation associates more netblocks and autonomous systems with
 | [Routing registry maintainer of the organization's netblocks](#irr-maintainer-own-origins) | strong | infrastructure | 0.70 |
 | [Shared routing registry maintainer](#shared-irr-maintainer) | supporting | infrastructure | 0.50 |
 | [Mail sender declared in the organization's SPF record](#spf-declared-range) | supporting | infrastructure | 0.50 |
+| [Netblock announced by the organization's small AS](#small-asn-announced-netblock) | strong | infrastructure | 0.70 |
 
 <a id="ipnet-registrant-org"></a>
 ## Shared netblock registrant organization
@@ -67,6 +68,7 @@ Infrastructure correlation associates more netblocks and autonomous systems with
 
 **Guards:**
 
+- Counts only when the AS announces more than 32 prefixes; a smaller AS gives the strong small-asn-announced-netblock signal instead.
 - Counts only for a netblock announced by an AS that is itself registered to the organization (asn-registrant-org).
 - A privacy or proxy registrant organization on the AS is never an anchor.
 
@@ -152,3 +154,22 @@ Infrastructure correlation associates more netblocks and autonomous systems with
 **Can still mislead when:**
 
 - A bulk-mail or ticketing vendor's sending range is listed exactly like the organization's own.
+
+<a id="small-asn-announced-netblock"></a>
+## Netblock announced by the organization's small AS
+
+`small-asn-announced-netblock`: strong infrastructure signal, weight 0.70 (confidence 70).
+
+**Finds:** A netblock announced by an autonomous system registered to the target organization that announces at most 32 prefixes.
+
+**Why it counts:** An enterprise, campus or government network announces a handful of its own prefixes; carrying other networks' routes is what transit and hosting networks do, and they announce many. A prefix originated by the organization's own small AS is routed for the organization.
+
+**Guards:**
+
+- Counts only for an AS registered to the organization (asn-registrant-org).
+- The AS must announce at most 32 prefixes; one announcing more gives the supporting asn-announced-netblock signal instead.
+
+**Can still mislead when:**
+
+- A small AS can announce a customer's or affiliate's prefix, such as a university announcing a hospital's space.
+- Route leaks and hijacks announce prefixes the AS has no claim to.

@@ -49,6 +49,7 @@
       "finds": "Another registered domain served by the same authoritative name server as one of the organization's own domains.",
       "rationale": "A private or vanity name server operated by one organization serves only that organization's domains, so sharing it is evidence of common control. It is supporting rather than strong because a small hosting provider's shared name server can serve unrelated customers.",
       "guards": [
+        "A name server inside the organization's own domains gives the strong name-server-own-domain signal instead.",
         "A name server serving more distinct apex domains than the lens cap is treated as shared or provider infrastructure and is skipped.",
         "Only name servers reached from the organization's own domain records are used as anchors."
       ],
@@ -151,6 +152,61 @@
       ]
     },
     {
+      "id": "name-server-own-domain",
+      "title": "Name server run by the organization",
+      "kind": "dns",
+      "strength": "strong",
+      "weight": 0.75,
+      "matcher": "name_server_own_domain",
+      "finds": "Another registered domain served by a name server that is a host inside one of the organization's own domains (ns1.example.com serving example-labs.org), the same server one of the organization's domains uses.",
+      "rationale": "An organization that runs its own name servers hosts its own zones on them. A domain delegated to a name server inside the organization's namespace is served by the organization's DNS, which it rarely does for anyone else.",
+      "guards": [
+        "The name server must be one of the organization's own registered domains or a name below one.",
+        "A name server more than 25 domains use is skipped.",
+        "A managed-DNS provider's name server is never used."
+      ],
+      "counter_indications": [
+        "A university or ISP running DNS for affiliated or customer organizations serves their zones from its own servers.",
+        "A delegation can outlive a domain's sale until the new owner moves it."
+      ]
+    },
+    {
+      "id": "mx-own-domain",
+      "title": "Mail exchanger run by the organization",
+      "kind": "dns",
+      "strength": "strong",
+      "weight": 0.7,
+      "matcher": "mx_own_domain",
+      "finds": "Another registered domain whose mail is handled by a mail exchanger that is a host inside one of the organization's own domains, the same one one of the organization's domains uses.",
+      "rationale": "A domain whose mail goes to the organization's own mail server receives its mail at the organization, which an organization does for its own domains and rarely for others.",
+      "guards": [
+        "The mail exchanger must be one of the organization's own registered domains or a name below one.",
+        "A mail exchanger more than 25 domains use is skipped.",
+        "A known mail provider's exchanger is never used."
+      ],
+      "counter_indications": [
+        "An organization can relay mail for affiliated organizations or customers through its own servers."
+      ]
+    },
+    {
+      "id": "spf-authorizes-exclusive",
+      "title": "Sends all its mail through the organization",
+      "kind": "dns",
+      "strength": "strong",
+      "weight": 0.7,
+      "matcher": "spf_authorizes_exclusive",
+      "finds": "Another registered domain whose SPF record authorizes only names inside the organization's own domains to send its mail, when at most 5 domains authorize the organization's domain.",
+      "rationale": "A domain that sends all of its mail through the organization, and through no one else, is the organization's: an outside sender would list its own servers or its other providers too.",
+      "guards": [
+        "Every name and address range the domain's SPF record authorizes must be inside the organization's domains.",
+        "At most 5 domains may authorize the organization's domain; an email or IT provider is authorized by many.",
+        "A known mail-policy provider's domain is never used."
+      ],
+      "counter_indications": [
+        "When the organization is itself an email, hosting or IT provider, a small client can send only through it."
+      ]
+    },
+    {
       "id": "shared-mx",
       "title": "Shared mail exchanger",
       "kind": "infrastructure",
@@ -160,6 +216,7 @@
       "finds": "Another registered domain whose mail is handled by the same mail exchanger (MX host) as one of the organization's own domains.",
       "rationale": "A mail exchanger an organization runs for its own mail serves only that organization's domains, so two apex domains pointing their MX at the same host are evidence of common control. It is supporting rather than strong because a mail provider's exchanger is shared by many unrelated customers; in OAM an MX record is the same shape as a name-server record (an apex FQDN pointing to a server FQDN), so this mirrors the shared-name-server signal.",
       "guards": [
+        "A mail exchanger inside the organization's own domains gives the strong mx-own-domain signal instead.",
         "A mail exchanger serving more distinct apex domains than the lens cap is treated as a shared mail provider (Google Workspace, Microsoft 365, Proofpoint and the like) and is skipped, not scored.",
         "Only mail exchangers reached from the organization's own domains are used as anchors."
       ],
@@ -197,6 +254,7 @@
       "finds": "Another registered domain whose SPF record delegates its sending (include: or redirect=) to a domain the organization owns.",
       "rationale": "An SPF include or redirect names a domain allowed to send mail as the publishing domain. Delegating to a domain the organization controls means the organization's mail infrastructure sends on the other domain's behalf, which is evidence of common administration. It is supporting rather than strong because a provider's SPF macro is included by many unrelated customers.",
       "guards": [
+        "A domain that sends all its mail through the organization, when few domains do, gives the strong spf-authorizes-exclusive signal instead.",
         "An SPF domain referenced by more distinct apex domains than the lens cap is a shared sending provider (a mail provider's SPF macro) and is skipped, not scored.",
         "An SPF domain a known mail-policy provider operates is skipped regardless of coverage.",
         "Only the organization's own domains are used as the SPF anchor."

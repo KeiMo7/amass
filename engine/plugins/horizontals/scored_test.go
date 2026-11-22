@@ -6,6 +6,7 @@ package horizontals
 
 import (
 	"encoding/json"
+	"fmt"
 	"net/netip"
 	"os"
 	"path/filepath"
@@ -180,8 +181,8 @@ func TestExpandRelatedInfrastructureWidensScope(t *testing.T) {
 	sess.Edge(t, ipr, link("registrant"), cr)
 	sess.Asset(t, &oamnet.Netblock{CIDR: nbCIDR, Type: "IPv4"})
 
-	// An AS registered to the org (strong), plus a prefix it announces
-	// (supporting — review only).
+	// An AS registered to the org (strong) that announces one prefix: a small
+	// enterprise network, so the prefix it announces is strong too.
 	asr := sess.Asset(t, &oamreg.AutnumRecord{Number: 64500, Handle: "AS64500", Name: "ACME"})
 	sess.Edge(t, asr, link("registrant"), cr)
 	as := sess.Asset(t, &oamnet.AutonomousSystem{Number: 64500})
@@ -189,6 +190,19 @@ func TestExpandRelatedInfrastructureWidensScope(t *testing.T) {
 	annCIDR := netip.MustParsePrefix("203.0.113.0/24")
 	ann := sess.Asset(t, &oamnet.Netblock{CIDR: annCIDR, Type: "IPv4"})
 	sess.Edge(t, as, link("announces"), ann)
+
+	// A second AS registered to the org announcing many prefixes: those are
+	// supporting only, review not expansion.
+	bigr := sess.Asset(t, &oamreg.AutnumRecord{Number: 64501, Handle: "AS64501", Name: "ACME"})
+	sess.Edge(t, bigr, link("registrant"), cr)
+	big := sess.Asset(t, &oamnet.AutonomousSystem{Number: 64501})
+	sess.Edge(t, big, link("registration"), bigr)
+	var bigCIDR netip.Prefix
+	for i := 0; i < 40; i++ {
+		bigCIDR = netip.MustParsePrefix(fmt.Sprintf("198.18.%d.0/24", i))
+		nb := sess.Asset(t, &oamnet.Netblock{CIDR: bigCIDR, Type: "IPv4"})
+		sess.Edge(t, big, link("announces"), nb)
+	}
 
 	h.expandRelatedInfrastructure(&et.Event{Session: sess, Entity: org}, org)
 
@@ -198,9 +212,13 @@ func TestExpandRelatedInfrastructureWidensScope(t *testing.T) {
 	if _, c := sess.Scope().IsAssetInScope(&oamnet.AutonomousSystem{Number: 64500}, 0); c <= 0 {
 		t.Error("the RIR-registered AS should be added to scope")
 	}
-	// The announced-only prefix is a supporting signal, so it must not auto-expand.
-	if _, c := sess.Scope().IsAssetInScope(&oamnet.Netblock{CIDR: annCIDR, Type: "IPv4"}, 0); c > 0 {
-		t.Error("an announced-only netblock must not auto-expand scope")
+	// The small AS's prefix expands; a large AS's announced-only prefix is
+	// supporting, so it must not auto-expand.
+	if _, c := sess.Scope().IsAssetInScope(&oamnet.Netblock{CIDR: annCIDR, Type: "IPv4"}, 0); c <= 0 {
+		t.Error("a netblock the organization's small AS announces should be added to scope")
+	}
+	if _, c := sess.Scope().IsAssetInScope(&oamnet.Netblock{CIDR: bigCIDR, Type: "IPv4"}, 0); c > 0 {
+		t.Error("an announced-only netblock of a large AS must not auto-expand scope")
 	}
 }
 

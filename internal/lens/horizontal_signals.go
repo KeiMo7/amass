@@ -39,10 +39,16 @@ const (
 	// sharing an outside mailbox with one of its zones.
 	SigSOAMailboxOwn    = "soa-mailbox-own-domain"
 	SigSharedSOAMailbox = "shared-soa-mailbox"
-	SigSharedMX         = "shared-mx"
-	SigDMARCReportsTo   = "dmarc-reports-to"
-	SigSPFAuthorizes    = "spf-authorizes"
-	SigOfficialWebsite  = "official-website"
+	// The strong tiers of the shared-host and SPF signals: a name server or
+	// mail exchanger inside the organization's own domains, and a domain
+	// that sends all its mail through the organization.
+	SigNameServerOwn   = "name-server-own-domain"
+	SigMXOwn           = "mx-own-domain"
+	SigSPFExclusive    = "spf-authorizes-exclusive"
+	SigSharedMX        = "shared-mx"
+	SigDMARCReportsTo  = "dmarc-reports-to"
+	SigSPFAuthorizes   = "spf-authorizes"
+	SigOfficialWebsite = "official-website"
 	// Shared service fingerprints: another apex whose service carries the
 	// same distinctive fingerprint Identifier as one of the org's services.
 	SigSharedAnalyticsID = "shared-analytics-id"
@@ -65,12 +71,16 @@ const (
 	matchHorBountyScope   = "bounty_program_scope"
 	matchHorSOAOwn        = "soa_mailbox_own_domain"
 	matchHorSOAShared     = "soa_mailbox"
+	matchHorNSOwn         = "name_server_own_domain"
+	matchHorMXOwn         = "mx_own_domain"
+	matchHorSPFExclusive  = "spf_authorizes_exclusive"
 )
 
 var horizontalMatchers = map[string]bool{matchHorRegistrantOrg: true, matchHorCertOrg: true,
 	matchHorNameServer: true, matchHorMX: true, matchHorDMARC: true, matchHorSPF: true, matchHorWebsite: true,
 	matchHorFingerprint: true, matchHorDelegationSet: true, matchHorAllowedOrigin: true,
-	matchHorBountyScope: true, matchHorSOAOwn: true, matchHorSOAShared: true}
+	matchHorBountyScope: true, matchHorSOAOwn: true, matchHorSOAShared: true,
+	matchHorNSOwn: true, matchHorMXOwn: true, matchHorSPFExclusive: true}
 
 var loadHorizontalCatalog = sync.OnceValues(func() (signalCatalog, error) {
 	var c signalCatalog

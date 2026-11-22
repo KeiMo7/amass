@@ -20,6 +20,9 @@ Horizontal correlation associates more registered (apex) domains with a target o
 | [Listed by the organization's bug-bounty program](#bug-bounty-scope) | supporting | declaration | 0.70 |
 | [SOA administrator mailbox at the organization's domain](#soa-mailbox-own-domain) | strong | dns | 0.70 |
 | [Shared SOA administrator mailbox](#shared-soa-mailbox) | supporting | dns | 0.50 |
+| [Name server run by the organization](#name-server-own-domain) | strong | dns | 0.75 |
+| [Mail exchanger run by the organization](#mx-own-domain) | strong | dns | 0.70 |
+| [Sends all its mail through the organization](#spf-authorizes-exclusive) | strong | dns | 0.70 |
 | [Shared mail exchanger](#shared-mx) | supporting | infrastructure | 0.60 |
 | [DMARC reports to the organization](#dmarc-reports-to) | strong | infrastructure | 0.70 |
 | [SPF authorizes the organization's senders](#spf-authorizes) | supporting | infrastructure | 0.55 |
@@ -78,6 +81,7 @@ Horizontal correlation associates more registered (apex) domains with a target o
 
 **Guards:**
 
+- A name server inside the organization's own domains gives the strong name-server-own-domain signal instead.
 - A name server serving more distinct apex domains than the lens cap is treated as shared or provider infrastructure and is skipped.
 - Only name servers reached from the organization's own domain records are used as anchors.
 
@@ -184,6 +188,64 @@ Horizontal correlation associates more registered (apex) domains with a target o
 
 - An agency or contractor administers unrelated clients' zones from one mailbox.
 
+<a id="name-server-own-domain"></a>
+## Name server run by the organization
+
+`name-server-own-domain`: strong dns signal, weight 0.75 (confidence 75).
+
+**Finds:** Another registered domain served by a name server that is a host inside one of the organization's own domains (ns1.example.com serving example-labs.org), the same server one of the organization's domains uses.
+
+**Why it counts:** An organization that runs its own name servers hosts its own zones on them. A domain delegated to a name server inside the organization's namespace is served by the organization's DNS, which it rarely does for anyone else.
+
+**Guards:**
+
+- The name server must be one of the organization's own registered domains or a name below one.
+- A name server more than 25 domains use is skipped.
+- A managed-DNS provider's name server is never used.
+
+**Can still mislead when:**
+
+- A university or ISP running DNS for affiliated or customer organizations serves their zones from its own servers.
+- A delegation can outlive a domain's sale until the new owner moves it.
+
+<a id="mx-own-domain"></a>
+## Mail exchanger run by the organization
+
+`mx-own-domain`: strong dns signal, weight 0.70 (confidence 70).
+
+**Finds:** Another registered domain whose mail is handled by a mail exchanger that is a host inside one of the organization's own domains, the same one one of the organization's domains uses.
+
+**Why it counts:** A domain whose mail goes to the organization's own mail server receives its mail at the organization, which an organization does for its own domains and rarely for others.
+
+**Guards:**
+
+- The mail exchanger must be one of the organization's own registered domains or a name below one.
+- A mail exchanger more than 25 domains use is skipped.
+- A known mail provider's exchanger is never used.
+
+**Can still mislead when:**
+
+- An organization can relay mail for affiliated organizations or customers through its own servers.
+
+<a id="spf-authorizes-exclusive"></a>
+## Sends all its mail through the organization
+
+`spf-authorizes-exclusive`: strong dns signal, weight 0.70 (confidence 70).
+
+**Finds:** Another registered domain whose SPF record authorizes only names inside the organization's own domains to send its mail, when at most 5 domains authorize the organization's domain.
+
+**Why it counts:** A domain that sends all of its mail through the organization, and through no one else, is the organization's: an outside sender would list its own servers or its other providers too.
+
+**Guards:**
+
+- Every name and address range the domain's SPF record authorizes must be inside the organization's domains.
+- At most 5 domains may authorize the organization's domain; an email or IT provider is authorized by many.
+- A known mail-policy provider's domain is never used.
+
+**Can still mislead when:**
+
+- When the organization is itself an email, hosting or IT provider, a small client can send only through it.
+
 <a id="shared-mx"></a>
 ## Shared mail exchanger
 
@@ -195,6 +257,7 @@ Horizontal correlation associates more registered (apex) domains with a target o
 
 **Guards:**
 
+- A mail exchanger inside the organization's own domains gives the strong mx-own-domain signal instead.
 - A mail exchanger serving more distinct apex domains than the lens cap is treated as a shared mail provider (Google Workspace, Microsoft 365, Proofpoint and the like) and is skipped, not scored.
 - Only mail exchangers reached from the organization's own domains are used as anchors.
 
@@ -234,6 +297,7 @@ Horizontal correlation associates more registered (apex) domains with a target o
 
 **Guards:**
 
+- A domain that sends all its mail through the organization, when few domains do, gives the strong spf-authorizes-exclusive signal instead.
 - An SPF domain referenced by more distinct apex domains than the lens cap is a shared sending provider (a mail provider's SPF macro) and is skipped, not scored.
 - An SPF domain a known mail-policy provider operates is skipped regardless of coverage.
 - Only the organization's own domains are used as the SPF anchor.

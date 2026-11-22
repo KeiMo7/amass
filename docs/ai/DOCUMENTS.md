@@ -1,0 +1,282 @@
+# Documents and the document model: implementation
+
+The user page is `docs/ai/documents.md` in the docs repository. This page is
+for contributors: how documents are read, what is stored, how leads work,
+and how findings count as evidence.
+
+## Pipeline
+
+```mermaid
+flowchart LR
+    ENG["engine documents plugin<br/>(File + metadata + links)"] --> DB[("Asset Database")]
+    DB --> SRC["lens.DocumentSources<br/>(Files a root controls)"]
+    SRC --> FETCH["ai.HTTPFetcher<br/>archive copy first,<br/>docmeta.ExtractContent"]
+    FETCH --> READ["ai.ReadDocument<br/>chunks → model → validate"]
+    READ --> STORE["review.StoreDocumentStatements<br/>doc_statement properties<br/>+ journal reading"]
+    STORE --> LEADS["DocumentCompanion<br/>leads to the running session"]
+    STORE --> EVID["evidence: doc_relation,<br/>duplicates, gaps, lenses"]
+```
+
+| Piece | Where |
+| --- | --- |
+| Settings (`options.ai.documents`) | `config/ai.go` (`DocumentModelSettings`, `Validate`) |
+| Model client | `internal/ai/models.go` (`DocumentModel`) |
+| Text extraction | `internal/docmeta/content.go` (`ExtractContent`) |
+| Fetching | `internal/ai/document_fetch.go` |
+| Reading and validation | `internal/ai/documents.go`, `document_vocabulary.go` |
+| Runs (on demand and in the companion) | `internal/ai/document_runs.go` (`ReadDocuments`) |
+| Companion, leads, budget | `internal/ai/document_companion.go`, `document_leads.go`, `document_budget.go` |
+| Storage, journal, settlement | `internal/review/document_statements.go`, `document_leads.go` |
+| Document sources and lens | `internal/lens/document_sources.go`, `documents.go` |
+| Evidence | `internal/lens/document_relations.go`, `document_evidence.go`, `document_lens_evidence.go` |
+| Data | `internal/semantics/statement_predicates.json`, `document_signals.json` |
+
+## Nothing stored but findings
+
+The database keeps no document content. `lens.DocumentSources` gives each
+File's URL, the archive copy the engine read (`RetrievedFrom`), the media type,
+the stored SHA-256 (the `file_sha256` fingerprint Identifier) and the number of
+statements already stored. `HTTPFetcher` fetches the archive copy when there is
+one, otherwise the URL, extracts text and links in memory, and hashes the bytes.
+
+Each version is read once: `Journal.ReadVersions` records every SHA-256 read,
+including readings that found nothing. A File whose version was read is
+skipped, and so is a fetched document whose new hash was already read. The
+`-reread` option undoes the earlier readings (by File and by version) before
+reading again.
+
+## Reading
+
+- **Text clean-up:** `cleanText` replaces control characters, other than
+  newlines and tabs, with spaces. A schema-constrained reply can't copy a raw
+  control character into a JSON string, and Ollama fails the request partway
+  through.
+- **Chunks:** `chunkText` splits the text into `chunk_chars` (default 12000)
+  with a 400-character overlap, ending at sentence boundaries where possible.
+  `OnChunk` is called after each chunk, and counts as the `chunks_read`
+  activity.
+- **Reply shape:** each chunk's reply is `{category, assets[], statements[],
+  attributes[]}`, generated against the JSON schema built from
+  `documentVocabulary()`. The vocabulary covers all OAM asset types, the
+  relations OAM allows between them (`GetAssetOutgoingRelations` /
+  `GetTransformAssetTypes`), the extra predicates in
+  `statement_predicates.json`, and each type's fields.
+- **Reply cap:** `max_tokens` (default 4096) is sent as `num_predict`. A reply
+  cut off at the cap (`llm.ErrReplyLength`) is incomplete JSON, so that chunk is
+  recorded as rejected and reading continues with the next.
+- **Validation:** a finding is kept only when all of these hold:
+  - the quote is verbatim in the chunk;
+  - names and values are written within ±300 characters of the quote (inside
+    the quote first, `quoteSite.find`);
+  - the value passes its type's check (host name, CIDR, AS number, email,
+    E.164 phone, …);
+  - the relation is allowed by OAM or the predicate catalog;
+  - there is no negation cue in the same sentence;
+  - Organization, Person, Product and ProductRelease values are proper names:
+    `properName`, which rejects fragments of words split by PDF extraction
+    (`fragmented`).
+
+### Failures
+
+`ReadDocuments` records why a document could not be read
+(`DocumentResult.Failure`, counted in `DocumentRun.Failures`):
+
+| Kind | Cause | Retried in the run |
+| --- | --- | --- |
+| `unsupported` | not a document type the rules read | no |
+| `fetch` | HTTP status, network error, timeout, or a custom fetcher's error | once |
+| `too_large` | longer than the documents rules' `MaxBytes` | no |
+| `extract` | `docmeta.ExtractContent` failed | no |
+| `model_timeout` | deadline exceeded or a net timeout on a model request | once |
+| `model` | any other model error | once |
+
+The companion keeps each File's failures for the run (`companionRun.failed`)
+and passes `Skip`, so a document that will fail again doesn't fill every
+pass's batch. Run activity counts them as `document_failures` and
+`document_failures_<kind>`.
+
+## Storage
+
+Each kept finding is a `doc_statement` SimpleProperty on the File, holding
+JSON:
+
+```json
+{"kind": "asset|relation|attribute", "subject": "…", "subject_type": "…",
+ "predicate": "…", "object": "…", "object_type": "…", "field": "…",
+ "detail": "…", "quote": "…", "sha256": "…", "model": "ollama/qwen3:8b",
+ "source": "amass-ai"}
+```
+
+A reading is journaled as `doc:<file id>:<time>`, with counts, the version's
+hash and the property tag IDs but no document text, so it can be undone
+(`UndoDocumentStatements`). `graph.DocumentTextProperties` lists the
+properties holding document text; the graph adapter withholds them from other
+models unless `share_with_assistants` is set.
+
+## The companion
+
+`ai.DocumentCompanion` implements `collect.Companion` and `collect.Finisher`
+for MCP-started runs:
+
+- **Passes:** it runs one every `Interval` (30 s) and once more when the
+  engine is done, reading at most `Batch` (3) documents per domain target per
+  pass.
+- **Holding the run open:** the collect manager holds the run open up to
+  `HoldLimit` (15 minutes) while a pass is running or documents remain. A
+  model that fails every document is treated as unavailable and doesn't hold
+  the run.
+- **Activity:** `documents_read`, `chunks_read`, `statements`,
+  `document_failures` (and by kind), `document_errors`, `leads` and
+  `leads_waiting`.
+
+### Leads
+
+`statementLeads` turns a stored finding into leads (both ends of a relation).
+`leadFor(type, value, region)` builds the asset for each collectable type:
+
+| Type | Lead |
+| --- | --- |
+| FQDN | lower-cased, trailing dot removed, valid domain name |
+| IPAddress, Netblock (masked), AutonomousSystem | parsed |
+| StreetAddress | passes `checkValue` |
+| Phone | parsed in `region` (`docmeta.PhoneRegion` of the document's host: the ccTLD's country, `.uk` → GB, otherwise US); `Raw` and `E164` both hold E.164 |
+| Identifier | email addresses only |
+| URL | http(s) with a host, none of `<>"'` backtick `{}|` or whitespace |
+| Organization | `properName` and not `genericUnit` |
+
+- **Generic units:** `genericUnit` treats a unit prefix ("office of",
+  "department of", "center for", …) plus at most three words as the
+  publisher's own unit, unless a public-body marker ("federal", "state",
+  "county", "city of", …) appears.
+- **Known assets:** a lead the database already holds (`knownLead`, an exact
+  `ResolveAsset` or `ResolveOrganizations`) is not submitted. Each name is
+  submitted once per run (`seen`).
+
+**Ordering (anchors):**
+- Any lead but an Organization is anchored.
+- An Organization is anchored when the same document relates it to an anchor
+  type: FQDN, URL, IPAddress, Netblock, AutonomousSystem, StreetAddress, Phone
+  or Identifier (`anchoredOrganizations`).
+- `next` submits anchored leads first. Organization-only leads go only while
+  nothing anchored waits, and only within `allow/orgOnlyShare` (a fifth) of
+  the allowance.
+- A queued Organization that a later document anchors is promoted.
+
+**Budget (`allowance`):**
+- It starts at `InitialDocumentLeads` (50), plus `leadsPerConfirmation` (2)
+  for each lead the engine confirmed.
+- Once `leadRateSample` (10) leads have been checked (a lead counts as checked
+  after `leadCheckAge`, 2 minutes), new leads wait while fewer than
+  `leadConfirmationRate` (half) of them are confirmed.
+- The ceiling is max(50, completed work items / `leadRunShare` (10)), lowered
+  to `max_leads` when that's positive; -1 submits nothing.
+
+Each submitted lead is tagged `amass-ai` with a `doc_lead` property
+(document URL, predicate, model, run) and journaled as
+`doclead:<run>:<entity>` (`RecordDocumentLead`).
+
+### Settlement
+
+`Finish` calls `review.SettleDocumentLeads`:
+
+- **Confirmed** (`LeadConfirmed`: the engine linked the lead to other assets,
+  or another source tagged it):
+  - the `doc_lead` property is copied onto each relation that touches the
+    lead;
+  - the footprint is recorded (`leadFootprint`): relations created after
+    submission, within 3 hops, up to 500 entities, the first 100 IDs kept;
+  - the lead is shown by `amass review applied` and listed asset by asset by
+    `amass review lead`.
+- **Otherwise:** the lead is retracted as expired (reviewer
+  `DocumentLeadExpiredReviewer`). Its tags are removed, and the asset too
+  when nothing links to it.
+
+`Finish` then records the run's `doc_relation` proposals (below).
+
+## Findings as evidence
+
+Every document signal has kind `document` and strength `supporting`. The
+weights are in `document_signals.json`:
+
+| | |
+| --- | --- |
+| Base | 0.15 |
+| First-party bonus | +0.05: the document is on one of the subject's own domains |
+| Corroboration bonus | +0.05: two or more distinct versions (SHA-256) state it |
+| Cap | 0.25; loading rejects a cap at or above 0.3, below every strong signal (0.35) |
+
+`DocumentWeight(firstParty, versions)` computes it. `GapSignal.Weight`
+carries it into `scoreSignals`, which uses the smaller of it and the catalog
+weight. Names resolve exactly: `docFold` folds case and whitespace only, and
+an ambiguous match gives nothing.
+
+### Relation proposals (`doc_relation`)
+
+`lens.FindDocumentRelations` reads a root's own documents (all first-party)
+and proposes, through the relation framework:
+
+| Predicates | Relation |
+| --- | --- |
+| `unit_of` | parent `org_unit` unit |
+| `subsidiary_of`, `acquired_by`, `owned_by` (Organization) | parent `subsidiary` child |
+| `funded_by` | org `funding_source` funder |
+| `holds_role` | org `member` person |
+| `located_at`, `headquartered_at` (stored address only) | org `street_address` / `hq_address` address |
+
+- **Skipped pairs:** pairs already linked by the label, or for organizations
+  by `org_unit` or `subsidiary` in either direction.
+- **Confidence:** 2 × weight (40 first-party, 50 corroborated), written on the
+  edge when accepted.
+- **Recording:** `amass db doc-relations` and `DocumentCompanion.Finish`
+  record them. They are review-gated: nothing applies them automatically.
+
+### Classifier signals
+
+`documentFindings` uses `ValueSearcher.FindByTagValue("File", "doc_statement",
+"\"predicate\":\"<p>\"", contains)` to find the Files holding a predicate's
+findings, at most 200 per predicate, read once per search.
+
+- **Duplicates:**
+  - `document_former_name` (`formerly_known_as`, `merged_with`) on a pair
+    whose names match.
+  - A parent, subsidiary, acquirer, owner or unit finding adds
+    `parent_or_subsidiary` (negative).
+  - `renamePairs` (in the sweep) and the seed loop in `CompareOrganizations`
+    compare pairs a document renames even when no blocking key pairs them.
+  - A pair whose only evidence is a document former name, with nothing against
+    it, goes to review.
+- **Ownership gaps:** `document_operator` (`operated_by`) on a stored FQDN or
+  URL when the object is the owner, with the first-party bonus when the
+  document is on one of the owner's domains (`gapSearch.documentSignals`).
+- **Lenses:**
+  - vendors lists `supplied_by` / `uses_product` from the root's own documents
+    under `KindDocument`;
+  - affiliation adds `document_affiliation` (`member_of`, `partner_of`).
+
+### Never an automatic write
+
+Document evidence can raise a candidate to review and add to its score, but it
+never causes or helps cause an automatic write:
+
+- **Merges:** `AutoMergeable` recomputes the decision on
+  `WithoutDocumentSignals(signals)` and requires propose, then a registry
+  signal or a contact record plus the same name.
+- **Ownership:**
+  - `GapCandidate.AutoDecision` and `OwnershipProposal.AutoDecision` are
+    computed without document signals, and automatic attribution acts on them.
+    Older journal entries without one fall back to `Decision`.
+  - When the ownership model decides, it scores `withoutDocumentEvidence(p)`.
+- **Relations:** `doc_relation` proposals are review-gated.
+
+## Tests
+
+- **Reading:**
+  - `internal/ai/documents_test.go`: validation, chunks, cut-off replies,
+    control characters, fragmented names.
+  - `internal/docmeta`: kerning and word splits.
+- **Runs and failures:** `internal/ai/document_runs_test.go`.
+- **Companion:** `internal/ai/document_companion_test.go` (leads, anchors,
+  ranking, failed documents) and `document_budget_test.go`.
+- **Evidence:** `internal/lens/document_relations_test.go`,
+  `document_evidence_test.go`, `document_lens_evidence_test.go`.
+- **Review:** `internal/review/document_evidence_test.go`.

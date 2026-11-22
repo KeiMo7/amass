@@ -9,6 +9,8 @@
     {"key": "shared_funder", "weight": 0.45,
       "rationale": "Organizations that received funds from the same investor or agency are often portfolio companies, partners, suppliers or grantees of one program. Co-funding is a relationship signal, not ownership, so it is moderate."},
     {"key": "shared_address", "weight": 0.35,
-      "rationale": "A shared postal address can mean a shared headquarters or registered office, but office buildings and registered-agent addresses host many unrelated tenants, so on its own it is weak."}
+      "rationale": "A shared postal address can mean a shared headquarters or registered office, but office buildings and registered-agent addresses host many unrelated tenants, so on its own it is weak."},
+    {"key": "document_affiliation", "weight": 0.25,
+      "rationale": "The subject's own documents state it is a member or partner of the other organization (member_of, partner_of), and the quote was checked against the text. A document finding is supporting evidence, never strong: it weighs 0.20 from one first-party document version and 0.25 when two or more agree (see document_signals.json), and the other organization must be named exactly."}
   ]
 }

@@ -146,16 +146,33 @@ func FindAffiliation(ctx context.Context, g graph.Graph, schema graph.SchemaCata
 		}
 	}
 
+	// the memberships and partnerships the subject's own documents state
+	docAffs, err := documentAffiliations(ctx, g, schema, root, limits, subjects)
+	if err != nil {
+		return out, err
+	}
+	docWeight := map[string]float64{}
+	for _, d := range docAffs {
+		add(d.org, docAffiliationKey, d.evidence)
+		docWeight[d.org.ID] = d.weight
+	}
+
 	sig := loadAffiliationSignals()
 	for id, c := range cands {
 		var labels []string
 		weights := make([]float64, 0, len(c.signals))
-		for _, key := range []string{"shared_phone", "shared_person", "shared_funder", "shared_address"} {
+		for _, key := range []string{"shared_phone", "shared_person", "shared_funder", "shared_address",
+			docAffiliationKey} {
 			ev, ok := c.signals[key]
 			if !ok {
 				continue
 			}
-			weights = append(weights, sig[key].Weight)
+			w := sig[key].Weight
+			if key == docAffiliationKey {
+				// a document signal's own weight, never above the catalog's
+				w = min(docWeight[id], w)
+			}
+			weights = append(weights, w)
 			labels = append(labels, signalLabel(key)+": "+ev)
 		}
 		out.Candidates = append(out.Candidates, AffiliatedOrg{
@@ -349,6 +366,8 @@ func signalLabel(key string) string {
 		return "shared funder"
 	case "shared_address":
 		return "shared address"
+	case docAffiliationKey:
+		return "stated in its own documents"
 	}
 	return key
 }

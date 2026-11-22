@@ -266,6 +266,13 @@ func FindVendors(ctx context.Context, g graph.Graph, schema graph.SchemaCatalog,
 
 	scan := scanTXT(records, graph.FQDNName(root))
 	r.Vendors = append(r.Vendors, scan.senders...)
+
+	// the suppliers and products the domain's own documents name, cited
+	docs, err := documentVendors(ctx, g, schema, root, opts.Limits, ownNames(r))
+	if err != nil {
+		return r, fmt.Errorf("document vendors of %s: %w", graph.AssetLabel(root), err)
+	}
+	r.Vendors = append(r.Vendors, docs...)
 	// An include in one of the institution's or an affiliate's domains
 	// (tumblr.com's _spf.automattic.com) is the family's own mail, not an
 	// unknown sender.

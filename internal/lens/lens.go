@@ -720,6 +720,10 @@ func ThirdPartyAnswer(r ThirdPartyReport) string {
 			fmt.Fprintf(&b, "%s:\n", kind)
 		}
 
+		if v.Kind == KindDocument {
+			fmt.Fprintf(&b, "  %s: %d document(s): %s\n", v.Vendor, v.Assets, strings.Join(v.Examples, "; "))
+			continue
+		}
 		fmt.Fprintf(&b, "  %s: %d asset(s), e.g. %s\n", v.Vendor, v.Assets, strings.Join(v.Examples, ", "))
 	}
 

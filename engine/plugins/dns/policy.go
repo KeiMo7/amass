@@ -37,6 +37,8 @@ var PolicyNames = []PolicyName{
 		Purpose: "SMTP TLS reporting policy",
 		Source:  "https://www.rfc-editor.org/rfc/rfc8460#section-3",
 	},
+	{Label: "default._bimi", Purpose: "BIMI assertion record",
+		Source: "https://datatracker.ietf.org/doc/html/draft-brand-indicators-for-message-identification#section-4.2"},
 	{Label: "selector1._domainkey", Purpose: "DKIM key (Microsoft 365)",
 		Source: "https://learn.microsoft.com/en-us/defender-office-365/email-authentication-dkim-configure"},
 	{Label: "selector2._domainkey", Purpose: "DKIM key (Microsoft 365)",

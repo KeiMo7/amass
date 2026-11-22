@@ -190,3 +190,21 @@ func TestPhoneRegion(t *testing.T) {
 		}
 	}
 }
+
+// Some producers write a PDF date without its "D:" prefix; it is read the
+// same, but a bare year or other short number is not taken for a date.
+func TestNormalizeDateBarePDFDate(t *testing.T) {
+	cases := map[string]string{
+		"20091105124021":        "2009-11-05T12:40:21Z",
+		"20091105":              "2009-11-05T00:00:00Z",
+		"D:20091105124021":      "2009-11-05T12:40:21Z",
+		"20091105124021-05'00'": "2009-11-05T17:40:21Z",
+		"2009":                  "2009",
+		"123":                   "123",
+	}
+	for in, want := range cases {
+		if got := NormalizeDate(in); got != want {
+			t.Errorf("NormalizeDate(%q) = %q, want %q", in, got, want)
+		}
+	}
+}

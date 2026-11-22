@@ -8,6 +8,7 @@ import (
 	"slices"
 	"time"
 
+	"github.com/owasp-amass/amass/v5/internal/docmeta"
 	"github.com/owasp-amass/amass/v5/internal/graph"
 )
 
@@ -31,6 +32,9 @@ func documentDated(ev []graph.Evidence) time.Time {
 	var newest time.Time
 	for _, name := range []string{propDocModified, propDocCreated} {
 		for _, v := range propertyValues(ev, name) {
+			// a date stored before it could be parsed (such as a PDF date
+			// written without its "D:" prefix) is read again here
+			v = docmeta.NormalizeDate(v)
 			for _, f := range documentDateFormats {
 				t, err := time.Parse(f, v)
 				if err != nil {

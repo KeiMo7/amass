@@ -145,6 +145,10 @@ func clean(s string) string {
 // maxField caps a metadata value.
 const maxField = 512
 
+// NormalizeDate turns a document date into RFC 3339 when it parses, or
+// returns it as written.
+func NormalizeDate(s string) string { return normalizeDate(s) }
+
 // normalizeDate turns a document date into RFC 3339 when it parses, or
 // returns it as written.
 func normalizeDate(s string) string {
@@ -167,7 +171,15 @@ func normalizeDate(s string) string {
 // offset (Z, or +HH'mm').
 var pdfDateRe = regexp.MustCompile(`^D:(\d{4})(\d{2})?(\d{2})?(\d{2})?(\d{2})?(\d{2})?(Z|[+-]\d{2}'?\d{2}'?)?`)
 
+// bareDateRe matches a PDF date written without its "D:" prefix, as some
+// producers do. At least the full date (YYYYMMDD) is required, so a bare
+// year or other number is not read as a date.
+var bareDateRe = regexp.MustCompile(`^\d{8}`)
+
 func parsePDFDate(s string) (time.Time, bool) {
+	if !strings.HasPrefix(s, "D:") && bareDateRe.MatchString(s) {
+		s = "D:" + s
+	}
 	m := pdfDateRe.FindStringSubmatch(s)
 	if m == nil {
 		return time.Time{}, false

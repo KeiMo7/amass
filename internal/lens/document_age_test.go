@@ -22,12 +22,17 @@ func TestDocumentDated(t *testing.T) {
 	}
 	// tool defaults and unparsable dates are no dates
 	ev = []graph.Evidence{graphtest.SimpleProp(propDocCreated, "1601-01-01T00:00:00Z"),
-		graphtest.SimpleProp(propDocModified, "D:2011")}
+		graphtest.SimpleProp(propDocModified, "sometime in 2011")}
 	if got := documentDated(ev); !got.IsZero() {
 		t.Errorf("documentDated = %v, want none", got)
 	}
 	if got := documentDated([]graph.Evidence{graphtest.SimpleProp(propDocCreated, "2024-02-29")}); got.Year() != 2024 {
 		t.Errorf("a bare date was not read: %v", got)
+	}
+	// a PDF date stored without its "D:" prefix, as some producers write it
+	ev = []graph.Evidence{graphtest.SimpleProp(propDocCreated, "20091105124021")}
+	if got := documentDated(ev); got.Year() != 2009 || got.Month() != time.November {
+		t.Errorf("documentDated = %v, want November 2009", got)
 	}
 }
 

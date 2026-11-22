@@ -557,6 +557,9 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 				"description": "List only proposals that are still awaiting a decision."},
 			"applied": map[string]any{"type": "boolean",
 				"description": "List instead the changes the AI classifier applied automatically."},
+			"lead": map[string]any{"type": "string",
+				"description": "Show one document lead (doclead:<run>:<entity>, as applied lists them) instead: " +
+					"its document, how it settled and, when confirmed, each asset it led to."},
 		}), readOnly(),
 		func(ctx context.Context, _ *mcp.CallToolRequest, raw json.RawMessage) (*mcp.CallToolResult, error) {
 			if op.Journal == "" {
@@ -564,13 +567,28 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 			}
 
 			var a struct {
-				Pending bool `json:"pending"`
-				Applied bool `json:"applied"`
+				Pending bool   `json:"pending"`
+				Applied bool   `json:"applied"`
+				Lead    string `json:"lead"`
 			}
 			if len(raw) > 0 {
 				if err := json.Unmarshal(raw, &a); err != nil {
 					return nil, err
 				}
+			}
+
+			if a.Lead != "" {
+				if runner.Graph == nil {
+					return nil, errors.New("no asset database is open")
+				}
+				text, err := lenscli.LeadFootprintText(op.Journal, a.Lead, func(id string) (graph.Asset, bool) {
+					asset, err := runner.Graph.GetAsset(ctx, id)
+					return asset, err == nil
+				})
+				if err != nil {
+					return nil, err
+				}
+				return textResult(text), nil
 			}
 
 			text, err := lenscli.ProposalsText(op.Journal)

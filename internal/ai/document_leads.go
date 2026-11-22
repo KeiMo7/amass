@@ -34,8 +34,10 @@ type documentLead struct {
 
 // leadFor returns the lead for an asset of type t a document names, when the
 // engine collects from that type. Types the engine has nothing to collect
-// from (people, products, places) are kept as statements only.
-func leadFor(t, value string) (documentLead, bool) {
+// from (people, products, places) are kept as statements only. A phone number
+// written without a country code is read in region (docmeta.PhoneRegion of
+// the document's host).
+func leadFor(t, value, region string) (documentLead, bool) {
 	value = strings.TrimSpace(value)
 	sel := func(field, v string) graph.AssetSelector { return graph.AssetSelector{Type: t, Field: field, Value: v} }
 	switch t {
@@ -79,10 +81,11 @@ func leadFor(t, value string) (documentLead, bool) {
 		return documentLead{asset: oamcontact.StreetAddress{Address: value}, selector: sel("address", value),
 			name: value}, checkValue(t, value) == ""
 	case "Phone":
-		num, err := phonenumbers.Parse(value, "")
+		if strings.HasPrefix(value, "+") {
+			region = ""
+		}
+		num, err := phonenumbers.Parse(value, region)
 		if err != nil || !phonenumbers.IsValidNumber(num) {
-			// without a country code the number cannot be put in E.164,
-			// the Phone key
 			return documentLead{}, false
 		}
 		// the Phone key is Raw, and the engine finds phones by e164, so both
@@ -99,6 +102,10 @@ func leadFor(t, value string) (documentLead, bool) {
 		return documentLead{asset: oamgen.Identifier{UniqueID: id, ID: addr, Type: oamgen.EmailAddress},
 			selector: sel("unique_id", id), name: addr}, true
 	case "URL":
+		// a URL cut from broken markup holds what a real one escapes
+		if strings.ContainsAny(value, "<>\"'`{}| \t\r\n") {
+			return documentLead{}, false
+		}
 		u, err := url.Parse(value)
 		if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Host == "" {
 			return documentLead{}, false
@@ -118,10 +125,10 @@ func leadFor(t, value string) (documentLead, bool) {
 
 // statementLeads returns the leads a stored finding gives: the asset it
 // names, both ends of a relation, or the asset an attribute describes.
-func statementLeads(s review.StoredStatement) []documentLead {
+func statementLeads(s review.StoredStatement, region string) []documentLead {
 	var out []documentLead
 	add := func(t, v string) {
-		if l, ok := leadFor(t, v); ok {
+		if l, ok := leadFor(t, v, region); ok {
 			out = append(out, l)
 		}
 	}

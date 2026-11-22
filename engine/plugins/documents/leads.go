@@ -169,7 +169,9 @@ func (d *documents) contentLeads(e *et.Event, fent *dbt.Entity, u *oamurl.URL, d
 		hosts[strings.ToLower(x.Host)] = true
 	}
 	for _, link := range content.Links {
-		addURL(support.RawURLToOAM(link))
+		// a link annotation can be a mailto: or tel: link, or cut from
+		// broken markup
+		addURL(support.WebURL(link))
 	}
 	// a URL written without a scheme ("portal.example.edu/login") is taken
 	// only when in scope: out of scope, the relaxed pattern also matches
@@ -328,20 +330,9 @@ func phoneNumbers(s, region string) []*oamcon.Phone {
 	return out
 }
 
-// regionOf is the region a document's national phone numbers are read in:
-// the country of its host's country-code domain, otherwise US (where the
-// North American groupings phoneRe accepts are used).
-func regionOf(host string) string {
-	if i := strings.LastIndexByte(host, '.'); i >= 0 {
-		if tld := strings.ToUpper(host[i+1:]); len(tld) == 2 {
-			if tld == "UK" {
-				return "GB"
-			}
-			return tld
-		}
-	}
-	return "US"
-}
+// regionOf is the region a document's national phone numbers are read in
+// (docmeta.PhoneRegion).
+func regionOf(host string) string { return docmeta.PhoneRegion(host) }
 
 func rel(name string) oam.Relation { return &oamgen.SimpleRelation{Name: name} }
 

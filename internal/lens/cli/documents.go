@@ -6,11 +6,14 @@ package cli
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"io"
 	"sort"
 	"strings"
+	"time"
 
+	"github.com/owasp-amass/amass/v5/internal/graph"
 	"github.com/owasp-amass/amass/v5/internal/review"
 )
 
@@ -43,6 +46,81 @@ func retractDocument(ctx context.Context, w review.DocumentLeadStore, journalPat
 // isDocumentDecision reports whether id names a document lead or reading.
 func isDocumentDecision(id string) bool {
 	return review.IsDocumentLead(id) || review.IsDocumentReading(id)
+}
+
+// AssetLookup returns a stored asset by its ID, and whether it is stored.
+type AssetLookup func(id string) (graph.Asset, bool)
+
+// LeadFootprintText describes one document lead: where it came from, how it
+// settled and, when the engine confirmed it, what it led to, asset by asset,
+// so its value can be judged. Assets removed since the lead settled are
+// listed as removed.
+func LeadFootprintText(journalPath, id string, lookup AssetLookup) (string, error) {
+	if journalPath == "" {
+		return "", errors.New("no review journal is configured")
+	}
+	leads, err := (&review.Journal{Path: journalPath}).DocumentLeads()
+	if err != nil {
+		return "", err
+	}
+	var l *review.DocumentLead
+	for i := range leads {
+		if leads[i].ID == id {
+			l = &leads[i]
+		}
+	}
+	if l == nil {
+		return "", fmt.Errorf("no document lead %s", id)
+	}
+
+	kind := l.Type
+	if kind == "" {
+		kind = "Organization"
+	}
+	var b strings.Builder
+	fmt.Fprintf(&b, "%s: the %s %q, named (%s) in %s (read by %s), given to enumeration %s.\n", l.ID, kind, l.Name,
+		l.Predicate, l.URL, l.Model, l.RunID)
+	switch {
+	case l.Status == review.ProposalRetracted:
+		fmt.Fprintf(&b, "Retracted by %s at %s.\n", l.Reviewer, l.At.Format(time.RFC3339))
+		return b.String(), nil
+	case !l.Confirmed:
+		b.WriteString("Not settled yet: its enumeration has not ended.\n")
+		return b.String(), nil
+	case l.Footprint == nil:
+		b.WriteString("Confirmed.\n")
+		return b.String(), nil
+	}
+
+	fmt.Fprintln(&b, footprintText(l.Footprint))
+	byType := map[string][]string{}
+	for _, eid := range l.Footprint.EntityIDs {
+		a, ok := lookup(eid)
+		if !ok {
+			byType["removed since"] = append(byType["removed since"], eid)
+			continue
+		}
+		byType[a.Type] = append(byType[a.Type], graph.AssetLabel(a)+" ["+eid+"]")
+	}
+	kinds := make([]string, 0, len(byType))
+	for k := range byType {
+		kinds = append(kinds, k)
+	}
+	sort.Strings(kinds)
+	for _, k := range kinds {
+		fmt.Fprintf(&b, "  %s:\n", k)
+		for _, v := range byType[k] {
+			fmt.Fprintf(&b, "    %s\n", v)
+		}
+	}
+	listed, total := len(l.Footprint.EntityIDs), 0
+	for _, n := range l.Footprint.Assets {
+		total += n
+	}
+	if listed < total {
+		fmt.Fprintf(&b, "  (the first %d of %d assets are listed)\n", listed, total)
+	}
+	return b.String(), nil
 }
 
 // footprintText describes what the engine collected from a confirmed lead.

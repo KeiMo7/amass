@@ -93,6 +93,10 @@ func harvest(e *et.Event, src *et.Source, pname string, rows []archiveRow) ([]*d
 			}
 		}
 
+		if support.MalformedURL(row.raw) {
+			// a link cut from broken markup, captured as it was
+			continue
+		}
 		u := support.RawURLToOAM(row.raw)
 		if u == nil || u.Host == "" || rules.IsStaticPath(u.Path) {
 			continue

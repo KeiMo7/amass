@@ -123,6 +123,20 @@ func webURL(match string) *url.URL {
 	return RawURLToOAM(match)
 }
 
+// WebURL turns a link read from a document, page or record into a web URL,
+// or nil when it is not one (webURL): a mailto: or tel: link, or a bare email
+// address, is none, and the URL ends where an unescaped bracket or quote
+// starts.
+func WebURL(raw string) *url.URL { return webURL(strings.TrimSpace(raw)) }
+
+// MalformedURL reports whether a URL holds characters a well-formed URL
+// escapes: whitespace, brackets, quotes or a backtick. Archives and crawlers
+// record links cut out of broken markup ("…/?subject='To" from a mailto: link
+// read as a relative one); such a capture names no real page.
+func MalformedURL(raw string) bool {
+	return strings.ContainsAny(raw, "<>\"'`{}| \t\r\n")
+}
+
 // schemere matches a leading URI scheme ("mailto:", "tel:"), but not a host
 // with a port ("example.com:8080").
 var schemere = regexp.MustCompile(`^[a-z][a-z0-9+.-]*:[^0-9]`)

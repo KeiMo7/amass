@@ -21,6 +21,7 @@ import (
 	"time"
 
 	"github.com/owasp-amass/amass/v5/config"
+	"github.com/owasp-amass/amass/v5/internal/graph"
 	"github.com/owasp-amass/amass/v5/internal/graph/oamrepo"
 	"github.com/owasp-amass/amass/v5/internal/lens"
 	"github.com/owasp-amass/amass/v5/internal/tools"
@@ -56,6 +57,7 @@ var dbOps = map[string]string{
 	"identity":          "identity-conflicts",
 	"person-named":      "person-named",
 	"org-units":         "org-units",
+	"doc-relations":     "doc-relations",
 }
 
 // The registered subject lenses are amass lens commands too.
@@ -76,6 +78,8 @@ var reviewOps = map[string]string{
 	"duplicate-signals":      "duplicate-signals",
 	"horizontal-signals":     "horizontal-signals",
 	"infrastructure-signals": "infrastructure-signals",
+	"applied":                "applied",
+	"lead":                   "lead",
 }
 
 // Operations maps each operation this package runs, by the name amass ai
@@ -217,7 +221,7 @@ func run(group string, _ io.Reader, out, errout io.Writer, args []string) error 
 		"Start of the changes lens window: a date (2026-11-01), an RFC 3339 time, or an age such as 7d or 72h (default 30d)")
 	fs.StringVar(&withDomain, "with", "", "Second domain for the compare lens")
 	fs.StringVar(&withOrg, "with-org", "", "Second organization for the compare lens")
-	fs.StringVar(&proposalID, "proposal", "", "Proposal ID for approve, reject or retract")
+	fs.StringVar(&proposalID, "proposal", "", "Proposal ID for approve, reject, retract or lead")
 	fs.StringVar(&reviewer, "reviewer", "", "Name recorded with an approve, reject or retract decision")
 	fs.IntVar(&lensAssets, "max-assets", 0, fmt.Sprintf("Maximum controlled assets a lens follows "+
 		"(default 2000, up to %d); larger runs may need a longer -investigation-timeout", lens.LensMaxAssetsLimit))
@@ -346,6 +350,8 @@ func run(group string, _ io.Reader, out, errout io.Writer, args []string) error 
 		return listPersonNamed(ctx, g, journalPath, format, true, out, errout)
 	case "org-units":
 		return listOrgUnits(ctx, g, journalPath, format, true, out, errout)
+	case "doc-relations":
+		return listDocRelations(ctx, g, domainName, orgName, journalPath, format, out, errout)
 	case "vendors":
 		return listVendors(ctx, g, domainName, limits, format, true, out)
 	case "family":
@@ -362,6 +368,19 @@ func run(group string, _ io.Reader, out, errout io.Writer, args []string) error 
 		return listAccounts(ctx, g, domainName, orgName, journalPath, format, out, errout)
 	case "applied":
 		return listApplied(journalPath, format, out)
+	case "lead":
+		if proposalID == "" {
+			return errors.New("-proposal required: the document lead's ID (doclead:<run>:<entity>)")
+		}
+		text, err := LeadFootprintText(journalPath, proposalID, func(id string) (graph.Asset, bool) {
+			a, err := g.GetAsset(ctx, id)
+			return a, err == nil
+		})
+		if err != nil {
+			return err
+		}
+		_, err = fmt.Fprint(out, text)
+		return err
 	}
 
 	if l, ok := lens.SubjectLensNamed(operation); ok {

@@ -12,6 +12,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/owasp-amass/amass/v5/internal/graph"
 	"github.com/owasp-amass/amass/v5/internal/review"
 )
 
@@ -61,5 +62,61 @@ func TestDocumentLeadsAreAppliedDecisions(t *testing.T) {
 	}
 	if !isDocumentDecision("doclead:run1:a") || !isDocumentDecision("doc:f1:2026") || isDocumentDecision("acct-1") {
 		t.Error("document decision IDs are not recognized")
+	}
+}
+
+// One lead's footprint lists what it led to, asset by asset, and marks an
+// asset removed since; an unsettled or retracted lead says so.
+func TestLeadFootprintText(t *testing.T) {
+	journal := filepath.Join(t.TempDir(), "review.jsonl")
+	write := func(l review.DocumentLead) string {
+		l.RunID, l.Name, l.URL, l.Predicate, l.Model = "run1", "Sodexho", "https://a.example/App.pdf", "named",
+			"ollama/qwen3:8b"
+		l.Type, l.At = "Organization", time.Now().UTC()
+		data, _ := json.Marshal(map[string]any{"kind": "doc_lead", "data": l})
+		return string(data) + "\n"
+	}
+	content := write(review.DocumentLead{ID: "doclead:run1:a", EntityID: "a", Status: review.ProposalApplied,
+		Reviewer: review.DocumentLeadReviewer, Confirmed: true, Footprint: &review.LeadFootprint{
+			Assets: map[string]int{"Account": 1, "FQDN": 2}, Relations: 3, EntityIDs: []string{"x1", "x2", "gone"}}}) +
+		write(review.DocumentLead{ID: "doclead:run1:b", EntityID: "b", Status: review.ProposalApplied,
+			Reviewer: review.DocumentLeadReviewer}) +
+		write(review.DocumentLead{ID: "doclead:run1:c", EntityID: "c", Status: review.ProposalRetracted,
+			Reviewer: review.DocumentLeadExpiredReviewer})
+	if err := os.WriteFile(journal, []byte(content), 0o600); err != nil {
+		t.Fatal(err)
+	}
+	assets := map[string]graph.Asset{
+		"x1": {ID: "x1", Type: "Account", Key: "acct:1"},
+		"x2": {ID: "x2", Type: "FQDN", Key: "dining.example.com"},
+	}
+	lookup := func(id string) (graph.Asset, bool) { a, ok := assets[id]; return a, ok }
+
+	text, err := LeadFootprintText(journal, "doclead:run1:a", lookup)
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, want := range []string{`the Organization "Sodexho", named (named) in https://a.example/App.pdf`,
+		"Confirmed; it led to 1 Account, 2 FQDN over 3 relation(s).", "  Account:\n", "  FQDN:\n",
+		"[x2]", "  removed since:\n    gone", "(the first 3 of 3 assets are listed)"} {
+		if want == "(the first 3 of 3 assets are listed)" {
+			if strings.Contains(text, want) {
+				t.Errorf("a complete list says it is partial:\n%s", text)
+			}
+			continue
+		}
+		if !strings.Contains(text, want) {
+			t.Errorf("missing %q in:\n%s", want, text)
+		}
+	}
+
+	if text, _ := LeadFootprintText(journal, "doclead:run1:b", lookup); !strings.Contains(text, "Not settled yet") {
+		t.Errorf("unsettled lead: %s", text)
+	}
+	if text, _ := LeadFootprintText(journal, "doclead:run1:c", lookup); !strings.Contains(text, "Retracted by") {
+		t.Errorf("retracted lead: %s", text)
+	}
+	if _, err := LeadFootprintText(journal, "doclead:run1:z", lookup); err == nil {
+		t.Error("an unknown lead was described")
 	}
 }

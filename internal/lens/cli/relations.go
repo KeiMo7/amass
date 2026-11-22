@@ -146,6 +146,44 @@ func listOrgUnits(ctx context.Context, g graph.Graph, journalPath, format string
 	return fmt.Errorf("org-units format %q: use text or json", format)
 }
 
+// listDocRelations proposes the relationships the documents a domain or
+// organization publishes state between stored assets (a unit and its parent,
+// a subsidiary, a funder, a role, an address), from the document model's
+// stored findings, and records each as a review-gated relation proposal:
+// nothing in the database changes until a reviewer approves it.
+func listDocRelations(ctx context.Context, g oamrepo.Adapter, domain, org, journalPath, format string,
+	out, errout io.Writer) error {
+	root, err := groupRoot(ctx, g, domain, org)
+	if err != nil {
+		return err
+	}
+	r, err := lens.FindDocumentRelations(ctx, g, oamrepo.Catalog{}, root, lens.LensLimits{})
+	if err != nil {
+		return err
+	}
+
+	if journalPath != "" {
+		added, err := (&review.Journal{Path: journalPath}).SubmitRelations(review.RelationProposals(r))
+		if err != nil {
+			return fmt.Errorf("record document relation proposals: %w", err)
+		}
+
+		_, _ = fmt.Fprintf(errout, "%d new document relation proposal(s) recorded in %s; review with "+
+			"`amass review proposals` and accept with `amass review approve -proposal <id> -reviewer <you>`\n",
+			len(added), journalPath)
+	}
+
+	switch format {
+	case "text":
+		_, err := fmt.Fprint(out, lens.FormatRelationReport(r))
+		return err
+	case "json":
+		return writeJSON(out, r)
+	}
+
+	return fmt.Errorf("doc-relations format %q: use text or json", format)
+}
+
 // approveRelation writes an accepted relation proposal's edge, tagged amass-ai
 // with the proposal's confidence, and records the apply so it can be undone.
 func approveRelation(ctx context.Context, w review.RelationApplier, journalPath, id, reviewer string,

@@ -6,13 +6,17 @@ package ai
 
 import (
 	"context"
+	"net/url"
 	"strings"
 	"sync"
 	"time"
 
 	"github.com/owasp-amass/amass/v5/internal/ai/llm"
 	"github.com/owasp-amass/amass/v5/internal/collect"
+	"github.com/owasp-amass/amass/v5/internal/docmeta"
 	"github.com/owasp-amass/amass/v5/internal/graph"
+	"github.com/owasp-amass/amass/v5/internal/graph/oamrepo"
+	"github.com/owasp-amass/amass/v5/internal/lens"
 	"github.com/owasp-amass/amass/v5/internal/review"
 )
 
@@ -168,12 +172,46 @@ func (c *DocumentCompanion) Begin(ctx context.Context, run collect.Run, act coll
 // Finish implements collect.Finisher: when the run ends, each lead it was
 // given is settled. One the engine linked to other assets, or another source
 // reported, is kept and the relations it led to cite the document; any other
-// is retracted as expired.
+// is retracted as expired. Then the relationships the targets' documents
+// state between stored assets are recorded as review-gated proposals
+// (lens.FindDocumentRelations); nothing is written until a reviewer accepts
+// one.
 func (c *DocumentCompanion) Finish(ctx context.Context, run collect.Run) {
 	if c == nil || c.Store == nil || c.Journal == nil {
 		return
 	}
 	_, _, _ = review.SettleDocumentLeads(ctx, c.Store, c.Journal, run.ID)
+	_, _ = c.recordDocumentRelations(ctx, run)
+}
+
+// recordDocumentRelations records the relationships the run's targets'
+// documents state as relation proposals, and returns how many were new.
+func (c *DocumentCompanion) recordDocumentRelations(ctx context.Context, run collect.Run) (int, error) {
+	if c.Graph == nil {
+		return 0, nil
+	}
+	schema := c.Schema
+	if schema == nil {
+		schema = oamrepo.Catalog{}
+	}
+
+	added := 0
+	for _, domain := range documentTargets(run) {
+		root, err := DocumentRoot(ctx, c.Graph, domain, "")
+		if err != nil {
+			continue
+		}
+		r, err := lens.FindDocumentRelations(ctx, c.Graph, schema, root, lens.LensLimits{})
+		if err != nil {
+			return added, err
+		}
+		got, err := c.Journal.SubmitRelations(review.RelationProposals(r))
+		added += len(got)
+		if err != nil {
+			return added, err
+		}
+	}
+	return added, nil
 }
 
 // documentTargets returns the domains a run collects.
@@ -268,8 +306,12 @@ func (c *DocumentCompanion) submitLeads(ctx context.Context, run collect.Run, ac
 	}
 
 	anchored := anchoredOrganizations(d.Stored)
+	region := "US"
+	if u, err := url.Parse(d.URL); err == nil {
+		region = docmeta.PhoneRegion(u.Hostname())
+	}
 	for _, s := range d.Stored {
-		for _, l := range statementLeads(s) {
+		for _, l := range statementLeads(s, region) {
 			key := strings.ToLower(string(l.asset.AssetType()) + "\x00" + l.name)
 			orgOnly := !anchoredLead(l, anchored)
 			if st.seen[key] {

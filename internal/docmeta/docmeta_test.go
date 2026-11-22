@@ -179,3 +179,14 @@ func TestUsernames(t *testing.T) {
 		t.Errorf("usernames %v", got)
 	}
 }
+
+// National phone numbers are read in the country of the document's
+// country-code domain, otherwise in the US.
+func TestPhoneRegion(t *testing.T) {
+	for host, want := range map[string]string{"www.mvcc.edu": "US", "www.example.co.uk": "GB", "www.example.de": "DE",
+		"example.de.": "DE", "example.com": "US", "": "US"} {
+		if got := PhoneRegion(host); got != want {
+			t.Errorf("PhoneRegion(%q) = %s, want %s", host, got, want)
+		}
+	}
+}

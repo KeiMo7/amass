@@ -162,10 +162,11 @@ func TestLeadFor(t *testing.T) {
 		{"Identifier", "Jane.Doe@Example.edu", "email:jane.doe@example.edu"},
 		{"URL", "https://portal.example.edu/login", "https://portal.example.edu/login"},
 		{"Phone", "+1 315-866-0300", "+13158660300"},
+		{"Phone", "(315) 792-5400", "+13157925400"},
 		{"StreetAddress", "100 Reservoir Rd, Herkimer, NY 13350", "100 Reservoir Rd, Herkimer, NY 13350"},
 		{"Organization", "Herkimer College Foundation", "Herkimer College Foundation"},
 	} {
-		l, ok := leadFor(tc.typ, tc.value)
+		l, ok := leadFor(tc.typ, tc.value, "US")
 		if !ok || l.asset.Key() != tc.key || string(l.asset.AssetType()) != tc.typ {
 			t.Errorf("leadFor(%s, %q) = %v %v, want key %q", tc.typ, tc.value, l.asset, ok, tc.key)
 		}
@@ -174,8 +175,9 @@ func TestLeadFor(t *testing.T) {
 		{"Person", "Jane Doe"}, {"Product", "Workday"}, {"FQDN", "not a host"}, {"Phone", "555-0100"},
 		{"Identifier", "LEI 5493001KJTIIGC8Y1R12"}, {"Organization", "third parties"},
 		{"Organization", "Office of Events"}, {"Organization", "Department of Computer Science"},
+		{"URL", "https://www.mvcc.edu/about/?subject='To"}, {"URL", "mailto:help@mvcc.edu"},
 	} {
-		if _, ok := leadFor(tc.typ, tc.value); ok {
+		if _, ok := leadFor(tc.typ, tc.value, "US"); ok {
 			t.Errorf("leadFor(%s, %q) gave a lead", tc.typ, tc.value)
 		}
 	}
@@ -233,7 +235,7 @@ func TestAnchoredOrganizations(t *testing.T) {
 		"Herkimer County Community College": false,
 		"Sodexho":                           false,
 	} {
-		l, ok := leadFor("Organization", name)
+		l, ok := leadFor("Organization", name, "US")
 		if !ok {
 			t.Fatalf("leadFor(Organization, %q) gave no lead", name)
 		}
@@ -241,7 +243,7 @@ func TestAnchoredOrganizations(t *testing.T) {
 			t.Errorf("anchoredLead(%q) = %v, want %v", name, got, want)
 		}
 	}
-	if l, _ := leadFor("FQDN", "vpn.example.edu"); !anchoredLead(l, anchored) {
+	if l, _ := leadFor("FQDN", "vpn.example.edu", "US"); !anchoredLead(l, anchored) {
 		t.Error("a host was held back as unanchored")
 	}
 }

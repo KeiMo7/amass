@@ -170,3 +170,29 @@ func TestTransferDate(t *testing.T) {
 		}
 	}
 }
+
+// A link read from a document is a web URL only when it is one: mailto: and
+// tel: links are not, and a link ends at an unescaped quote. A capture holding
+// what a URL escapes is malformed.
+func TestWebURLAndMalformedURL(t *testing.T) {
+	if u := WebURL(" https://www.example.edu/apply "); u == nil || u.Raw != "https://www.example.edu/apply" {
+		t.Errorf("WebURL kept %v", u)
+	}
+	for _, raw := range []string{"mailto:help@example.edu?subject='To", "tel:+13155550100", "help@example.edu"} {
+		if u := WebURL(raw); u != nil {
+			t.Errorf("WebURL(%q) = %v, want none", raw, u.Raw)
+		}
+	}
+	if u := WebURL("https://www.example.edu/x?subject='To"); u == nil || strings.Contains(u.Raw, "'") {
+		t.Errorf("WebURL did not end the link at the quote: %v", u)
+	}
+	for raw, want := range map[string]bool{
+		"https://www.example.edu/x?subject='To": true, "https://www.example.edu/a b": true,
+		"https://www.example.edu/<x>": true, "https://www.example.edu/x?q=%27a%27&p=1": false,
+		"https://www.example.edu/apply": false,
+	} {
+		if got := MalformedURL(raw); got != want {
+			t.Errorf("MalformedURL(%q) = %v, want %v", raw, got, want)
+		}
+	}
+}

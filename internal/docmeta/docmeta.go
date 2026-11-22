@@ -189,3 +189,20 @@ func parsePDFDate(s string) (time.Time, bool) {
 		part(5, "00")+":"+part(6, "00")+zone)
 	return t, err == nil
 }
+
+// PhoneRegion is the region a document's national phone numbers (written
+// without a country code) are read in: the country of its host's
+// country-code domain, otherwise US, where the North American groupings
+// documents use are read.
+func PhoneRegion(host string) string {
+	host = strings.TrimSuffix(host, ".")
+	if i := strings.LastIndexByte(host, '.'); i >= 0 {
+		if tld := strings.ToUpper(host[i+1:]); len(tld) == 2 {
+			if tld == "UK" {
+				return "GB"
+			}
+			return tld
+		}
+	}
+	return "US"
+}

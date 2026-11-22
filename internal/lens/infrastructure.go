@@ -110,6 +110,11 @@ func FindRelatedInfrastructure(ctx context.Context, g graph.Graph, orgID string)
 	if err != nil {
 		return report, err
 	}
+	// the organization's autonomous systems and netblocks found below, for
+	// the routing security signals that start from them
+	ownAS := map[string]graph.WitnessEdge{}
+	ownASNumbers := map[string]bool{}
+	ownNetblocks := map[string]bool{}
 
 	ipnetSig := "shared netblock registrant organization: " + name
 	asnSig := "shared AS registrant organization: " + name
@@ -144,6 +149,11 @@ contacts:
 					w, orgWitness(ce)) {
 					break contacts
 				}
+				if nbs, err := g.Edges(ctx, re.FromID, "in", "registration", time.Time{}); err == nil {
+					for _, ne := range nbs {
+						ownNetblocks[ne.FromID] = true
+					}
+				}
 			case "AutnumRecord":
 				w := graph.WitnessEdge{EdgeID: re.ID, Label: "registrant", RelationType: re.Type,
 					FromID: re.FromID, FromType: "AutnumRecord", ToID: re.ToID, ToType: "ContactRecord"}
@@ -163,6 +173,10 @@ contacts:
 				for _, ae := range ases {
 					regW := graph.WitnessEdge{EdgeID: ae.ID, Label: "registration", RelationType: ae.Type,
 						FromID: ae.FromID, FromType: "AutonomousSystem", ToID: ae.ToID, ToType: "AutnumRecord"}
+					ownAS[ae.FromID] = regW
+					if as, err := g.GetAsset(ctx, ae.FromID); err == nil {
+						ownASNumbers["AS"+graph.ContentString(as, "number")] = true
+					}
 					anns, err := g.Edges(ctx, ae.FromID, "out", "announces", time.Time{})
 					if err != nil || len(anns) > asnMaxNetblocks {
 						continue // a very large or transit AS is not evidence of ownership
@@ -172,6 +186,7 @@ contacts:
 						if err != nil {
 							continue
 						}
+						ownNetblocks[ann.ToID] = true
 						annW := graph.WitnessEdge{EdgeID: ann.ID, Label: "announces", RelationType: ann.Type,
 							FromID: ann.FromID, FromType: "AutonomousSystem", ToID: ann.ToID, ToType: "Netblock"}
 						if !add("Netblock", graph.ContentString(nb, "cidr"), SigASNAnnouncedNetblock,
@@ -183,6 +198,8 @@ contacts:
 			}
 		}
 	}
+
+	routingSecurity(ctx, g, name, ownAS, ownASNumbers, ownNetblocks, add)
 
 	report.Assets = make([]InfrastructureAsset, 0, len(acc))
 	for _, a := range acc {

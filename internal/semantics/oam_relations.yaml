@@ -275,12 +275,18 @@ relations:
   - {source: Netblock, label: contains, relation_type: SimpleRelation, destination: IPAddress,
      attribution: same_subject, purpose: network,
      note: "Address within the block; the block registrant controls it (engine scope association)."}
+  - {source: Netblock, label: irr_maintainer, relation_type: SimpleRelation, destination: Identifier,
+     attribution: attribute, purpose: network,
+     note: "The routing registry (IRR) maintainer that keeps the netblock's route object: the account an operator files its route objects under. Providers keep route objects for customers, so the maintainer shows who files them, not who holds the space."}
   - {source: Netblock, label: provider, relation_type: SimpleRelation, destination: Organization,
      attribution: infrastructure, purpose: network,
      note: "The cloud or CDN provider that publishes this prefix as its own, from the provider's authoritative IP-range feed. It operates the network, like an AS announcing the block, and does not own the addresses' tenants; hosting, not ownership."}
   - {source: Netblock, label: registration, relation_type: SimpleRelation, destination: IPNetRecord,
      attribution: same_subject, purpose: registration,
      note: "The address block registration record (engine scope association)."}
+  - {source: Netblock, label: rpki_origin, relation_type: SimpleRelation, destination: AutonomousSystem,
+     attribution: infrastructure, purpose: network,
+     note: "An AS a valid RPKI ROA authorizes to announce the netblock. Only the holder of the space can sign a ROA, so it ties the space to the AS's operator; a provider can sign one naming a customer's AS."}
   - {source: Organization, label: account, relation_type: SimpleRelation, destination: Account,
      attribution: controls, purpose: identity,
      note: "An account held by the organization."}

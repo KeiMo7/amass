@@ -36,6 +36,7 @@ import (
 	"github.com/owasp-amass/amass/v5/engine/plugins/identity"
 	"github.com/owasp-amass/amass/v5/engine/plugins/lookalike"
 	mtasts "github.com/owasp-amass/amass/v5/engine/plugins/mta_sts"
+	"github.com/owasp-amass/amass/v5/engine/plugins/routing"
 	"github.com/owasp-amass/amass/v5/engine/plugins/scrape"
 	securitytxt "github.com/owasp-amass/amass/v5/engine/plugins/security_txt"
 	bannerp "github.com/owasp-amass/amass/v5/engine/plugins/service_discovery/banner_probes"
@@ -102,6 +103,7 @@ var pluginNewFuncs = []func() et.Plugin{
 	sshp.NewSSHProbing,
 	bannerp.NewBannerProbing,
 	rdap.NewRDAP,
+	routing.NewRoutingRecords,
 	wikidata.NewWikidata,
 	schemaorg.NewSchemaOrg,
 	shodan.NewShodan,

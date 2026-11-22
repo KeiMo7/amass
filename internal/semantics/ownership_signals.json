@@ -295,6 +295,23 @@
       ]
     },
     {
+      "id": "roa_authorizes_own_asn",
+      "title": "RPKI ROA authorizes the organization's AS",
+      "kind": "operation",
+      "strength": "strong",
+      "weight": 0.4,
+      "matcher": "rpki_own_asn",
+      "finds": "A netblock the organization does not yet own that a valid RPKI Route Origin Authorization (ROA) authorizes one of the organization's autonomous systems to announce.",
+      "rationale": "Only the holder of address space can sign a ROA for it. A ROA naming the organization's AS is the holder's signed statement that the organization's network routes the prefix, so the netblock is operated for the organization.",
+      "guards": [
+        "Only valid ROAs whose prefix and maximum length cover the netblock count.",
+        "An AS with ROAs for more than 512 netblocks gives no signal."
+      ],
+      "counter_indications": [
+        "A provider can sign a ROA for its own space naming a customer's AS, so the organization operates the netblock without holding it."
+      ]
+    },
+    {
       "id": "self_hosted_dns",
       "title": "Name or mail servers run by the organization",
       "kind": "operation",

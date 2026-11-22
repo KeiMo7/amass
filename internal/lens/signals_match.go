@@ -167,6 +167,8 @@ func (g *gapSearch) valueSignalsOf(a graph.Asset, pass int) error {
 
 			return g.redirectSignals(a)
 		}
+	case "AutonomousSystem":
+		return g.roaSignals(a)
 	case "TLSCertificate":
 		return g.certificateSignals(a)
 	case "DomainRecord":

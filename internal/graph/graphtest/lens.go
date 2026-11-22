@@ -16,6 +16,8 @@ import (
 // subset. Regenerate it when the table changes.
 var oamSemantics = map[string]graph.RelationMeaning{
 	"Account|id|SimpleRelation|Identifier":                             {Attribution: "attribute", Purpose: "identity", Vendor: true},
+	"Netblock|irr_maintainer|SimpleRelation|Identifier":                {Attribution: "attribute", Purpose: "network", Vendor: true},
+	"Netblock|rpki_origin|SimpleRelation|AutonomousSystem":             {Attribution: "infrastructure", Purpose: "network", Vendor: true},
 	"Account|in_scope|SimpleRelation|FQDN":                             {Attribution: "shared", Purpose: "corporate", Vendor: true},
 	"Account|in_scope|SimpleRelation|Netblock":                         {Attribution: "shared", Purpose: "corporate", Vendor: true},
 	"Account|in_scope|SimpleRelation|URL":                              {Attribution: "shared", Purpose: "corporate", Vendor: true},

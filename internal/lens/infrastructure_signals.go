@@ -25,6 +25,15 @@ const (
 	SigIPNetRegistrantOrg   = "ipnet-registrant-org"
 	SigASNRegistrantOrg     = "asn-registrant-org"
 	SigASNAnnouncedNetblock = "asn-announced-netblock"
+	// SigROAOwnASN is a netblock a valid RPKI ROA authorizes one of the
+	// organization's ASes to announce.
+	SigROAOwnASN = "roa-authorizes-own-asn"
+	// SigIRRMaintainerOwn is a netblock whose routing registry route object
+	// is kept by a maintainer of the organization's own netblocks, when every
+	// route that maintainer keeps is originated by the organization's ASes;
+	// SigSharedIRRMaintainer the same maintainer otherwise.
+	SigIRRMaintainerOwn    = "irr-maintainer-own-origins"
+	SigSharedIRRMaintainer = "shared-irr-maintainer"
 )
 
 // Infrastructure signal matchers: how each signal is found in the graph.
@@ -32,10 +41,13 @@ const (
 	matchInfraIPNetReg    = "ipnet_registrant_org"
 	matchInfraASNReg      = "asn_registrant_org"
 	matchInfraASNAnnounce = "asn_announced_netblock"
+	matchInfraROA         = "roa_own_asn"
+	matchInfraIRROwn      = "irr_maintainer_own_origins"
+	matchInfraIRRShared   = "irr_maintainer"
 )
 
 var infrastructureMatchers = map[string]bool{matchInfraIPNetReg: true, matchInfraASNReg: true,
-	matchInfraASNAnnounce: true}
+	matchInfraASNAnnounce: true, matchInfraROA: true, matchInfraIRROwn: true, matchInfraIRRShared: true}
 
 var loadInfrastructureCatalog = sync.OnceValues(func() (signalCatalog, error) {
 	var c signalCatalog

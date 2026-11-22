@@ -24,6 +24,7 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 | [Issued by the organization's private CA](#private_ca_issuance) | strong | identity | 0.45 |
 | [security.txt points to the organization](#security_txt_reference) | supporting | operation | 0.25 |
 | [Listed in the organization's bug-bounty program](#bug_bounty_scope) | strong | declaration | 0.40 |
+| [RPKI ROA authorizes the organization's AS](#roa_authorizes_own_asn) | strong | operation | 0.40 |
 | [Name or mail servers run by the organization](#self_hosted_dns) | strong | operation | 0.35 |
 | [Email authentication delegated to the organization](#email_auth_reference) | strong | operation | 0.35 |
 | [Hosted on the organization's infrastructure](#hosting_in_footprint) | supporting | hosting | 0.20 |
@@ -217,6 +218,24 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 - Programs sometimes list a vendor-hosted tenant or a partner's system the organization tests but does not own.
 - A parent company's program can cover subsidiaries and acquisitions that are separate organizations in the graph.
 - Scopes go stale: a divested business can stay listed until the program is updated.
+
+<a id="roa_authorizes_own_asn"></a>
+## RPKI ROA authorizes the organization's AS
+
+`roa_authorizes_own_asn`: strong operation signal, weight 0.40.
+
+**Finds:** A netblock the organization does not yet own that a valid RPKI Route Origin Authorization (ROA) authorizes one of the organization's autonomous systems to announce.
+
+**Why it counts:** Only the holder of address space can sign a ROA for it. A ROA naming the organization's AS is the holder's signed statement that the organization's network routes the prefix, so the netblock is operated for the organization.
+
+**Guards:**
+
+- Only valid ROAs whose prefix and maximum length cover the netblock count.
+- An AS with ROAs for more than 512 netblocks gives no signal.
+
+**Can still mislead when:**
+
+- A provider can sign a ROA for its own space naming a customer's AS, so the organization operates the netblock without holding it.
 
 <a id="self_hosted_dns"></a>
 ## Name or mail servers run by the organization

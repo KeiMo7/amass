@@ -13,6 +13,9 @@ Infrastructure correlation associates more netblocks and autonomous systems with
 | [Shared netblock registrant organization](#ipnet-registrant-org) | strong | identity | 0.75 |
 | [Shared AS registrant organization](#asn-registrant-org) | strong | identity | 0.75 |
 | [Netblock announced by the organization's AS](#asn-announced-netblock) | supporting | infrastructure | 0.60 |
+| [RPKI ROA authorizes the organization's AS](#roa-authorizes-own-asn) | strong | infrastructure | 0.75 |
+| [Routing registry maintainer of the organization's netblocks](#irr-maintainer-own-origins) | strong | infrastructure | 0.70 |
+| [Shared routing registry maintainer](#shared-irr-maintainer) | supporting | infrastructure | 0.50 |
 
 <a id="ipnet-registrant-org"></a>
 ## Shared netblock registrant organization
@@ -70,3 +73,62 @@ Infrastructure correlation associates more netblocks and autonomous systems with
 
 - A transit AS announces its customers' prefixes without owning them.
 - Route leaks and hijacks announce prefixes the AS has no claim to.
+
+<a id="roa-authorizes-own-asn"></a>
+## RPKI ROA authorizes the organization's AS
+
+`roa-authorizes-own-asn`: strong infrastructure signal, weight 0.75 (confidence 75).
+
+**Finds:** A netblock that a valid RPKI Route Origin Authorization (ROA) authorizes an autonomous system registered to the target organization to announce.
+
+**Why it counts:** Only the holder of address space can sign a ROA for it, through its Regional Internet Registry's RPKI. A ROA naming the organization's own AS is the holder's signed statement that the organization's network may route the prefix, so the netblock is operated for the organization. Unlike an announcement, which any AS can make, a ROA cannot be created by a third party.
+
+**Guards:**
+
+- Counts only for a ROA naming an AS that is itself registered to the organization (asn-registrant-org).
+- Only valid ROAs whose prefix and maximum length cover the netblock count.
+- An AS with ROAs for more than 512 netblocks is skipped: a transit or hosting network.
+
+**Can still mislead when:**
+
+- A provider can sign a ROA for its own space naming a customer's AS (provider-assigned space): the customer operates the netblock without holding it.
+- A ROA can outlive the arrangement it was made for until the holder revokes it.
+
+<a id="irr-maintainer-own-origins"></a>
+## Routing registry maintainer of the organization's netblocks
+
+`irr-maintainer-own-origins`: strong infrastructure signal, weight 0.70 (confidence 70).
+
+**Finds:** A netblock whose routing registry (IRR) route object is kept by the same maintainer as one of the organization's own netblocks, when every route object that maintainer keeps is originated by an autonomous system registered to the organization.
+
+**Why it counts:** A maintainer is an account in a routing registry, and an operator files all its route objects under its own. When a maintainer keeps routes only for the organization's ASes, it is the organization's account, and every netblock it keeps is the organization's network.
+
+**Guards:**
+
+- Every origin AS among the maintainer's route objects must be registered to the organization.
+- A maintainer keeping more than 100 route objects, or routes from more than 5 origin ASes, gives no signal.
+- The registries' own maintainers (allocation, legacy and RPKI-generated objects) are never used.
+
+**Can still mislead when:**
+
+- A consultant or managed network provider can keep route objects for a single client under its own maintainer.
+- Route objects are not removed when address space changes hands, so a maintainer's old routes can outlive the arrangement.
+
+<a id="shared-irr-maintainer"></a>
+## Shared routing registry maintainer
+
+`shared-irr-maintainer`: supporting infrastructure signal, weight 0.50 (confidence 50).
+
+**Finds:** A netblock whose routing registry (IRR) route object is kept by the same maintainer as one of the organization's own netblocks, when that maintainer also keeps routes originated by other autonomous systems.
+
+**Why it counts:** Operators reuse one maintainer across their route objects, so a shared maintainer points to a common operator. It is supporting rather than strong when the maintainer's routes come from other ASes too: upstream providers and hosting companies keep route objects for their customers, so the maintainer shows who files the paperwork, not who runs the network.
+
+**Guards:**
+
+- A maintainer keeping more than 100 route objects, or routes from more than 5 origin ASes, gives no signal.
+- The registries' own maintainers are never used.
+- Never expands scope on its own.
+
+**Can still mislead when:**
+
+- An upstream ISP or hosting provider keeps route objects for many customers under one maintainer.

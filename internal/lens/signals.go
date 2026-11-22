@@ -55,7 +55,7 @@ var signalMatchers = map[string]bool{matchSharedAttribute: true, matchInfrastruc
 	matchHTTPRedirect: true, matchReverseDNS: true, matchNameserverSet: true, matchFingerprint: true,
 	matchNameToken: true, matchParkedPage: true, matchEmailDomain: true, matchDKIMKey: true,
 	matchSecurityTxtRef: true, matchDocumentStatement: true, matchProviderNameserverSet: true,
-	matchBountyScope: true}
+	matchBountyScope: true, matchRPKIOwnASN: true}
 
 // SignalParams configures a signal's matcher.
 type SignalParams struct {

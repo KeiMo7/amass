@@ -115,6 +115,44 @@
       ]
     },
     {
+      "id": "package-publisher-site",
+      "title": "Publisher site of the organization's verified Maven group",
+      "kind": "declaration",
+      "strength": "strong",
+      "weight": 0.7,
+      "matcher": "package_publisher_site",
+      "finds": "Another registered domain a package in the organization's Maven Central group names as its publisher's organization URL, where the group is the reverse of one of the organization's own domains.",
+      "rationale": "Maven Central lets a publisher use a groupId only after proving, with a DNS TXT record, that it controls the domain the groupId names. A package in that group names its publisher's organization in its POM, so the site it names there is the organization's own declaration of its site.",
+      "guards": [
+        "Only groups named for one of the organization's own domains count.",
+        "Only the POM's organization URL counts; its project and repository URLs are the supporting package-website signal.",
+        "URLs on registries, documentation and code hosts, and cloud providers' hosting domains are never stored."
+      ],
+      "counter_indications": [
+        "A POM copied from a parent project or a template can keep another organization's URL.",
+        "A group handed to a spun-off project can keep naming the former parent."
+      ]
+    },
+    {
+      "id": "package-website",
+      "title": "Named by the organization's published packages",
+      "kind": "declaration",
+      "strength": "supporting",
+      "weight": 0.5,
+      "matcher": "package_website",
+      "finds": "Another registered domain one of the organization's packages names as its homepage, project page or repository: a package in a Maven group named for one of the organization's domains, or an npm package maintained from an address at one.",
+      "rationale": "A package's homepage and project pages are usually its publisher's sites. It is supporting because a package can point to a community site, a hosted documentation service or a partner's product page.",
+      "guards": [
+        "Only namespaces tied to one of the organization's domains count: a Maven group named for it, or an npm namespace with a maintainer address at it.",
+        "URLs on registries, documentation and code hosts, and cloud providers' hosting domains are never stored.",
+        "Never expands scope on its own."
+      ],
+      "counter_indications": [
+        "An open-source project can live on its own community domain that no organization owns.",
+        "A maintainer can keep a work address on a personal project."
+      ]
+    },
+    {
       "id": "soa-mailbox-own-domain",
       "title": "SOA administrator mailbox at the organization's domain",
       "kind": "dns",

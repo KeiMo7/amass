@@ -335,6 +335,7 @@ nsPivot:
 	}
 	allowedOriginPivot(ctx, g, ownApexes, add)
 	bountyScopePivot(ctx, g, name, ownApexes, add)
+	packagePivot(ctx, g, ownApexes, ownDomains, add)
 	soaMailboxPivot(ctx, g, ownApexes, add)
 	sharedDNSHostPivot(ctx, g, ownApexes, RRTypeNS, SigSharedNameServer, "shared name server", nsMaxApexes,
 		isNameServerProvider, ownHostTier{signalID: SigNameServerOwn, label: "name server run by the organization",

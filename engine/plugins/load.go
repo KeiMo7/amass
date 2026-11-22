@@ -40,6 +40,7 @@ import (
 	"github.com/owasp-amass/amass/v5/engine/plugins/identity"
 	"github.com/owasp-amass/amass/v5/engine/plugins/lookalike"
 	mtasts "github.com/owasp-amass/amass/v5/engine/plugins/mta_sts"
+	"github.com/owasp-amass/amass/v5/engine/plugins/packages"
 	"github.com/owasp-amass/amass/v5/engine/plugins/routing"
 	"github.com/owasp-amass/amass/v5/engine/plugins/scrape"
 	securitytxt "github.com/owasp-amass/amass/v5/engine/plugins/security_txt"
@@ -105,6 +106,7 @@ var pluginNewFuncs = []func() et.Plugin{
 	securitytxt.NewSecurityTxt,
 	bimi.NewBIMI,
 	bounty.NewBountyScopes,
+	packages.NewPackages,
 	sshp.NewSSHProbing,
 	bannerp.NewBannerProbing,
 	rdap.NewRDAP,

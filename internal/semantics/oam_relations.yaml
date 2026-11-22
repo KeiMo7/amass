@@ -56,6 +56,12 @@ relations:
   - {source: Account, label: program_page, relation_type: SimpleRelation, destination: URL,
      attribution: attribute, purpose: corporate,
      note: "The bug-bounty program's page on its platform."}
+  - {source: Account, label: package, relation_type: SimpleRelation, destination: Product,
+     attribution: controls, purpose: product,
+     note: "A package published under a registry namespace (a Maven groupId, an npm scope); whoever controls the namespace publishes it."}
+  - {source: Account, label: namespace_domain, relation_type: SimpleRelation, destination: FQDN,
+     attribution: attribute, purpose: product,
+     note: "The domain a registry namespace is tied to: the domain a Maven groupId names, which Maven Central verified with a DNS TXT record, or the domain of the addresses that maintain an npm namespace. Recorded as an attribute so control does not flow through it on its own: the npm tie is weaker (a maintainer can use a work address on a personal project), and the related-domains lens weighs both ties through its package signals instead."}
   - {source: Account, label: user, relation_type: SimpleRelation, destination: Organization,
      attribution: controller, purpose: identity, reviewed: true,
      note: "The Person or Organization that uses the account; usually its controller, but a shared or delegated account can have other users."}

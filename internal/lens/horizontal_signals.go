@@ -39,6 +39,11 @@ const (
 	// sharing an outside mailbox with one of its zones.
 	SigSOAMailboxOwn    = "soa-mailbox-own-domain"
 	SigSharedSOAMailbox = "shared-soa-mailbox"
+	// SigPackageOrganization is another apex a package in the organization's
+	// verified Maven group names as its publisher's site; SigPackageWebsite
+	// one any of the organization's packages names otherwise.
+	SigPackageOrganization = "package-publisher-site"
+	SigPackageWebsite      = "package-website"
 	// The strong tiers of the shared-host and SPF signals: a name server or
 	// mail exchanger inside the organization's own domains, and a domain
 	// that sends all its mail through the organization.
@@ -74,13 +79,16 @@ const (
 	matchHorNSOwn         = "name_server_own_domain"
 	matchHorMXOwn         = "mx_own_domain"
 	matchHorSPFExclusive  = "spf_authorizes_exclusive"
+	matchHorPackageOrg    = "package_publisher_site"
+	matchHorPackageSite   = "package_website"
 )
 
 var horizontalMatchers = map[string]bool{matchHorRegistrantOrg: true, matchHorCertOrg: true,
 	matchHorNameServer: true, matchHorMX: true, matchHorDMARC: true, matchHorSPF: true, matchHorWebsite: true,
 	matchHorFingerprint: true, matchHorDelegationSet: true, matchHorAllowedOrigin: true,
 	matchHorBountyScope: true, matchHorSOAOwn: true, matchHorSOAShared: true,
-	matchHorNSOwn: true, matchHorMXOwn: true, matchHorSPFExclusive: true}
+	matchHorNSOwn: true, matchHorMXOwn: true, matchHorSPFExclusive: true, matchHorPackageOrg: true,
+	matchHorPackageSite: true}
 
 var loadHorizontalCatalog = sync.OnceValues(func() (signalCatalog, error) {
 	var c signalCatalog

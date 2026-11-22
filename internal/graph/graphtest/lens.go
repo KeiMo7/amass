@@ -25,6 +25,8 @@ var oamSemantics = map[string]graph.RelationMeaning{
 	"Account|in_scope|SimpleRelation|Netblock":                         {Attribution: "shared", Purpose: "corporate", Vendor: true},
 	"Account|in_scope|SimpleRelation|URL":                              {Attribution: "shared", Purpose: "corporate", Vendor: true},
 	"Account|program_page|SimpleRelation|URL":                          {Attribution: "attribute", Purpose: "corporate", Vendor: true},
+	"Account|package|SimpleRelation|Product":                           {Attribution: "controls", Purpose: "product", Vendor: true},
+	"Account|namespace_domain|SimpleRelation|FQDN":                     {Attribution: "attribute", Purpose: "product", Vendor: true},
 	"Account|user|SimpleRelation|Organization":                         {Attribution: "controller", Purpose: "identity", Vendor: true},
 	"Account|user|SimpleRelation|Person":                               {Attribution: "controller", Purpose: "identity", Vendor: true},
 	"AutnumRecord|abuse_contact|SimpleRelation|ContactRecord":          {Attribution: "third_party", Purpose: "registration", Vendor: false},

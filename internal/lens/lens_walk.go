@@ -12,6 +12,7 @@ import (
 	"time"
 
 	"github.com/owasp-amass/amass/v5/internal/graph"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 )
 
 // Lens bounds. Lens walks never send assets to a model, so these are
@@ -89,6 +90,28 @@ func footprintPass(s step) bool {
 		return !s.forward
 	}
 
+	return false
+}
+
+// SharedPlatformHost reports whether a host is a shared platform where many
+// unrelated parties each have a page under the one host: a code host or
+// social network (semantics account_platforms.json) or a package registry's
+// or documentation site (package_registries.json registry_hosts).
+func SharedPlatformHost(host string) bool {
+	return semantics.AccountPlatformHost(host) || semantics.PackageRegistryCatalog().RegistryHost(host)
+}
+
+// platformStep reports whether s joins a URL and its host on a shared
+// platform (SharedPlatformHost). Control and ownership do not pass across
+// such a step: an organization's repository or profile URL is its own, the
+// platform's domain is not.
+func platformStep(cur graph.Asset, s step) bool {
+	switch {
+	case cur.Type == "URL" && s.other.Type == "FQDN":
+		return SharedPlatformHost(graph.FQDNName(s.other))
+	case cur.Type == "FQDN" && s.other.Type == "URL":
+		return SharedPlatformHost(graph.FQDNName(cur))
+	}
 	return false
 }
 
@@ -798,7 +821,7 @@ func (w *lensWalker) controlledFootprint(roots []graph.Asset) (map[string]graph.
 		}
 		for _, s := range steps {
 			if _, seen := owned[s.other.ID]; seen || queued[s.other.ID] || s.other.Type == "Person" ||
-				!footprintPass(s) ||
+				!footprintPass(s) || platformStep(cur, s) ||
 				(s.other.Type == "Organization" && (s.attr != graph.AttrControls || w.stopAt[s.other.ID])) {
 				continue
 			}
@@ -998,7 +1021,7 @@ func (w *lensWalker) controllerSearch(a graph.Asset, owned map[string]graph.Asse
 			return c, err
 		}
 		for _, s := range steps {
-			if seen[s.other.ID] || s.other.Type == "Person" || !ownerPass(s) {
+			if seen[s.other.ID] || s.other.Type == "Person" || !ownerPass(s) || platformStep(cur.asset, s) {
 				continue
 			}
 			if _, ok := w.ownerDist[s.other.Type]; !ok {
@@ -1041,7 +1064,7 @@ func (w *lensWalker) owningOrganizations(root graph.Asset) ([]graph.Asset, error
 				return nil, err
 			}
 			for _, s := range steps {
-				if seen[s.other.ID] || s.other.Type == "Person" || !ownerPass(s) {
+				if seen[s.other.ID] || s.other.Type == "Person" || !ownerPass(s) || platformStep(cur, s) {
 					continue
 				}
 

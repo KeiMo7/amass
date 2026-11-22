@@ -8,10 +8,8 @@ import (
 	"context"
 	"fmt"
 	"net/url"
-	"regexp"
 	"sort"
 	"strings"
-	"sync"
 
 	"github.com/owasp-amass/amass/v5/internal/graph"
 	"github.com/owasp-amass/amass/v5/internal/semantics"
@@ -23,8 +21,6 @@ import (
 // the evidence (ai-design-principles.md, principle 10). Nothing is written and
 // no page is fetched.
 const LensAccounts = "accounts"
-
-var accountPlatformsJSON = semantics.File("account_platforms.json")
 
 var accountsLens = SubjectLens{
 	Name:    LensAccounts,
@@ -39,58 +35,6 @@ var accountsLens = SubjectLens{
 		return FindAccounts(ctx, g, schema, root, opts.Limits)
 	},
 }
-
-type accountPlatform struct {
-	Platform       string   `json:"platform"`
-	AccountType    string   `json:"account_type"`
-	Hosts          []string `json:"hosts"`
-	HandlePatterns []string `json:"handle_patterns"`
-	Reserved       []string `json:"reserved"`
-	Source         string   `json:"source"`
-	res            []*regexp.Regexp
-	reserved       map[string]bool
-}
-
-type accountRules struct {
-	License   string            `json:"_license"`
-	About     string            `json:"_about"`
-	Platforms []accountPlatform `json:"platforms"`
-}
-
-var loadAccountRules = sync.OnceValue(func() accountRules {
-	var r accountRules
-	if err := graph.DecodeStrict(accountPlatformsJSON, &r); err != nil {
-		panic("account_platforms.json: " + err.Error())
-	}
-	byHost := map[string]bool{}
-	for i := range r.Platforms {
-		p := &r.Platforms[i]
-		if p.Platform == "" || p.AccountType == "" || len(p.Hosts) == 0 || len(p.HandlePatterns) == 0 ||
-			!strings.HasPrefix(p.Source, "https://") {
-			panic("account_platforms.json: " + p.Platform +
-				" needs a platform, account_type, at least one host and handle pattern, and a documentation source")
-		}
-		for _, h := range p.Hosts {
-			if byHost[h] {
-				panic("account_platforms.json: host " + h + " is claimed by more than one platform")
-			}
-			byHost[h] = true
-		}
-		for _, pat := range p.HandlePatterns {
-			re := regexp.MustCompile(pat)
-			if re.NumSubexp() < 1 {
-				panic("account_platforms.json: " + p.Platform + " handle pattern must capture the handle: " + pat)
-			}
-			p.res = append(p.res, re)
-		}
-		p.reserved = map[string]bool{}
-		for _, name := range p.Reserved {
-			p.reserved[strings.ToLower(name)] = true
-		}
-	}
-
-	return r
-})
 
 // AccountEntry is one platform account derived from a stored URL.
 type AccountEntry struct {
@@ -136,7 +80,7 @@ func FindAccounts(ctx context.Context, g graph.Graph, schema graph.SchemaCatalog
 		out.Owner, out.OwnerID = graph.AssetLabel(s.owners[0]), s.owners[0].ID
 	}
 
-	rules := loadAccountRules()
+	rules := semantics.AccountPlatforms()
 	byPlatform := map[string]*ChangeGroup{}
 	var order []string
 	seen := map[string]bool{}
@@ -189,7 +133,7 @@ func FindAccounts(ctx context.Context, g graph.Graph, schema graph.SchemaCatalog
 // matchAccount recognizes a platform account in a URL: its host names the
 // platform and its path yields the handle. It returns false when no platform
 // matches or the path is a site page rather than an account.
-func matchAccount(rules accountRules, raw string) (string, AccountEntry, bool) {
+func matchAccount(rules []semantics.AccountPlatform, raw string) (string, AccountEntry, bool) {
 	u, err := url.Parse(raw)
 	if err != nil || u.Host == "" {
 		return "", AccountEntry{}, false
@@ -197,17 +141,17 @@ func matchAccount(rules accountRules, raw string) (string, AccountEntry, bool) {
 	host := strings.ToLower(u.Hostname())
 	host = strings.TrimPrefix(host, "www.")
 
-	for i := range rules.Platforms {
-		p := &rules.Platforms[i]
-		if !hostMatches(host, p.Hosts) {
+	for i := range rules {
+		p := &rules[i]
+		if !p.OwnsHost(host) {
 			continue
 		}
-		for _, re := range p.res {
+		for _, re := range p.Patterns() {
 			m := re.FindStringSubmatch(u.Path)
 			if m == nil || m[1] == "" {
 				continue
 			}
-			if p.reserved[strings.ToLower(m[1])] {
+			if p.IsReserved(m[1]) {
 				continue
 			}
 			return p.Platform, AccountEntry{Platform: p.Platform, Type: p.AccountType, Handle: m[1], URL: raw}, true
@@ -215,17 +159,6 @@ func matchAccount(rules accountRules, raw string) (string, AccountEntry, bool) {
 	}
 
 	return "", AccountEntry{}, false
-}
-
-// hostMatches reports whether a URL host is one of a platform's hosts,
-// matching the host itself and any subdomain of it.
-func hostMatches(host string, hosts []string) bool {
-	for _, h := range hosts {
-		if host == h || strings.HasSuffix(host, "."+h) {
-			return true
-		}
-	}
-	return false
 }
 
 // Text implements Report.

@@ -627,7 +627,8 @@ func (g *gapSearch) gains(v graph.Asset) ([]graph.Asset, error) {
 			return nil, err
 		}
 		for _, s := range steps {
-			if seen[s.other.ID] || !footprintPass(s) || s.other.Type == "Organization" || s.other.Type == "Person" {
+			if seen[s.other.ID] || !footprintPass(s) || platformStep(cur, s) || s.other.Type == "Organization" ||
+				s.other.Type == "Person" {
 				continue
 			}
 

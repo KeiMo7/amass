@@ -18,6 +18,8 @@ Horizontal correlation associates more registered (apex) domains with a target o
 | [Same DNS provider delegation set](#dns-provider-delegation-set) | supporting | infrastructure | 0.70 |
 | [Allowed cross-origin by the organization's site](#allowed-origin) | supporting | web | 0.55 |
 | [Listed by the organization's bug-bounty program](#bug-bounty-scope) | supporting | declaration | 0.70 |
+| [Publisher site of the organization's verified Maven group](#package-publisher-site) | strong | declaration | 0.70 |
+| [Named by the organization's published packages](#package-website) | supporting | declaration | 0.50 |
 | [SOA administrator mailbox at the organization's domain](#soa-mailbox-own-domain) | strong | dns | 0.70 |
 | [Shared SOA administrator mailbox](#shared-soa-mailbox) | supporting | dns | 0.50 |
 | [Name server run by the organization](#name-server-own-domain) | strong | dns | 0.75 |
@@ -148,6 +150,46 @@ Horizontal correlation associates more registered (apex) domains with a target o
 
 - A vendor-hosted tenant or a partner's system can be listed so researchers may test it.
 - A parent's program can cover subsidiaries and acquisitions that are separate organizations.
+
+<a id="package-publisher-site"></a>
+## Publisher site of the organization's verified Maven group
+
+`package-publisher-site`: strong declaration signal, weight 0.70 (confidence 70).
+
+**Finds:** Another registered domain a package in the organization's Maven Central group names as its publisher's organization URL, where the group is the reverse of one of the organization's own domains.
+
+**Why it counts:** Maven Central lets a publisher use a groupId only after proving, with a DNS TXT record, that it controls the domain the groupId names. A package in that group names its publisher's organization in its POM, so the site it names there is the organization's own declaration of its site.
+
+**Guards:**
+
+- Only groups named for one of the organization's own domains count.
+- Only the POM's organization URL counts; its project and repository URLs are the supporting package-website signal.
+- URLs on registries, documentation and code hosts, and cloud providers' hosting domains are never stored.
+
+**Can still mislead when:**
+
+- A POM copied from a parent project or a template can keep another organization's URL.
+- A group handed to a spun-off project can keep naming the former parent.
+
+<a id="package-website"></a>
+## Named by the organization's published packages
+
+`package-website`: supporting declaration signal, weight 0.50 (confidence 50).
+
+**Finds:** Another registered domain one of the organization's packages names as its homepage, project page or repository: a package in a Maven group named for one of the organization's domains, or an npm package maintained from an address at one.
+
+**Why it counts:** A package's homepage and project pages are usually its publisher's sites. It is supporting because a package can point to a community site, a hosted documentation service or a partner's product page.
+
+**Guards:**
+
+- Only namespaces tied to one of the organization's domains count: a Maven group named for it, or an npm namespace with a maintainer address at it.
+- URLs on registries, documentation and code hosts, and cloud providers' hosting domains are never stored.
+- Never expands scope on its own.
+
+**Can still mislead when:**
+
+- An open-source project can live on its own community domain that no organization owns.
+- A maintainer can keep a work address on a personal project.
 
 <a id="soa-mailbox-own-domain"></a>
 ## SOA administrator mailbox at the organization's domain

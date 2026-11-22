@@ -11,6 +11,7 @@ import (
 
 	"github.com/owasp-amass/amass/v5/internal/graph"
 	"github.com/owasp-amass/amass/v5/internal/graph/graphtest"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 )
 
 func TestFindAccounts(t *testing.T) {
@@ -75,7 +76,7 @@ func TestFindAccounts(t *testing.T) {
 }
 
 func TestMatchAccount(t *testing.T) {
-	rules := loadAccountRules()
+	rules := semantics.AccountPlatforms()
 	cases := []struct {
 		raw, platform, handle string
 		ok                    bool

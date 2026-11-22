@@ -804,6 +804,13 @@ names the relationship that stayed partial. Outside the controlled footprint
 the lens only looks for who controls an asset, so it never pages down a
 provider's hierarchy, such as the names under amazonaws.com.
 
+Control does not pass between a URL and its host when the host is a shared
+platform where unrelated parties each have a page: a code host or social
+network (`account_platforms.json`) or a package registry's site
+(`package_registries.json` `registry_hosts`; `lens.SharedPlatformHost`). An
+organization's GitHub or LinkedIn URL is in its footprint; github.com and
+linkedin.com are not.
+
 Every lens follows at most 2,000 controlled assets and makes at most 20,000
 database reads per run. When the footprint is larger, the asset limit is
 shared out a kind of asset at a time in turn, so the result samples names,

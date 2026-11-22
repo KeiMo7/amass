@@ -44,6 +44,11 @@ const (
 	// one any of the organization's packages names otherwise.
 	SigPackageOrganization = "package-publisher-site"
 	SigPackageWebsite      = "package-website"
+	// SigSharedAdsSeller is another apex whose ads.txt lists one of the
+	// organization's DIRECT ad seller accounts; SigAdsSellerDomain the domain
+	// an ad system's sellers.json gives for such an account.
+	SigSharedAdsSeller = "shared-ads-seller"
+	SigAdsSellerDomain = "ads-seller-domain"
 	// The strong tiers of the shared-host and SPF signals: a name server or
 	// mail exchanger inside the organization's own domains, and a domain
 	// that sends all its mail through the organization.
@@ -81,6 +86,8 @@ const (
 	matchHorSPFExclusive  = "spf_authorizes_exclusive"
 	matchHorPackageOrg    = "package_publisher_site"
 	matchHorPackageSite   = "package_website"
+	matchHorAdsSeller     = "shared_ads_seller"
+	matchHorAdsSellerDom  = "ads_seller_domain"
 )
 
 var horizontalMatchers = map[string]bool{matchHorRegistrantOrg: true, matchHorCertOrg: true,
@@ -88,7 +95,7 @@ var horizontalMatchers = map[string]bool{matchHorRegistrantOrg: true, matchHorCe
 	matchHorFingerprint: true, matchHorDelegationSet: true, matchHorAllowedOrigin: true,
 	matchHorBountyScope: true, matchHorSOAOwn: true, matchHorSOAShared: true,
 	matchHorNSOwn: true, matchHorMXOwn: true, matchHorSPFExclusive: true, matchHorPackageOrg: true,
-	matchHorPackageSite: true}
+	matchHorPackageSite: true, matchHorAdsSeller: true, matchHorAdsSellerDom: true}
 
 var loadHorizontalCatalog = sync.OnceValues(func() (signalCatalog, error) {
 	var c signalCatalog

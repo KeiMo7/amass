@@ -35,6 +35,10 @@ const (
 	// SSHHostKey is an SSH server's host key as "<key type>
 	// SHA256:<base64 fingerprint>", as OpenSSH prints it.
 	SSHHostKey = "ssh_host_key"
+	// AdsSeller is an advertising seller account a domain's ads.txt or
+	// app-ads.txt lists as DIRECT, as "<ad system domain>:<account id>"
+	// (google.com:pub-1234567890123456).
+	AdsSeller = "ads_seller"
 )
 
 // Bounds.

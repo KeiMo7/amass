@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strings"
 
+	"github.com/owasp-amass/amass/v5/engine/plugins/adstxt"
 	"github.com/owasp-amass/amass/v5/engine/plugins/api"
 	"github.com/owasp-amass/amass/v5/engine/plugins/api/aviato"
 	"github.com/owasp-amass/amass/v5/engine/plugins/api/censys"
@@ -105,6 +106,7 @@ var pluginNewFuncs = []func() et.Plugin{
 	propublica.NewProPublica,
 	securitytxt.NewSecurityTxt,
 	bimi.NewBIMI,
+	adstxt.NewAdsTxt,
 	bounty.NewBountyScopes,
 	packages.NewPackages,
 	sshp.NewSSHProbing,

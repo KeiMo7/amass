@@ -115,6 +115,44 @@
       ]
     },
     {
+      "id": "shared-ads-seller",
+      "title": "Shared DIRECT ad seller account",
+      "kind": "identity",
+      "strength": "strong",
+      "weight": 0.7,
+      "matcher": "shared_ads_seller",
+      "finds": "Another registered domain whose ads.txt or app-ads.txt lists, as DIRECT, the same advertising seller account (an ad system and account ID, such as a Google AdSense publisher ID) as one of the organization's own domains.",
+      "rationale": "A DIRECT line names an ad account the publisher controls itself and is paid through, so it is as specific to its owner as an analytics property: the domains that list it are run by the same publisher.",
+      "guards": [
+        "Only DIRECT lines count; RESELLER lines name the companies that sell on the publisher's behalf.",
+        "An account the ad system's sellers.json lists as an INTERMEDIARY (a sales house) is skipped.",
+        "An account listed by more than 25 registered domains is treated as a network's, not an owner's, and skipped."
+      ],
+      "counter_indications": [
+        "A sales house or agency can list its own account as DIRECT on the sites it manages.",
+        "A copied ads.txt can keep a former owner's accounts."
+      ]
+    },
+    {
+      "id": "ads-seller-domain",
+      "title": "Domain an ad system gives for the organization's seller account",
+      "kind": "identity",
+      "strength": "supporting",
+      "weight": 0.5,
+      "matcher": "ads_seller_domain",
+      "finds": "The domain an ad system's sellers.json gives as the business domain of the seller behind one of the organization's DIRECT ad accounts, when it is another domain.",
+      "rationale": "sellers.json names the business behind each account, by name and domain, as the ad system knows it from paying it. A different domain there is usually the publisher's corporate site. It is supporting because the seller can be a parent, an agency or a sales house that the ad system lists as a publisher.",
+      "guards": [
+        "Accounts the ad system lists as INTERMEDIARY or keeps confidential are skipped.",
+        "The ad system's own domain is skipped.",
+        "Never expands scope on its own."
+      ],
+      "counter_indications": [
+        "An agency that manages a site's ads can be the seller of record.",
+        "A parent company's domain can be listed for its brands' accounts."
+      ]
+    },
+    {
       "id": "package-publisher-site",
       "title": "Publisher site of the organization's verified Maven group",
       "kind": "declaration",

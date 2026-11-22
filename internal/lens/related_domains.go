@@ -336,6 +336,7 @@ nsPivot:
 	allowedOriginPivot(ctx, g, ownApexes, add)
 	bountyScopePivot(ctx, g, name, ownApexes, add)
 	packagePivot(ctx, g, ownApexes, ownDomains, add)
+	adsSellerPivot(ctx, g, ownApexes, ownDomains, add)
 	soaMailboxPivot(ctx, g, ownApexes, add)
 	sharedDNSHostPivot(ctx, g, ownApexes, RRTypeNS, SigSharedNameServer, "shared name server", nsMaxApexes,
 		isNameServerProvider, ownHostTier{signalID: SigNameServerOwn, label: "name server run by the organization",
@@ -738,58 +739,89 @@ func sharedFingerprintPivot(ctx context.Context, g graph.Graph, w *lensWalker, o
 	}
 }
 
-// fingerprintSiblings reads the other services carrying the Identifier identID
-// and adds the registered domain of each one's FQDN host, unless the Identifier
-// is over the shared-value cap. ownW is the witness for the organization's own
-// service that holds the same Identifier.
-func fingerprintSiblings(ctx context.Context, g graph.Graph, ownSvcID, identID, signalID, label string,
+// fingerprintSiblings reads the other carriers of the Identifier identID (web
+// services, and URLs such as a domain's ads.txt) and adds the registered
+// domain of each one's FQDN host, unless the Identifier is over the
+// shared-value cap. ownW is the witness for the organization's own carrier
+// (ownID) that holds the same Identifier.
+func fingerprintSiblings(ctx context.Context, g graph.Graph, ownID, identID, signalID, label string,
 	ownW graph.WitnessEdge, add func(string, string, string, ...graph.WitnessEdge) bool) bool {
 	carriers, err := g.Edges(ctx, identID, "in", "fingerprint", time.Time{})
 	if err != nil {
 		return true
 	}
 	type sibling struct {
-		apex     string
-		fpEdge   graph.Relation
-		hostEdge graph.Relation
+		apex  string
+		fpW   graph.WitnessEdge
+		hostW graph.WitnessEdge
 	}
 	apexSet := map[string]bool{}
 	var sibs []sibling
 	for _, ce := range carriers {
-		if ce.FromID == ownSvcID {
+		if ce.FromID == ownID {
 			continue
 		}
-		hosts, err := g.Edges(ctx, ce.FromID, "in", "port", time.Time{})
-		if err != nil {
-			continue
-		}
-		for _, he := range hosts {
-			fq, err := g.GetAsset(ctx, he.FromID)
-			if err != nil || fq.Type != "FQDN" {
-				continue
-			}
-			apex := graph.RegisteredDomain(graph.FQDNName(fq))
+		for _, h := range carrierHosts(ctx, g, ce.FromID) {
+			apex := graph.RegisteredDomain(graph.FQDNName(h.host))
 			if apex == "" {
 				continue
 			}
 			apexSet[apex] = true
-			sibs = append(sibs, sibling{apex: apex, fpEdge: ce, hostEdge: he})
+			fpW := graph.WitnessEdge{EdgeID: ce.ID, Label: "fingerprint", RelationType: ce.Type,
+				FromID: ce.FromID, FromType: h.carrierType, ToID: ce.ToID, ToType: "Identifier"}
+			sibs = append(sibs, sibling{apex: apex, fpW: fpW, hostW: h.witness(apex)})
 		}
 	}
 	if len(apexSet) > fpMaxApexes {
 		return true // a shared default or CDN value, not ownership evidence
 	}
 	for _, sb := range sibs {
-		sibW := graph.WitnessEdge{EdgeID: sb.fpEdge.ID, Label: "fingerprint", RelationType: sb.fpEdge.Type,
-			FromID: sb.fpEdge.FromID, FromType: "Service", ToID: sb.fpEdge.ToID, ToType: "Identifier"}
-		hostW := graph.WitnessEdge{EdgeID: sb.hostEdge.ID, Label: "port", RelationType: sb.hostEdge.Type,
-			FromID: sb.hostEdge.FromID, FromType: "FQDN", ToID: sb.hostEdge.ToID, ToType: "Service", To: sb.apex}
-		if !add(sb.apex, signalID, label, ownW, sibW, hostW) {
+		if !add(sb.apex, signalID, label, ownW, sb.fpW, sb.hostW) {
 			return false
 		}
 	}
 
 	return true
+}
+
+// carrierHost is the FQDN a fingerprint carrier belongs to, and the edge
+// joining them.
+type carrierHost struct {
+	carrierType string
+	host        graph.Asset
+	edge        graph.Relation
+}
+
+// witness is the edge joining the carrier and its host, as a witness.
+func (h carrierHost) witness(apex string) graph.WitnessEdge {
+	if h.carrierType == "URL" {
+		return graph.WitnessEdge{EdgeID: h.edge.ID, Label: h.edge.Label, RelationType: h.edge.Type,
+			FromID: h.edge.FromID, FromType: "URL", ToID: h.edge.ToID, ToType: "FQDN", To: apex}
+	}
+	return graph.WitnessEdge{EdgeID: h.edge.ID, Label: h.edge.Label, RelationType: h.edge.Type,
+		FromID: h.edge.FromID, FromType: "FQDN", ToID: h.edge.ToID, ToType: "Service", To: apex}
+}
+
+// carrierHosts returns the FQDN hosts of a fingerprint carrier: the names
+// serving a Service (FQDN --port--> Service) or the host of a URL
+// (URL --domain--> FQDN).
+func carrierHosts(ctx context.Context, g graph.Graph, carrierID string) []carrierHost {
+	var out []carrierHost
+	if ports, err := g.Edges(ctx, carrierID, "in", "port", time.Time{}); err == nil {
+		for _, e := range ports {
+			if fq, err := g.GetAsset(ctx, e.FromID); err == nil && fq.Type == "FQDN" {
+				out = append(out, carrierHost{carrierType: "Service", host: fq, edge: e})
+			}
+		}
+	}
+	if domains, err := g.Edges(ctx, carrierID, "out", "domain", time.Time{}); err == nil {
+		for _, e := range domains {
+			if fq, err := g.GetAsset(ctx, e.ToID); err == nil && fq.Type == "FQDN" {
+				out = append(out, carrierHost{carrierType: "URL", host: fq, edge: e})
+			}
+		}
+	}
+	return out
 }
 
 // delegationMaxListings bounds the registrations read for one name server of a

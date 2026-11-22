@@ -18,6 +18,8 @@ Horizontal correlation associates more registered (apex) domains with a target o
 | [Same DNS provider delegation set](#dns-provider-delegation-set) | supporting | infrastructure | 0.70 |
 | [Allowed cross-origin by the organization's site](#allowed-origin) | supporting | web | 0.55 |
 | [Listed by the organization's bug-bounty program](#bug-bounty-scope) | supporting | declaration | 0.70 |
+| [Shared DIRECT ad seller account](#shared-ads-seller) | strong | identity | 0.70 |
+| [Domain an ad system gives for the organization's seller account](#ads-seller-domain) | supporting | identity | 0.50 |
 | [Publisher site of the organization's verified Maven group](#package-publisher-site) | strong | declaration | 0.70 |
 | [Named by the organization's published packages](#package-website) | supporting | declaration | 0.50 |
 | [SOA administrator mailbox at the organization's domain](#soa-mailbox-own-domain) | strong | dns | 0.70 |
@@ -150,6 +152,46 @@ Horizontal correlation associates more registered (apex) domains with a target o
 
 - A vendor-hosted tenant or a partner's system can be listed so researchers may test it.
 - A parent's program can cover subsidiaries and acquisitions that are separate organizations.
+
+<a id="shared-ads-seller"></a>
+## Shared DIRECT ad seller account
+
+`shared-ads-seller`: strong identity signal, weight 0.70 (confidence 70).
+
+**Finds:** Another registered domain whose ads.txt or app-ads.txt lists, as DIRECT, the same advertising seller account (an ad system and account ID, such as a Google AdSense publisher ID) as one of the organization's own domains.
+
+**Why it counts:** A DIRECT line names an ad account the publisher controls itself and is paid through, so it is as specific to its owner as an analytics property: the domains that list it are run by the same publisher.
+
+**Guards:**
+
+- Only DIRECT lines count; RESELLER lines name the companies that sell on the publisher's behalf.
+- An account the ad system's sellers.json lists as an INTERMEDIARY (a sales house) is skipped.
+- An account listed by more than 25 registered domains is treated as a network's, not an owner's, and skipped.
+
+**Can still mislead when:**
+
+- A sales house or agency can list its own account as DIRECT on the sites it manages.
+- A copied ads.txt can keep a former owner's accounts.
+
+<a id="ads-seller-domain"></a>
+## Domain an ad system gives for the organization's seller account
+
+`ads-seller-domain`: supporting identity signal, weight 0.50 (confidence 50).
+
+**Finds:** The domain an ad system's sellers.json gives as the business domain of the seller behind one of the organization's DIRECT ad accounts, when it is another domain.
+
+**Why it counts:** sellers.json names the business behind each account, by name and domain, as the ad system knows it from paying it. A different domain there is usually the publisher's corporate site. It is supporting because the seller can be a parent, an agency or a sales house that the ad system lists as a publisher.
+
+**Guards:**
+
+- Accounts the ad system lists as INTERMEDIARY or keeps confidential are skipped.
+- The ad system's own domain is skipped.
+- Never expands scope on its own.
+
+**Can still mislead when:**
+
+- An agency that manages a site's ads can be the seller of record.
+- A parent company's domain can be listed for its brands' accounts.
 
 <a id="package-publisher-site"></a>
 ## Publisher site of the organization's verified Maven group

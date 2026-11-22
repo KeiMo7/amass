@@ -15,6 +15,7 @@ import (
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/owasp-amass/amass/v5/config"
+	apiclient "github.com/owasp-amass/amass/v5/engine/api/client"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	oam "github.com/owasp-amass/open-asset-model"
 )
@@ -367,7 +368,7 @@ func (v *V1Handlers) AddAssetTypedHandler(w http.ResponseWriter, r *http.Request
 		return
 	}
 
-	asset, err := parseAsset(assetType, raw)
+	asset, err := apiclient.ParseAsset(assetType, raw)
 	if err != nil {
 		writeError(w, http.StatusBadRequest, "invalid asset object", err)
 		return
@@ -437,7 +438,7 @@ func (v *V1Handlers) AddAssetsBulkHandler(w http.ResponseWriter, r *http.Request
 
 	assets := make([]oam.Asset, 0, len(req.Items))
 	for _, raw := range req.Items {
-		if a, err := parseAsset(assetType, raw); err == nil {
+		if a, err := apiclient.ParseAsset(assetType, raw); err == nil {
 			assets = append(assets, a)
 		}
 	}

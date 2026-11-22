@@ -12,18 +12,32 @@ import (
 	"errors"
 	"fmt"
 	"net/http"
-	"net/url"
 	"os"
 	"os/signal"
-	"strconv"
 	"strings"
 	"sync"
 	"syscall"
 	"time"
 
+	"github.com/owasp-amass/amass/v5/config"
 	"github.com/owasp-amass/amass/v5/internal/ai"
 	"github.com/owasp-amass/amass/v5/internal/ai/llm"
 )
+
+// defaultTimeout bounds one probe when AMASS_LLM_MODEL_TIMEOUT is not set.
+const defaultTimeout = 4 * time.Minute
+
+// freshFor is how long a successful probe keeps the provider ready; probes
+// run every five minutes while it is.
+const freshFor = 7 * time.Minute
+
+// target is the model the health check probes.
+type target struct {
+	model     llm.Model
+	provider  string
+	modelName string
+	timeout   time.Duration
+}
 
 type state struct {
 	sync.RWMutex
@@ -40,98 +54,16 @@ func main() {
 }
 
 func run() error {
-	provider := os.Getenv("AMASS_LLM_PROVIDER")
-	if provider == "" {
-		provider = "compatible"
-	}
-
-	modelName := os.Getenv("AMASS_LLM_MODEL")
-	endpoint := os.Getenv("AMASS_LLM_ENDPOINT")
-	if modelName == "" || endpoint == "" {
-		return errors.New("AMASS_LLM_MODEL and AMASS_LLM_ENDPOINT must be configured")
-	}
-
-	u, err := url.Parse(endpoint)
-	if err != nil || u.Hostname() == "" || u.User != nil {
-		return errors.New("invalid model endpoint")
-	}
-	if u.Scheme != "https" && (u.Scheme != "http" || os.Getenv("AMASS_LLM_ALLOW_HTTP") != "true") {
-		return errors.New("model HTTP requires explicit AMASS_LLM_ALLOW_HTTP=true; otherwise use HTTPS")
-	}
-
-	timeout := 4 * time.Minute
-	if raw := os.Getenv("AMASS_LLM_MODEL_TIMEOUT"); raw != "" {
-		timeout, err = time.ParseDuration(raw)
-		if err != nil || timeout < 5*time.Second || timeout > 15*time.Minute {
-			return errors.New("invalid model timeout")
-		}
-	}
-
-	apiKey := os.Getenv("AMASS_LLM_API_KEY")
-	client := &http.Client{Timeout: timeout}
-	var model llm.Model
-	switch provider {
-	case "ollama":
-		if _, err := llm.OllamaChatURL(endpoint); err != nil {
-			return err
-		}
-
-		m := llm.NewOllamaModel(endpoint, modelName, client)
-		m.Think = os.Getenv("AMASS_LLM_THINK") == "true"
-		if raw := os.Getenv("AMASS_LLM_CONTEXT_TOKENS"); raw != "" {
-			n, err := strconv.Atoi(raw)
-			if err != nil || n < 2048 || n > 262144 {
-				return errors.New("AMASS_LLM_CONTEXT_TOKENS must be 2048..262144")
-			}
-
-			m.ContextTokens = n
-		}
-
-		model = m
-	case "compatible":
-		model = ai.CompatibleModel{Endpoint: endpoint, ModelName: modelName, APIKey: apiKey, Client: client}
-	case "anthropic":
-		if apiKey == "" {
-			return errors.New("the Anthropic provider requires AMASS_LLM_API_KEY")
-		}
-
-		model = llm.AnthropicModel{Endpoint: endpoint, ModelName: modelName, APIKey: apiKey, Client: client}
-	default:
-		return fmt.Errorf("unsupported inference provider %q", provider)
+	t, err := newTarget(os.LookupEnv)
+	if err != nil {
+		return err
 	}
 
 	var status state
 	ctx, stop := signal.NotifyContext(context.Background(), syscall.SIGTERM, syscall.SIGINT)
 	defer stop()
 	go func() {
-		probe := func() {
-			check, cancel := context.WithTimeout(ctx, timeout)
-			defer cancel()
-			response, err := model.Generate(check, []llm.Message{
-				{Role: "system", Text: "Model connectivity check. Reply briefly with READY."},
-				{Role: "user", Text: "READY"},
-			}, nil)
-			if err == nil && strings.TrimSpace(response.Text) == "" && len(response.Calls) == 0 {
-				err = errors.New("model responded without usable content")
-			}
-
-			status.Lock()
-			status.ready = err == nil
-			if err == nil {
-				status.lastOK = time.Now()
-				status.lastError = ""
-			} else {
-				status.lastError = err.Error()
-			}
-
-			status.Unlock()
-			if err != nil {
-				fmt.Fprintln(os.Stderr, "inference probe unsuccessful:", err)
-			} else {
-				fmt.Fprintln(os.Stderr, "inference model responded:", provider, modelName)
-			}
-		}
-		probe()
+		status.probe(ctx, t)
 		for {
 			status.RLock()
 			ready := status.ready
@@ -144,31 +76,12 @@ func run() error {
 			case <-ctx.Done():
 				return
 			case <-time.After(interval):
-				probe()
+				status.probe(ctx, t)
 			}
 		}
 	}()
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, r *http.Request) {
-		send(w, 200, map[string]any{"status": "running", "component": "inference-provider"})
-	})
-	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, r *http.Request) {
-		status.RLock()
-		ready, lastOK, lastErr := status.ready, status.lastOK, status.lastError
-		status.RUnlock()
-		fresh := ready && !lastOK.IsZero() && time.Since(lastOK) < 7*time.Minute
-		state := "not_ready"
-		code := 503
-		if fresh {
-			state = "ready"
-			code = 200
-		}
 
-		// The error remains in container logs and must not expose upstream tokens.
-		_ = lastErr
-		send(w, code, map[string]any{"status": state, "provider": provider, "model": modelName, "last_success": lastOK})
-	})
-	server := &http.Server{Addr: "0.0.0.0:8091", Handler: mux, ReadHeaderTimeout: 5 * time.Second}
+	server := &http.Server{Addr: "0.0.0.0:8091", Handler: status.handler(t), ReadHeaderTimeout: 5 * time.Second}
 	go func() {
 		<-ctx.Done()
 		closeCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
@@ -181,6 +94,94 @@ func run() error {
 	}
 
 	return err
+}
+
+// newTarget builds the model from the same AMASS_LLM_* environment the rest
+// of Amass reads (config.ResolveAISettings, ai.NewModel). The API key is read
+// from the variable AMASS_LLM_API_KEY_ENV names, or from AMASS_LLM_API_KEY.
+func newTarget(lookup func(string) (string, bool)) (target, error) {
+	s, err := config.ResolveAISettings(config.AISettings{Provider: "compatible"}, lookup)
+	if err != nil {
+		return target{}, err
+	}
+	if s.Model == "" || s.Endpoint == "" {
+		return target{}, errors.New("AMASS_LLM_MODEL and AMASS_LLM_ENDPOINT must be configured")
+	}
+
+	timeout := defaultTimeout
+	if s.ModelTimeout != "" {
+		if timeout, err = time.ParseDuration(s.ModelTimeout); err != nil {
+			return target{}, err
+		}
+	}
+	keyEnv := s.APIKeyEnv
+	if keyEnv == "" {
+		keyEnv = "AMASS_LLM_API_KEY"
+	}
+	key, _ := lookup(keyEnv)
+	if s.Provider == "anthropic" && key == "" {
+		return target{}, errors.New("the Anthropic provider requires an API key")
+	}
+
+	m, err := ai.NewModel(ai.ModelSettings{Provider: s.Provider, Endpoint: s.Endpoint, Model: s.Model, APIKey: key,
+		AllowHTTP: s.AllowHTTP, Timeout: timeout, ContextTokens: s.ContextTokens, Think: s.Think})
+	if err != nil {
+		return target{}, err
+	}
+	return target{model: m, provider: s.Provider, modelName: s.Model, timeout: timeout}, nil
+}
+
+// probe asks the model for a short reply and records whether a usable one
+// came back.
+func (s *state) probe(ctx context.Context, t target) {
+	check, cancel := context.WithTimeout(ctx, t.timeout)
+	defer cancel()
+	response, err := t.model.Generate(check, []llm.Message{
+		{Role: "system", Text: "Model connectivity check. Reply briefly with READY."},
+		{Role: "user", Text: "READY"},
+	}, nil)
+	if err == nil && strings.TrimSpace(response.Text) == "" && len(response.Calls) == 0 {
+		err = errors.New("model responded without usable content")
+	}
+
+	s.Lock()
+	s.ready = err == nil
+	if err == nil {
+		s.lastOK = time.Now()
+		s.lastError = ""
+	} else {
+		s.lastError = err.Error()
+	}
+	s.Unlock()
+
+	if err != nil {
+		fmt.Fprintln(os.Stderr, "inference probe unsuccessful:", err)
+	} else {
+		fmt.Fprintln(os.Stderr, "inference model responded:", t.provider, t.modelName)
+	}
+}
+
+// handler serves /healthz, which answers while the process runs, and /readyz,
+// which answers 200 only while the last probe succeeded within freshFor. The
+// probe's error stays in the container log: it can carry upstream details.
+func (s *state) handler(t target) http.Handler {
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /healthz", func(w http.ResponseWriter, _ *http.Request) {
+		send(w, http.StatusOK, map[string]any{"status": "running", "component": "inference-provider"})
+	})
+	mux.HandleFunc("GET /readyz", func(w http.ResponseWriter, _ *http.Request) {
+		s.RLock()
+		ready, lastOK := s.ready, s.lastOK
+		s.RUnlock()
+
+		status, code := "not_ready", http.StatusServiceUnavailable
+		if ready && !lastOK.IsZero() && time.Since(lastOK) < freshFor {
+			status, code = "ready", http.StatusOK
+		}
+		send(w, code, map[string]any{"status": status, "provider": t.provider, "model": t.modelName,
+			"last_success": lastOK})
+	})
+	return mux
 }
 
 func send(w http.ResponseWriter, status int, v any) {

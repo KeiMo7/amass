@@ -98,11 +98,7 @@ func (c *Client) CreateSession(ctx context.Context, config *config.Config) (uuid
 	}
 
 	if resp.StatusCode != http.StatusCreated {
-		msg, err := readJSONError(resp.Body)
-		if err != nil {
-			return uuid.UUID{}, fmt.Errorf("createSession: status=%s", resp.Status)
-		}
-		return uuid.UUID{}, fmt.Errorf("createSession: status=%s error=%s", resp.Status, msg)
+		return uuid.UUID{}, statusError("createSession", resp)
 	}
 
 	var out CreateSessionResponse
@@ -121,11 +117,7 @@ func (c *Client) ListSessions(ctx context.Context) ([]uuid.UUID, error) {
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		msg, err := readJSONError(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("listSessions: status=%s", resp.Status)
-		}
-		return nil, fmt.Errorf("listSessions: status=%s error=%s", resp.Status, msg)
+		return nil, statusError("listSessions", resp)
 	}
 
 	var out ListSessionsResponse
@@ -155,11 +147,7 @@ func (c *Client) TerminateSession(ctx context.Context, token uuid.UUID) error {
 	}
 
 	if resp.StatusCode != http.StatusNoContent {
-		msg, err := readJSONError(resp.Body)
-		if err != nil {
-			return fmt.Errorf("terminateSession: status=%s", resp.Status)
-		}
-		return fmt.Errorf("terminateSession: status=%s error=%s", resp.Status, msg)
+		return statusError("terminateSession", resp)
 	}
 	return nil
 }
@@ -173,11 +161,7 @@ func (c *Client) SessionStats(ctx context.Context, token uuid.UUID) (*et.Session
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		msg, err := readJSONError(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("%s/stats: status=%s", token.String(), resp.Status)
-		}
-		return nil, fmt.Errorf("%s/stats: status=%s error=%s", token.String(), resp.Status, msg)
+		return nil, statusError(token.String()+"/stats", resp)
 	}
 
 	var st et.SessionStats
@@ -198,11 +182,7 @@ func (c *Client) SessionScope(ctx context.Context, token uuid.UUID, atype oam.As
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		msg, err := readJSONError(resp.Body)
-		if err != nil {
-			return nil, fmt.Errorf("%s/scope: status=%s", token.String(), resp.Status)
-		}
-		return nil, fmt.Errorf("%s/scope: status=%s error=%s", token.String(), resp.Status, msg)
+		return nil, statusError(token.String()+"/scope", resp)
 	}
 
 	reader := strings.NewReader(resp.Body)
@@ -233,11 +213,7 @@ func (c *Client) CreateAsset(ctx context.Context, token uuid.UUID, asset oam.Ass
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		msg, err := readJSONError(resp.Body)
-		if err != nil {
-			return "", fmt.Errorf("createAsset: status=%s", resp.Status)
-		}
-		return "", fmt.Errorf("createAsset: status=%s error=%s", resp.Status, msg)
+		return "", statusError("createAsset", resp)
 	}
 
 	var r AddAssetResponse
@@ -285,11 +261,7 @@ func (c *Client) CreateAssetsBulk(ctx context.Context, token uuid.UUID, atype st
 	}
 
 	if resp.StatusCode != http.StatusOK {
-		msg, err := readJSONError(resp.Body)
-		if err != nil {
-			return 0, fmt.Errorf("addAssetsBulk: status=%s", resp.Status)
-		}
-		return 0, fmt.Errorf("addAssetsBulk: status=%s error=%s", resp.Status, msg)
+		return 0, statusError("addAssetsBulk", resp)
 	}
 
 	var out BulkAddAssetsResponse
@@ -348,6 +320,15 @@ func (c *Client) Subscribe(ctx context.Context, token uuid.UUID) (<-chan string,
 		}
 	}()
 	return ch, nil
+}
+
+// statusError reports an unexpected status, with the server's error message
+// when its answer carries one.
+func statusError(op string, resp *amasshttp.Response) error {
+	if msg, err := readJSONError(resp.Body); err == nil && msg != "" {
+		return fmt.Errorf("%s: status=%s error=%s", op, resp.Status, msg)
+	}
+	return fmt.Errorf("%s: status=%s", op, resp.Status)
 }
 
 func readJSONError(content string) (string, error) {

@@ -9,9 +9,7 @@ import (
 	"context"
 	"encoding/json"
 	"errors"
-	"fmt"
 	"net/http"
-	"strings"
 	"sync"
 	"sync/atomic"
 	"time"
@@ -19,19 +17,6 @@ import (
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	oamacct "github.com/owasp-amass/open-asset-model/account"
-	oamcert "github.com/owasp-amass/open-asset-model/certificate"
-	oamcon "github.com/owasp-amass/open-asset-model/contact"
-	oamdns "github.com/owasp-amass/open-asset-model/dns"
-	oamfile "github.com/owasp-amass/open-asset-model/file"
-	oamfin "github.com/owasp-amass/open-asset-model/financial"
-	oamgen "github.com/owasp-amass/open-asset-model/general"
-	oamnet "github.com/owasp-amass/open-asset-model/network"
-	oamorg "github.com/owasp-amass/open-asset-model/org"
-	oampeop "github.com/owasp-amass/open-asset-model/people"
-	oamplat "github.com/owasp-amass/open-asset-model/platform"
-	oamreg "github.com/owasp-amass/open-asset-model/registration"
-	oamurl "github.com/owasp-amass/open-asset-model/url"
 )
 
 type ErrorResponse struct {
@@ -147,104 +132,6 @@ func (v *V1Handlers) PutAssets(ctx context.Context, sess et.Session, assets []oa
 		v.log.Warn("some assets failed to ingest", "failed", n, "total", len(assets))
 	}
 	return int64(len(assets)) - failed.Load(), nil
-}
-
-func parseAsset(atype string, raw json.RawMessage) (oam.Asset, error) {
-	switch atype {
-	case strings.ToLower(string(oam.Account)):
-		var a oamacct.Account
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.AutnumRecord)):
-		var a oamreg.AutnumRecord
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.AutonomousSystem)):
-		var a oamnet.AutonomousSystem
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.ContactRecord)):
-		var a oamcon.ContactRecord
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.DomainRecord)):
-		var a oamreg.DomainRecord
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.File)):
-		var a oamfile.File
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.FQDN)):
-		var a oamdns.FQDN
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.FundsTransfer)):
-		var a oamfin.FundsTransfer
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.GeoLocation)):
-		var a oamcon.GeoLocation
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.Identifier)):
-		var a oamgen.Identifier
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.IPAddress)):
-		var a oamnet.IPAddress
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.IPNetRecord)):
-		var a oamreg.IPNetRecord
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.StreetAddress)):
-		var a oamcon.StreetAddress
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.Netblock)):
-		var a oamnet.Netblock
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.Organization)):
-		var a oamorg.Organization
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.Phone)):
-		var a oamcon.Phone
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.Person)):
-		var a oampeop.Person
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.Product)):
-		var a oamplat.Product
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.ProductRelease)):
-		var a oamplat.ProductRelease
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.Service)):
-		var a oamplat.Service
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.StorageBucket)):
-		var a oamplat.StorageBucket
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.TLSCertificate)):
-		var a oamcert.TLSCertificate
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	case strings.ToLower(string(oam.URL)):
-		var a oamurl.URL
-		err := json.Unmarshal(raw, &a)
-		return &a, err
-	}
-	return nil, fmt.Errorf("unknown asset type: %s", atype)
 }
 
 func defaultContentFilter(asset oam.Asset) (dbt.ContentFilters, error) {

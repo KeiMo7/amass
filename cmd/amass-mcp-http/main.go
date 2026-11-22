@@ -36,9 +36,9 @@ func run() error {
 	cfgFile := flag.String("config", "/.config/amass/config.yaml", "Existing Amass configuration")
 	addr := flag.String("listen", "0.0.0.0:8090", "Internal MCP HTTP listener")
 	flag.Parse()
-	token := os.Getenv("AMASS_MCP_TOKEN")
-	if len(token) < 32 {
-		return errors.New("AMASS_MCP_TOKEN must be a strong random secret (at least 32 characters)")
+	token, opToken, err := tokens(os.Getenv)
+	if err != nil {
+		return err
 	}
 
 	cfg := config.NewConfig()
@@ -81,12 +81,7 @@ func run() error {
 
 	// Operator mode: a second, different token unlocks the tools that start
 	// enumerations, review proposals and manage data sources.
-	if opToken := os.Getenv("AMASS_MCP_OPERATOR_TOKEN"); opToken != "" {
-		if len(opToken) < 32 || opToken == token {
-			return errors.New("AMASS_MCP_OPERATOR_TOKEN must be a strong random secret (at least 32 " +
-				"characters) different from AMASS_MCP_TOKEN")
-		}
-
+	if opToken != "" {
 		op, release, err := mcp.NewOperator(cfg, g, mcp.OperatorOptions{
 			ConfigFile:          *cfgFile,
 			RunJournal:          os.Getenv("AMASS_MCP_RUN_JOURNAL"),
@@ -122,7 +117,7 @@ func run() error {
 	}
 
 	fmt.Fprintln(os.Stderr, "mcp: authenticated read-only HTTP listener enabled")
-	err := httpServer.ListenAndServe()
+	err = httpServer.ListenAndServe()
 	if errors.Is(err, http.ErrServerClosed) {
 		return nil
 	}
@@ -131,6 +126,25 @@ func run() error {
 }
 
 // vulnRefreshEnv set to "off" stops the daily vulnerability data refresh.
+// minTokenLength is the shortest bearer token accepted.
+const minTokenLength = 32
+
+// tokens returns the read-only bearer token and the optional operator token.
+// Each must be a strong random secret, and the operator token must differ from
+// the read-only one so that it alone unlocks the operator tools.
+func tokens(getenv func(string) string) (string, string, error) {
+	token := getenv("AMASS_MCP_TOKEN")
+	if len(token) < minTokenLength {
+		return "", "", errors.New("AMASS_MCP_TOKEN must be a strong random secret (at least 32 characters)")
+	}
+	opToken := getenv("AMASS_MCP_OPERATOR_TOKEN")
+	if opToken != "" && (len(opToken) < minTokenLength || opToken == token) {
+		return "", "", errors.New("AMASS_MCP_OPERATOR_TOKEN must be a strong random secret (at least 32 " +
+			"characters) different from AMASS_MCP_TOKEN")
+	}
+	return token, opToken, nil
+}
+
 const vulnRefreshEnv = "AMASS_MCP_VULN_REFRESH"
 
 // refreshVulnerabilities keeps the vulnerable lens's data current: it is

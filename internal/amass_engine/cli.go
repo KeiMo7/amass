@@ -39,7 +39,7 @@ type Args struct {
 }
 
 func NewFlagset(args *Args, errorHandling flag.ErrorHandling) *flag.FlagSet {
-	fs := flag.NewFlagSet("engine", flag.ContinueOnError)
+	fs := flag.NewFlagSet("engine", errorHandling)
 
 	fs.BoolVar(&args.Help, "h", false, "Show the program usage message")
 	fs.BoolVar(&args.Help, "help", false, "Show the program usage message")

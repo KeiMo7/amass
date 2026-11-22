@@ -122,7 +122,7 @@ func (h *handler) check(e *et.Event) error {
 }
 
 func (s *schemaorg) query(e *et.Event, domain string) {
-	html := fetchHomepage(e.Session.Ctx(), s.rlimit, domain)
+	html := fetchHomepage(e.Session.Ctx(), e.Session.Clients().Crawl, s.rlimit, domain)
 	if html == "" {
 		return
 	}

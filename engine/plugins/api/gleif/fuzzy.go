@@ -79,7 +79,7 @@ func (fc *fuzzyCompletions) query(e *et.Event, orgent *dbt.Entity) *dbt.Entity {
 	if leient := fc.plugin.orgEntityToLEI(e, orgent); leient != nil {
 		lei := leient.Asset.(*oamgen.Identifier)
 
-		if r, err := GLEIFGetLEIRecord(e.Session.Ctx(), lei.ID); err == nil {
+		if r, err := GLEIFGetLEIRecord(e.Session.Ctx(), e.Session.Clients().General, lei.ID); err == nil {
 			rec = r
 			conf = 100
 		}
@@ -88,7 +88,7 @@ func (fc *fuzzyCompletions) query(e *et.Event, orgent *dbt.Entity) *dbt.Entity {
 	if rec == nil {
 		o := orgent.Asset.(*oamorg.Organization)
 
-		result, err := GLEIFSearchFuzzyCompletions(e.Session.Ctx(), o.Name)
+		result, err := GLEIFSearchFuzzyCompletions(e.Session.Ctx(), e.Session.Clients().General, o.Name)
 		if err != nil {
 			e.Session.Log().Error(err.Error(), slog.Group("plugin", "name", fc.plugin.name, "handler", fc.name))
 			return nil
@@ -141,7 +141,7 @@ func filterFuzzyCompletions(e *et.Event, orgent *dbt.Entity, brand string, m map
 
 	var cands []leiCandidate
 	for _, match := range exact {
-		if r, err := GLEIFGetLEIRecord(e.Session.Ctx(), m[match]); err == nil {
+		if r, err := GLEIFGetLEIRecord(e.Session.Ctx(), e.Session.Clients().General, m[match]); err == nil {
 			cands = append(cands, leiCandidate{name: match, rec: r, exact: true, sim: 1, unique: len(exact) == 1})
 		}
 	}
@@ -149,7 +149,7 @@ func filterFuzzyCompletions(e *et.Event, orgent *dbt.Entity, brand string, m map
 		if !strings.Contains(strings.ToLower(match), strings.ToLower(brand)) {
 			continue
 		}
-		if r, err := GLEIFGetLEIRecord(e.Session.Ctx(), m[match]); err == nil {
+		if r, err := GLEIFGetLEIRecord(e.Session.Ctx(), e.Session.Clients().General, m[match]); err == nil {
 			cands = append(cands, leiCandidate{name: match, rec: r, sim: strutil.Similarity(o.Name, match, swg),
 				unique: len(partial) == 1})
 		}

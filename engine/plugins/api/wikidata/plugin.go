@@ -135,7 +135,7 @@ func (h *handler) check(e *et.Event) error {
 }
 
 func (w *wikidata) query(e *et.Event, domain string) {
-	cands, err := queryByDomain(e.Session.Ctx(), w.rlimit, domain)
+	cands, err := queryByDomain(e.Session.Ctx(), e.Session.Clients().General, w.rlimit, domain)
 	if err != nil {
 		e.Session.Log().Error(err.Error(), slog.Group("plugin", "name", w.name, "handler", w.handler.name))
 		return

@@ -12,6 +12,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"net/http/httptest"
 	"path/filepath"
 	"strings"
 	"sync"
@@ -46,6 +47,8 @@ type Session struct {
 	ranger  cidranger.Ranger
 	backlog *Backlog
 	ps      *pubsub.Logger
+	webOnce sync.Once
+	web     *Web
 }
 
 // NewSession returns a session over a new SQLite database, closed when the
@@ -103,6 +106,77 @@ func (s *Session) CIDRanger() cidranger.Ranger { return s.ranger }
 
 // Clients are plain HTTP clients, for tests that serve their own pages.
 func (s *Session) Clients() *et.SessionHTTPClients { return s.http }
+
+// Web routes every request the session's HTTP clients send to handlers the
+// test registers, in process, so plugin code that fetches from fixed URLs runs
+// against canned answers. A request no handler matches gets 404 and is still
+// recorded. The first call installs it on the session's clients.
+func (s *Session) Web() *Web {
+	s.webOnce.Do(func() {
+		s.web = &Web{mux: http.NewServeMux()}
+		client := &http.Client{Timeout: 10 * time.Second, Transport: s.web}
+		s.http.General, s.http.Probe, s.http.Crawl, s.http.Bulk = client, client, client, client
+	})
+	return s.web
+}
+
+// Web is the fake web of a test session (Session.Web).
+type Web struct {
+	mu       sync.Mutex
+	mux      *http.ServeMux
+	requests []string
+}
+
+// Handle registers a handler for a pattern that names the host, such as
+// "GET api.example.com/v1/search" or "data.example.org/" (net/http.ServeMux
+// patterns).
+func (w *Web) Handle(pattern string, h http.HandlerFunc) {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	w.mux.HandleFunc(pattern, h)
+}
+
+// Reply registers a handler that answers a pattern with a status and body.
+func (w *Web) Reply(pattern string, status int, body string) {
+	w.Handle(pattern, func(rw http.ResponseWriter, _ *http.Request) {
+		rw.WriteHeader(status)
+		_, _ = io.WriteString(rw, body)
+	})
+}
+
+// Requests returns the requests sent so far, each "METHOD host/path?query".
+func (w *Web) Requests() []string {
+	w.mu.Lock()
+	defer w.mu.Unlock()
+
+	return append([]string(nil), w.requests...)
+}
+
+// RoundTrip answers a request from the registered handlers.
+func (w *Web) RoundTrip(req *http.Request) (*http.Response, error) {
+	r := req.Clone(req.Context())
+	if r.Host == "" {
+		r.Host = r.URL.Host
+	}
+	if r.Body == nil {
+		r.Body = http.NoBody
+	}
+
+	w.mu.Lock()
+	line := r.Method + " " + r.URL.Host + r.URL.Path
+	if r.URL.RawQuery != "" {
+		line += "?" + r.URL.RawQuery
+	}
+	w.requests = append(w.requests, line)
+	w.mu.Unlock()
+
+	rec := httptest.NewRecorder()
+	w.mux.ServeHTTP(rec, r)
+	resp := rec.Result()
+	resp.Request = req
+	return resp, nil
+}
 
 // PubSub returns the session's log stream.
 func (s *Session) PubSub() *pubsub.Logger { return s.ps }

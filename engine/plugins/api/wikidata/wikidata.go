@@ -8,6 +8,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"net/http"
 	"net/url"
 	"strings"
 	"time"
@@ -90,7 +91,7 @@ func qidFromURI(uri string) string {
 // queryByDomain asks Wikidata which entity's official website is the domain.
 // It returns every distinct entity matched; a caller treats more than one as
 // ambiguous and resolves none (principle 8: never guess between candidates).
-func queryByDomain(ctx context.Context, rl interface {
+func queryByDomain(ctx context.Context, client *http.Client, rl interface {
 	Wait(context.Context) error
 }, domain string) ([]company, error) {
 	u := endpoint + "?format=json&query=" + url.QueryEscape(buildQuery(domain))
@@ -99,7 +100,7 @@ func queryByDomain(ctx context.Context, rl interface {
 	wctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	resp, err := amasshttp.RequestWebPage(wctx, amasshttp.SourceClient, &amasshttp.Request{URL: u})
+	resp, err := amasshttp.RequestWebPage(wctx, client, &amasshttp.Request{URL: u})
 	if err != nil || resp == nil || resp.Body == "" {
 		return nil, fmt.Errorf("wikidata query for %s failed: %v", domain, err)
 	}

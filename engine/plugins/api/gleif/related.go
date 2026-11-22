@@ -116,8 +116,8 @@ func (ro *relatedOrgs) lookup(e *et.Event, ident *dbt.Entity, since time.Time) [
 
 func (ro *relatedOrgs) query(e *et.Event, ident *dbt.Entity) []*dbt.Entity {
 	id := ident.Asset.(*oamgen.Identifier)
-	parent, _ := GLEIFGetDirectParentRecord(e.Session.Ctx(), id.ID)
-	children, _ := GLEIFGetDirectChildrenRecords(e.Session.Ctx(), id.ID)
+	parent, _ := GLEIFGetDirectParentRecord(e.Session.Ctx(), e.Session.Clients().General, id.ID)
+	children, _ := GLEIFGetDirectChildrenRecords(e.Session.Ctx(), e.Session.Clients().General, id.ID)
 	return ro.store(e, ident, parent, children)
 }
 

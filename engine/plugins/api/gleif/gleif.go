@@ -9,6 +9,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net/http"
 	"net/url"
 	"time"
 
@@ -26,14 +27,14 @@ func init() {
 }
 
 // GLEIFSearchFuzzyCompletions performs the fuzzy completion search for the given name.
-func GLEIFSearchFuzzyCompletions(ctx context.Context, name string) (*FuzzyCompletionsResponse, error) {
+func GLEIFSearchFuzzyCompletions(ctx context.Context, client *http.Client, name string) (*FuzzyCompletionsResponse, error) {
 	u := "https://api.gleif.org/api/v1/fuzzycompletions?field=entity.legalName&q=" + url.QueryEscape(name)
 
 	_ = support.WaitLimit(ctx, gleifLimit)
 	wctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	resp, err := amasshttp.RequestWebPage(wctx, amasshttp.SourceClient, &amasshttp.Request{URL: u})
+	resp, err := amasshttp.RequestWebPage(wctx, client, &amasshttp.Request{URL: u})
 	if err != nil || resp.Body == "" {
 		msg := fmt.Sprintf("Failed to obtain the LEI record for %s: %s", name, err)
 		return nil, fmt.Errorf("GLEIFSearchFuzzyCompletions: %s", msg)
@@ -56,7 +57,7 @@ func GLEIFSearchFuzzyCompletions(ctx context.Context, name string) (*FuzzyComple
 // level, not a street line, so the caller confirms the street itself; this
 // bounds the result to one page. At least one filter is required so the search
 // is never the whole register.
-func GLEIFSearchByAddress(ctx context.Context, city, country, postal string) ([]*LEIRecord, error) {
+func GLEIFSearchByAddress(ctx context.Context, client *http.Client, city, country, postal string) ([]*LEIRecord, error) {
 	v := url.Values{}
 	if city != "" {
 		v.Set("filter[entity.legalAddress.city]", city)
@@ -77,7 +78,7 @@ func GLEIFSearchByAddress(ctx context.Context, city, country, postal string) ([]
 	wctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
-	resp, err := amasshttp.RequestWebPage(wctx, amasshttp.SourceClient, &amasshttp.Request{URL: u})
+	resp, err := amasshttp.RequestWebPage(wctx, client, &amasshttp.Request{URL: u})
 	if err != nil || resp.StatusCode != 200 || resp.Body == "" {
 		return nil, fmt.Errorf("GLEIFSearchByAddress: failed to query the register: %v", err)
 	}
@@ -95,7 +96,7 @@ func GLEIFSearchByAddress(ctx context.Context, city, country, postal string) ([]
 }
 
 // GLEIFGetLEIRecord retrieves the LEI record for the given identifier.
-func GLEIFGetLEIRecord(ctx context.Context, id string) (*LEIRecord, error) {
+func GLEIFGetLEIRecord(ctx context.Context, client *http.Client, id string) (*LEIRecord, error) {
 	u := "https://api.gleif.org/api/v1/lei-records/" + id
 
 	_ = support.WaitLimit(ctx, gleifLimit)
@@ -103,7 +104,7 @@ func GLEIFGetLEIRecord(ctx context.Context, id string) (*LEIRecord, error) {
 	defer cancel()
 
 	resp, err := amasshttp.RequestWebPage(wctx,
-		amasshttp.SourceClient, &amasshttp.Request{URL: u})
+		client, &amasshttp.Request{URL: u})
 	if err != nil || resp.StatusCode != 200 || resp.Body == "" {
 		return nil, err
 	}
@@ -118,7 +119,7 @@ func GLEIFGetLEIRecord(ctx context.Context, id string) (*LEIRecord, error) {
 }
 
 // GLEIFGetDirectParentRecord retrieves the direct parent LEI record for the given identifier.
-func GLEIFGetDirectParentRecord(ctx context.Context, id string) (*LEIRecord, error) {
+func GLEIFGetDirectParentRecord(ctx context.Context, client *http.Client, id string) (*LEIRecord, error) {
 	u := "https://api.gleif.org/api/v1/lei-records/" + id + "/direct-parent"
 
 	_ = support.WaitLimit(ctx, gleifLimit)
@@ -126,7 +127,7 @@ func GLEIFGetDirectParentRecord(ctx context.Context, id string) (*LEIRecord, err
 	defer cancel()
 
 	resp, err := amasshttp.RequestWebPage(wctx,
-		amasshttp.SourceClient, &amasshttp.Request{URL: u})
+		client, &amasshttp.Request{URL: u})
 	if err != nil || resp.StatusCode != 200 || resp.Body == "" {
 		return nil, err
 	}
@@ -141,7 +142,7 @@ func GLEIFGetDirectParentRecord(ctx context.Context, id string) (*LEIRecord, err
 }
 
 // GLEIFGetDirectChildrenRecords retrieves the direct children LEI records for the given identifier.
-func GLEIFGetDirectChildrenRecords(ctx context.Context, id string) ([]*LEIRecord, error) {
+func GLEIFGetDirectChildrenRecords(ctx context.Context, client *http.Client, id string) ([]*LEIRecord, error) {
 	var children []*LEIRecord
 
 	last := 1
@@ -152,7 +153,7 @@ func GLEIFGetDirectChildrenRecords(ctx context.Context, id string) ([]*LEIRecord
 		defer cancel()
 
 		resp, err := amasshttp.RequestWebPage(wctx,
-			amasshttp.SourceClient, &amasshttp.Request{URL: link})
+			client, &amasshttp.Request{URL: link})
 		if err != nil || resp.StatusCode != 200 || resp.Body == "" {
 			return nil, err
 		}

@@ -62,7 +62,8 @@ func (a *addresses) check(e *et.Event) error {
 		return nil
 	}
 
-	recs, err := GLEIFSearchByAddress(e.Session.Ctx(), loc.City, normCountry(loc.Country), normPostal(loc.PostalCode))
+	recs, err := GLEIFSearchByAddress(e.Session.Ctx(), e.Session.Clients().General, loc.City,
+		normCountry(loc.Country), normPostal(loc.PostalCode))
 	if err != nil {
 		e.Session.Log().Error(err.Error(), slog.Group("plugin", "name", a.plugin.name, "handler", a.name))
 		return nil

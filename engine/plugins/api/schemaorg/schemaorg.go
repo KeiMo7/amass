@@ -7,6 +7,7 @@ package schemaorg
 import (
 	"context"
 	"encoding/json"
+	"net/http"
 	"regexp"
 	"strings"
 	"time"
@@ -35,13 +36,13 @@ var ldJSONBlock = regexp.MustCompile(`(?is)<script[^>]*type\s*=\s*["']applicatio
 
 // fetchHomepage retrieves the apex homepage HTML, trying HTTPS then HTTP. This
 // contacts the target, so the caller runs it only in active mode.
-func fetchHomepage(ctx context.Context, rl interface {
+func fetchHomepage(ctx context.Context, client *http.Client, rl interface {
 	Wait(context.Context) error
 }, domain string) string {
 	for _, u := range []string{"https://" + domain + "/", "http://" + domain + "/"} {
 		_ = rl.Wait(ctx)
 		wctx, cancel := context.WithTimeout(ctx, 30*time.Second)
-		resp, err := amasshttp.RequestWebPage(wctx, amasshttp.SourceClient, &amasshttp.Request{URL: u})
+		resp, err := amasshttp.RequestWebPage(wctx, client, &amasshttp.Request{URL: u})
 		cancel()
 		if err == nil && resp != nil && resp.Body != "" {
 			return resp.Body

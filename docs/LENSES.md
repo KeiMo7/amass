@@ -836,8 +836,8 @@ with more is then paged on its own. These use asset-db's
 back to one read at a time on a repository without them. Reading ahead does
 not change which assets a limited footprint samples.
 The same batch reads serve the graph search and guided investigation tools,
-the duplicate, identity, corporate group and person-named checks, `amass viz`
-and the enumeration engine's name-to-address lookups, and each MCP tool call
+the duplicate, identity, corporate group and person-named checks, the visualize
+tool and the enumeration engine's name-to-address lookups, and each MCP tool call
 reads an asset or edge list once however many of its lenses ask.
 
 These are stored records, not verified contracts: a token or SPF include can

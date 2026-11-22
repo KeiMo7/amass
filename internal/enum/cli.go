@@ -393,8 +393,9 @@ func getStats(c *client.Client, token uuid.UUID) (*et.SessionStats, error) {
 	return c.SessionStats(ctx, token)
 }
 
-func argsAndConfig(cmdName string, clArgs []string) (*config.Config, *Args) {
-	args := Args{
+// newArgs returns Args with its sets ready for the flags to fill.
+func newArgs() Args {
+	return Args{
 		AltWordList:       stringset.New(),
 		AltWordListMask:   stringset.New(),
 		BruteWordList:     stringset.New(),
@@ -406,7 +407,10 @@ func argsAndConfig(cmdName string, clArgs []string) (*config.Config, *Args) {
 		Names:             stringset.New(),
 		Resolvers:         stringset.New(),
 	}
+}
 
+func argsAndConfig(cmdName string, clArgs []string) (*config.Config, *Args) {
+	args := newArgs()
 	fs := NewFlagset(&args, flag.ContinueOnError)
 	// set up the flag set to write errors to a buffer
 	enumBuf := new(bytes.Buffer)
@@ -477,6 +481,10 @@ func argsAndConfig(cmdName string, clArgs []string) (*config.Config, *Args) {
 	if !cfg.Active && len(args.Ports) > 0 {
 		_, _ = afmt.R.Fprintln(color.Error, "Ports can only be scanned in the active mode")
 		os.Exit(1)
+	}
+	if args.Options.ListSources {
+		printDataSources(cfg, color.Output)
+		return nil, &args
 	}
 	if !cfg.HasSeed() {
 		_, _ = afmt.R.Fprintln(color.Error,

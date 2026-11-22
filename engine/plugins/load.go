@@ -5,6 +5,9 @@
 package plugins
 
 import (
+	"slices"
+	"strings"
+
 	"github.com/owasp-amass/amass/v5/engine/plugins/api"
 	"github.com/owasp-amass/amass/v5/engine/plugins/api/aviato"
 	"github.com/owasp-amass/amass/v5/engine/plugins/api/censys"
@@ -24,6 +27,7 @@ import (
 	"github.com/owasp-amass/amass/v5/engine/plugins/api/zoomeye"
 	"github.com/owasp-amass/amass/v5/engine/plugins/archive"
 	"github.com/owasp-amass/amass/v5/engine/plugins/attribution"
+	"github.com/owasp-amass/amass/v5/engine/plugins/bimi"
 	"github.com/owasp-amass/amass/v5/engine/plugins/bounty"
 	"github.com/owasp-amass/amass/v5/engine/plugins/breach"
 	"github.com/owasp-amass/amass/v5/engine/plugins/brute"
@@ -99,6 +103,7 @@ var pluginNewFuncs = []func() et.Plugin{
 	osm.NewOpenStreetMap,
 	propublica.NewProPublica,
 	securitytxt.NewSecurityTxt,
+	bimi.NewBIMI,
 	bounty.NewBountyScopes,
 	sshp.NewSSHProbing,
 	bannerp.NewBannerProbing,
@@ -125,6 +130,21 @@ var pluginNewFuncs = []func() et.Plugin{
 	NewIPNetblock,
 	NewJARMFingerprints,
 	NewKnownFQDN,
+}
+
+// PluginNames returns the names of the engine's plugins, which include its
+// data sources, sorted without regard to case. The plugins are created but
+// not started.
+func PluginNames() []string {
+	var names []string
+	for _, f := range pluginNewFuncs {
+		if p := f(); p != nil && p.Name() != "" {
+			names = append(names, p.Name())
+		}
+	}
+
+	slices.SortFunc(names, func(a, b string) int { return strings.Compare(strings.ToLower(a), strings.ToLower(b)) })
+	return slices.Compact(names)
 }
 
 func LoadAndStartPlugins(r et.Registry) error {

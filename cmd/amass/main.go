@@ -39,12 +39,11 @@ import (
 	"github.com/owasp-amass/amass/v5/internal/enum"
 	lenscli "github.com/owasp-amass/amass/v5/internal/lens/cli"
 	"github.com/owasp-amass/amass/v5/internal/tools"
-	"github.com/owasp-amass/amass/v5/internal/viz"
 	vulncli "github.com/owasp-amass/amass/v5/internal/vuln/cli"
 )
 
 const (
-	usageMsg string = "[ai|assoc|db|engine|enum|lens|review|viz|vuln-update] [options]"
+	usageMsg string = "[ai|assoc|db|engine|enum|lens|review|vuln-update] [options]"
 )
 
 type Args struct {
@@ -65,7 +64,6 @@ var subcommands = []subDesc{
 	{"enum", enum.Description},
 	{"lens", lenscli.LensDescription},
 	{"review", lenscli.ReviewDescription},
-	{"viz", viz.Description},
 	{"vuln-update", vulncli.Description},
 }
 
@@ -149,8 +147,9 @@ func main() {
 
 		ae.CLIWorkflow(cmdName, os.Args[2:])
 	case "enum":
-		// The engine must be started before running the enum command
-		if !engineIsRunning() {
+		// The engine must be started before running the enum command, unless
+		// the command only prints its usage or the data sources
+		if enum.NeedsEngine(os.Args[2:]) && !engineIsRunning() {
 			if err := startEngine(); err != nil {
 				_, _ = afmt.R.Fprintf(color.Error, "Failed to start the Amass engine: %v\n", err)
 				os.Exit(1)
@@ -169,8 +168,6 @@ func main() {
 		lenscli.LensWorkflow(cmdName, os.Args[2:])
 	case "review":
 		lenscli.ReviewWorkflow(cmdName, os.Args[2:])
-	case "viz":
-		viz.CLIWorkflow(cmdName, os.Args[2:])
 	case "vuln-update":
 		vulncli.CLIWorkflow(cmdName, os.Args[2:])
 	default:

@@ -7,6 +7,7 @@ package support
 import (
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/hex"
 	"fmt"
 	"hash/fnv"
@@ -246,6 +247,11 @@ func publicKeySHA256(cert *x509.Certificate) string {
 	return hex.EncodeToString(sum[:])
 }
 
+// oidBIMIKeyUsage is the extended key usage of a mark certificate for Brand
+// Indicators for Message Identification (the BIMI Group's Verified Mark
+// Certificate Requirements, section 7.1.2.3).
+var oidBIMIKeyUsage = asn1.ObjectIdentifier{1, 3, 6, 1, 5, 5, 7, 3, 31}
+
 func X509ToOAMTLSCertificate(cert *x509.Certificate) *oamcert.TLSCertificate {
 	if cert == nil {
 		return nil
@@ -327,6 +333,11 @@ func X509ToOAMTLSCertificate(cert *x509.Certificate) *oamcert.TLSCertificate {
 			c.ExtKeyUsage = append(c.ExtKeyUsage, oamcert.ExtKeyUsageMicrosoftKernelCodeSigning)
 		default:
 			c.ExtKeyUsage = append(c.ExtKeyUsage, "Unknown")
+		}
+	}
+	for _, oid := range cert.UnknownExtKeyUsage {
+		if oid.Equal(oidBIMIKeyUsage) {
+			c.ExtKeyUsage = append(c.ExtKeyUsage, oamcert.ExtKeyUsageBIMI)
 		}
 	}
 	return c

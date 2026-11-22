@@ -7,9 +7,13 @@ package support
 import (
 	"crypto/sha256"
 	"crypto/x509"
+	"encoding/asn1"
 	"encoding/hex"
 	"math/big"
+	"slices"
 	"testing"
+
+	oamcert "github.com/owasp-amass/open-asset-model/certificate"
 )
 
 func TestPublicKeySHA256(t *testing.T) {
@@ -43,5 +47,16 @@ func TestX509ToOAMTLSCertificateSetsPublicKeyHash(t *testing.T) {
 	}
 	if c.PublicKeySHA256 != want {
 		t.Errorf("PublicKeySHA256 = %q, want %q", c.PublicKeySHA256, want)
+	}
+}
+
+func TestX509ToOAMTLSCertificateMarksBIMIUsage(t *testing.T) {
+	c := X509ToOAMTLSCertificate(&x509.Certificate{
+		Version:            3,
+		SerialNumber:       big.NewInt(2),
+		UnknownExtKeyUsage: []asn1.ObjectIdentifier{{1, 3, 6, 1, 5, 5, 7, 3, 31}, {1, 2, 3}},
+	})
+	if c == nil || !slices.Contains(c.ExtKeyUsage, oamcert.ExtKeyUsageBIMI) || len(c.ExtKeyUsage) != 1 {
+		t.Fatalf("ExtKeyUsage = %v, want only the BIMI usage", c.ExtKeyUsage)
 	}
 }

@@ -70,8 +70,29 @@ type CertificatesReport struct {
 	Issuers []ChangeGroup `json:"issuers"`
 	// AuthorizedCAs lists, per owned apex domain that publishes a CAA
 	// policy, the certificate authorities that policy permits to issue.
-	AuthorizedCAs []DomainCAs          `json:"authorized_cas,omitempty"`
-	Findings      []CertificateFinding `json:"findings"`
+	AuthorizedCAs []DomainCAs `json:"authorized_cas,omitempty"`
+	// MarkCertificates are the BIMI mark certificates among them, with the
+	// organization and mark the certificate authority verified.
+	MarkCertificates []MarkCertificate    `json:"mark_certificates,omitempty"`
+	Findings         []CertificateFinding `json:"findings"`
+}
+
+// MarkCertificate is a mark certificate (a Verified or Common Mark
+// Certificate) a domain publishes for Brand Indicators for Message
+// Identification.
+type MarkCertificate struct {
+	Subject         string   `json:"subject"`
+	ID              string   `json:"id"`
+	Issuer          string   `json:"issuer"`
+	NotAfter        string   `json:"not_after,omitempty"`
+	Domains         []string `json:"domains,omitempty"`
+	Organization    string   `json:"organization,omitempty"`
+	MarkType        string   `json:"mark_type,omitempty"`
+	WordMark        string   `json:"word_mark,omitempty"`
+	Trademark       string   `json:"trademark,omitempty"`
+	TrademarkOffice string   `json:"trademark_office,omitempty"`
+	LEI             string   `json:"lei,omitempty"`
+	Logo            string   `json:"logo,omitempty"`
 }
 
 // DomainCAs is the set of certificate authorities a domain's CAA policy
@@ -99,6 +120,18 @@ type certificateRules struct {
 		from       time.Time
 	} `json:"max_validity"`
 	MaxValiditySource string `json:"max_validity_source"`
+	MarkCertificates  struct {
+		Usage                   string `json:"usage"`
+		SubjectLabel            string `json:"subject_label"`
+		OrganizationLabel       string `json:"organization_label"`
+		IdentifierLabel         string `json:"identifier_label"`
+		TrademarkIDType         string `json:"trademark_id_type"`
+		LEIIDType               string `json:"lei_id_type"`
+		LogoProperty            string `json:"logo_property"`
+		MarkTypeProperty        string `json:"mark_type_property"`
+		WordMarkProperty        string `json:"word_mark_property"`
+		TrademarkOfficeProperty string `json:"trademark_office_property"`
+	} `json:"mark_certificates"`
 }
 
 var loadCertificateRules = sync.OnceValue(func() certificateRules {
@@ -120,6 +153,11 @@ var loadCertificateRules = sync.OnceValue(func() certificateRules {
 	}
 	if r.CertificatePurpose == "" || len(r.CertificateTypes) == 0 {
 		panic("certificates.json: certificate_purpose and certificate_types are required")
+	}
+	if m := r.MarkCertificates; m.Usage == "" || m.SubjectLabel == "" || m.IdentifierLabel == "" ||
+		m.TrademarkIDType == "" || m.LEIIDType == "" {
+		panic("certificates.json: mark_certificates needs usage, subject_label, identifier_label, " +
+			"trademark_id_type and lei_id_type")
 	}
 
 	return r
@@ -171,6 +209,7 @@ func FindCertificates(ctx context.Context, g graph.Graph, schema graph.SchemaCat
 
 	issuers := changeTally{examples: 3, groups: map[string]map[string]*ChangeGroup{}}
 	var findings []CertificateFinding
+	var marks []MarkCertificate
 	for _, id := range order {
 		if s.spent() {
 			break
@@ -180,8 +219,21 @@ func FindCertificates(ctx context.Context, g graph.Graph, schema graph.SchemaCat
 			return out, err
 		}
 		issuers.add("issuers", issuer, graph.ContentString(certs[id], rules.Fields["subject"]))
+
+		if slices.Contains(contentStrings(certs[id], rules.Fields["ext_key_usage"]), rules.MarkCertificates.Usage) {
+			m, err := s.markCertificate(certs[id], rules, issuer)
+			if err != nil {
+				return out, err
+			}
+			marks = append(marks, m)
+			// The Baseline Requirements' validity limits are for TLS server
+			// certificates; mark certificates follow their own rules.
+			f = slices.DeleteFunc(f, func(c CertificateFinding) bool { return c.Kind == CertOverlong })
+		}
 		findings = append(findings, f...)
 	}
+	sort.SliceStable(marks, func(i, j int) bool { return marks[i].Subject < marks[j].Subject })
+	out.MarkCertificates = marks
 
 	authorized, noCAA := s.certificateAuthority()
 	out.AuthorizedCAs = authorized
@@ -390,6 +442,83 @@ func (s *scope) certificate(cert graph.Asset, rules certificateRules) ([]Certifi
 	return out, issuerParty, nil
 }
 
+// markCertificate reads what a mark certificate's subject ContactRecord says
+// about the organization and its mark.
+func (s *scope) markCertificate(cert graph.Asset, rules certificateRules, issuer string) (MarkCertificate, error) {
+	mr := rules.MarkCertificates
+	m := MarkCertificate{Subject: graph.ContentString(cert, rules.Fields["subject"]), ID: cert.ID, Issuer: issuer,
+		NotAfter: graph.ContentString(cert, rules.Fields["not_after"])}
+	if ev, err := s.w.graph.Evidence(s.w.ctx, cert.ID, 50); err == nil && mr.LogoProperty != "" {
+		if v := propertyValues(ev, mr.LogoProperty); len(v) > 0 {
+			m.Logo = v[0]
+		}
+	}
+
+	steps, err := s.w.steps(cert)
+	if err != nil {
+		return m, err
+	}
+	for _, st := range steps {
+		switch {
+		case st.forward && slices.Contains(rules.NameTypes, st.other.Type):
+			graph.AddUnique(&m.Domains, graph.FQDNName(st.other))
+		case st.forward && st.edge.Label == mr.SubjectLabel:
+			if err := s.markSubject(st.other, rules, &m); err != nil {
+				return m, err
+			}
+		}
+	}
+	sort.Strings(m.Domains)
+	if m.Subject == "" && len(m.Domains) > 0 {
+		m.Subject = m.Domains[0]
+	}
+	return m, nil
+}
+
+// markSubject fills in the organization and mark details stored on a mark
+// certificate's subject ContactRecord.
+func (s *scope) markSubject(cr graph.Asset, rules certificateRules, m *MarkCertificate) error {
+	mr := rules.MarkCertificates
+	if ev, err := s.w.graph.Evidence(s.w.ctx, cr.ID, 50); err == nil {
+		if v := propertyValues(ev, mr.MarkTypeProperty); len(v) > 0 {
+			m.MarkType = v[0]
+		}
+		if v := propertyValues(ev, mr.WordMarkProperty); len(v) > 0 {
+			m.WordMark = v[0]
+		}
+	}
+
+	steps, err := s.w.steps(cr)
+	if err != nil {
+		return err
+	}
+	for _, st := range steps {
+		if !st.forward {
+			continue
+		}
+		switch st.edge.Label {
+		case mr.OrganizationLabel:
+			if m.Organization == "" {
+				m.Organization = graph.AssetLabel(st.other)
+			}
+		case mr.IdentifierLabel:
+			id := graph.ContentString(st.other, "id")
+			switch graph.ContentString(st.other, "id_type") {
+			case mr.TrademarkIDType:
+				m.Trademark = id
+				if ev, err := s.w.graph.Evidence(s.w.ctx, st.other.ID, 20); err == nil {
+					if v := propertyValues(ev, mr.TrademarkOfficeProperty); len(v) > 0 {
+						m.TrademarkOffice = v[0]
+					}
+				}
+			case mr.LEIIDType:
+				m.LEI = id
+			}
+		}
+	}
+	return nil
+}
+
 // maxValidityDays is the longest validity allowed for a certificate issued
 // at t, or 0 when no rule applies.
 func maxValidityDays(rules certificateRules, t time.Time) int {
@@ -445,6 +574,43 @@ func (r CertificatesReport) Text() string {
 		}
 	}
 
+	if len(r.MarkCertificates) > 0 {
+		b.WriteString("\nMark certificates (BIMI):\n")
+		for _, m := range r.MarkCertificates {
+			fmt.Fprintf(&b, "  %s (%s)", m.Subject, m.Issuer)
+			var parts []string
+			if m.Organization != "" {
+				parts = append(parts, "verified organization "+m.Organization)
+			}
+			if m.Trademark != "" {
+				tm := "trademark " + m.Trademark
+				if m.TrademarkOffice != "" {
+					tm += " (" + m.TrademarkOffice + ")"
+				}
+				parts = append(parts, tm)
+			}
+			if m.WordMark != "" {
+				parts = append(parts, "word mark "+m.WordMark)
+			}
+			if m.MarkType != "" {
+				parts = append(parts, strings.ToLower(m.MarkType))
+			}
+			if m.LEI != "" {
+				parts = append(parts, "LEI "+m.LEI)
+			}
+			if len(m.Domains) > 0 {
+				parts = append(parts, "for "+strings.Join(m.Domains[:min(5, len(m.Domains))], ", "))
+			}
+			if m.NotAfter != "" {
+				parts = append(parts, "until "+m.NotAfter)
+			}
+			if len(parts) > 0 {
+				b.WriteString(": " + strings.Join(parts, "; "))
+			}
+			b.WriteString("\n")
+		}
+	}
+
 	titles := map[string]string{CertExpired: "Expired", CertExpiring: "Expiring soon",
 		CertWeak: "Weak signature algorithm", CertSelfIssued: "Self-issued", CertOverlong: "Longer than allowed",
 		CertWildcard: "Wildcards", CertShared: "Covering other domains", CertNoCAA: "No CAA policy"}
@@ -481,6 +647,12 @@ func (r CertificatesReport) Facts() []string {
 	var out []string
 	for _, i := range r.Issuers {
 		out = append(out, "issuer "+i.Key)
+	}
+	for _, m := range r.MarkCertificates {
+		out = append(out, "mark_certificate "+m.Subject)
+		if m.Trademark != "" {
+			out = append(out, "trademark "+m.Trademark)
+		}
 	}
 	for _, f := range r.Findings {
 		out = append(out, f.Kind+" "+f.Subject)

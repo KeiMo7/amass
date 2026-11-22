@@ -6,6 +6,7 @@ package lens
 
 import (
 	"context"
+	"reflect"
 	"strings"
 	"testing"
 	"time"
@@ -378,5 +379,94 @@ func TestSubjectLensesAreRegistered(t *testing.T) {
 		}
 
 		seen[l.Name], seen[l.Command] = true, true
+	}
+}
+
+func TestFindCertificatesMarkCertificate(t *testing.T) {
+	defer func(f func() time.Time) { certificateNow = f }(certificateNow)
+	certificateNow = func() time.Time { return time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC) }
+
+	g := postureFixture()
+	add := func(id, typ, key string, content map[string]any) {
+		g.Assets[id] = graph.Asset{ID: id, Type: typ, Key: key, Content: content}
+	}
+	link := func(from, label, to string) {
+		g.Links = append(g.Links, graph.Relation{ID: from + "-" + label + "-" + to, FromID: from, ToID: to,
+			Label: label, Type: "SimpleRelation"})
+	}
+	add("cert-vmc", "TLSCertificate", "cert-vmc", map[string]any{"serial_number": "77",
+		"subject_common_name": "Colgate University", "issuer_common_name": "DigiCert Verified Mark RSA4096 SHA256 2021 CA1",
+		"not_before": "2026-06-01T00:00:00Z", "not_after": "2027-06-01T00:00:00Z", "signature_algorithm": "SHA256-RSA",
+		"ext_key_usage": []any{"Brand Indicator for Message Identification"}})
+	link("cert-vmc", "san_dns_name", "colgate.edu")
+	add("cr-vmc", "ContactRecord", "x509 Certificate: 77, Subject", map[string]any{
+		"discovered_at": "x509 Certificate: 77, Subject"})
+	link("cert-vmc", "subject_contact", "cr-vmc")
+	link("cr-vmc", "organization", "colgate")
+	add("tm", "Identifier", "trademark:US:1234567", map[string]any{"unique_id": "trademark:US:1234567",
+		"id": "US:1234567", "id_type": "trademark"})
+	add("lei", "Identifier", "lei:5493001KJTIIGC8Y1R12", map[string]any{"unique_id": "lei:5493001KJTIIGC8Y1R12",
+		"id": "5493001KJTIIGC8Y1R12", "id_type": "lei"})
+	link("cr-vmc", "id", "tm")
+	link("cr-vmc", "id", "lei")
+	g.EvidenceByID["cert-vmc"] = []graph.Evidence{graphtest.SimpleProp("bimi_logo", "https://colgate.edu/logo.svg")}
+	g.EvidenceByID["cr-vmc"] = []graph.Evidence{graphtest.SimpleProp("mark_type", "Registered Mark"),
+		graphtest.SimpleProp("word_mark", "COLGATE")}
+	g.EvidenceByID["tm"] = []graph.Evidence{graphtest.SimpleProp("trademark_office", "USPTO")}
+
+	r, err := FindCertificates(context.Background(), g, postureCatalog(), g.Assets["colgate.edu"], LensLimits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	if len(r.MarkCertificates) != 1 {
+		t.Fatalf("mark certificates = %+v, want one", r.MarkCertificates)
+	}
+	m := r.MarkCertificates[0]
+	want := MarkCertificate{Subject: "Colgate University", ID: "cert-vmc", Issuer: m.Issuer,
+		NotAfter: "2027-06-01T00:00:00Z", Domains: []string{"colgate.edu"}, Organization: "Colgate University",
+		MarkType: "Registered Mark", WordMark: "COLGATE", Trademark: "US:1234567", TrademarkOffice: "USPTO",
+		LEI: "5493001KJTIIGC8Y1R12", Logo: "https://colgate.edu/logo.svg"}
+	if m.Issuer == "" || !reflect.DeepEqual(m, want) {
+		t.Fatalf("mark certificate = %+v\nwant %+v", m, want)
+	}
+
+	text := r.Text()
+	for _, w := range []string{"Mark certificates (BIMI):", "verified organization Colgate University",
+		"trademark US:1234567 (USPTO)", "word mark COLGATE", "LEI 5493001KJTIIGC8Y1R12"} {
+		if !strings.Contains(text, w) {
+			t.Errorf("report lacks %q:\n%s", w, text)
+		}
+	}
+	// the ordinary certificates are not mark certificates
+	for _, f := range r.Facts() {
+		if strings.HasPrefix(f, "mark_certificate ") && f != "mark_certificate Colgate University" {
+			t.Errorf("unexpected fact %q", f)
+		}
+	}
+}
+
+func TestMarkCertificateIsNotOverlong(t *testing.T) {
+	defer func(f func() time.Time) { certificateNow = f }(certificateNow)
+	certificateNow = func() time.Time { return time.Date(2026, 11, 14, 0, 0, 0, 0, time.UTC) }
+
+	g := postureFixture()
+	g.Assets["cert-vmc"] = graph.Asset{ID: "cert-vmc", Type: "TLSCertificate", Key: "cert-vmc",
+		Content: map[string]any{"serial_number": "77", "subject_common_name": "Colgate University",
+			"issuer_common_name": "Mark CA", "not_before": "2026-06-01T00:00:00Z", "not_after": "2027-06-01T00:00:00Z",
+			"signature_algorithm": "SHA256-RSA", "ext_key_usage": []any{"Brand Indicator for Message Identification"}}}
+	g.Links = append(g.Links, graph.Relation{ID: "vmc-san", FromID: "cert-vmc", ToID: "colgate.edu",
+		Label: "san_dns_name", Type: "SimpleRelation"})
+
+	r, err := FindCertificates(context.Background(), g, postureCatalog(), g.Assets["colgate.edu"], LensLimits{})
+	if err != nil {
+		t.Fatal(err)
+	}
+	for _, f := range r.Findings {
+		if f.ID == "cert-vmc" && f.Kind == CertOverlong {
+			t.Errorf("a mark certificate was held to the TLS validity limit: %+v", f)
+		}
+	}
+	if len(r.MarkCertificates) != 1 {
+		t.Errorf("mark certificates = %+v, want one", r.MarkCertificates)
 	}
 }

@@ -14,7 +14,9 @@ import (
 
 // A domain whose ads.txt lists the organization's DIRECT account is strong
 // evidence, the seller domain sellers.json gives is supporting, and an
-// intermediary's account gives nothing.
+// intermediary's account gives nothing; the owner domain the organization's
+// ads.txt names, and a site whose ads.txt names the organization as its
+// owner, are supporting.
 func TestAdsSellerPivot(t *testing.T) {
 	g := graphtest.PlannedGraph{FakeGraph: graphtest.FakeGraph{Assets: map[string]graph.Asset{},
 		EvidenceByID: map[string][]graph.Evidence{}}}
@@ -48,6 +50,17 @@ func TestAdsSellerPivot(t *testing.T) {
 	g.EvidenceByID["pub"] = []graph.Evidence{graphtest.SimpleProp(adsPropSellerType, "PUBLISHER"),
 		graphtest.SimpleProp(adsPropSellerDomain, "acme-corp.com")}
 	g.EvidenceByID["house"] = []graph.Evidence{graphtest.SimpleProp(adsPropSellerType, "INTERMEDIARY")}
+	// the organization's ads.txt names its owner's domain
+	add("cr-own", "ContactRecord", "https://acme.com/ads.txt", map[string]any{"discovered_at": "https://acme.com/ads.txt"})
+	add("acme-holdings.com", "FQDN", "acme-holdings.com", map[string]any{"name": "acme-holdings.com"})
+	link("own", "contact", "cr-own")
+	link("cr-own", "fqdn", "acme-holdings.com")
+	// another site's ads.txt names the organization's domain as its owner's
+	adsFile("brand", "acme-brand.io")
+	add("cr-brand", "ContactRecord", "https://acme-brand.io/ads.txt",
+		map[string]any{"discovered_at": "https://acme-brand.io/ads.txt"})
+	link("brand", "contact", "cr-brand")
+	link("cr-brand", "fqdn", "acme.com")
 
 	got := map[string]string{}
 	adsSellerPivot(context.Background(), g, []string{"acme.com"}, []string{"acme.com"},
@@ -56,7 +69,8 @@ func TestAdsSellerPivot(t *testing.T) {
 			return true
 		})
 
-	want := map[string]string{"acme-games.net": SigSharedAdsSeller, "acme-corp.com": SigAdsSellerDomain}
+	want := map[string]string{"acme-games.net": SigSharedAdsSeller, "acme-corp.com": SigAdsSellerDomain,
+		"acme-holdings.com": SigAdsOwnerDomain, "acme-brand.io": SigAdsOwnedBy}
 	if len(got) != len(want) {
 		t.Fatalf("pivot = %v, want %v", got, want)
 	}

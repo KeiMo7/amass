@@ -13,6 +13,7 @@ import (
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
 	oamgen "github.com/owasp-amass/open-asset-model/general"
+	oamurl "github.com/owasp-amass/open-asset-model/url"
 )
 
 func TestParseSecurityTxt(t *testing.T) {
@@ -54,18 +55,27 @@ func TestStore(t *testing.T) {
 		Expires:    "2027-01-01T00:00:00Z",
 		Languages:  "en",
 	}
-	s := p.store(e, apex, "example.com", file)
-	if s == nil {
+	cr := p.store(e, apex, "https://example.com/.well-known/security.txt", file)
+	if cr == nil {
 		t.Fatal("the security.txt was not stored")
 	}
 
 	ctx := context.Background()
-	// Service --security_contact--> ContactRecord --id--> email identifier.
-	cedges, err := sess.DB().OutgoingEdges(ctx, s, time.Time{}, "security_contact")
-	if err != nil || len(cedges) != 1 {
-		t.Fatalf("security_contact edges: %d, %v", len(cedges), err)
+	// URL --contact--> ContactRecord, and URL --domain--> the apex.
+	in, err := sess.DB().IncomingEdges(ctx, cr, time.Time{}, "contact")
+	if err != nil || len(in) != 1 {
+		t.Fatalf("contact edges: %d, %v", len(in), err)
 	}
-	cr, _ := sess.DB().FindEntityById(ctx, cedges[0].ToEntity.ID)
+	fileURL, _ := sess.DB().FindEntityById(ctx, in[0].FromEntity.ID)
+	if u, ok := fileURL.Asset.(*oamurl.URL); !ok || u.Path != "/.well-known/security.txt" {
+		t.Fatalf("file URL %+v", fileURL.Asset)
+	}
+	if doms, err := sess.DB().OutgoingEdges(ctx, fileURL, time.Time{}, "domain"); err != nil || len(doms) != 1 ||
+		doms[0].ToEntity.ID != apex.ID {
+		t.Errorf("domain edges: %v, %v", doms, err)
+	}
+
+	// ContactRecord --id--> email identifier.
 	ids, err := sess.DB().OutgoingEdges(ctx, cr, time.Time{}, "id")
 	if err != nil || len(ids) != 1 {
 		t.Fatalf("contact id edges: %d, %v", len(ids), err)
@@ -74,27 +84,35 @@ func TestStore(t *testing.T) {
 	if id, ok := idAsset.Asset.(*oamgen.Identifier); !ok || id.ID != "security@example.com" {
 		t.Errorf("contact identifier %+v", idAsset.Asset)
 	}
-	// The https contact is a URL off the contact record.
-	if urls, err := sess.DB().OutgoingEdges(ctx, cr, time.Time{}, "url"); err != nil || len(urls) != 1 {
-		t.Errorf("contact url edges: %d, %v", len(urls), err)
-	}
 
-	// Service --security_policy/security_encryption--> URL.
-	for _, label := range []string{"security_policy", "security_encryption"} {
-		if edges, err := sess.DB().OutgoingEdges(ctx, s, time.Time{}, label); err != nil || len(edges) != 1 {
-			t.Errorf("%s edges: %d, %v", label, len(edges), err)
+	// The https contact and the two URL fields are URLs off the record; only
+	// the fields' relations carry the field name.
+	urls, err := sess.DB().OutgoingEdges(ctx, cr, time.Time{}, "url")
+	if err != nil || len(urls) != 3 {
+		t.Fatalf("url edges: %d, %v", len(urls), err)
+	}
+	fields := map[string]bool{}
+	for _, ue := range urls {
+		tags, _ := sess.DB().FindEdgeTags(ctx, ue, time.Time{}, PropField)
+		for _, tag := range tags {
+			if sp, ok := tag.Property.(*oamgen.SimpleProperty); ok {
+				fields[sp.PropertyValue] = true
+			}
 		}
 	}
+	if len(fields) != 2 || !fields["policy"] || !fields["encryption"] {
+		t.Errorf("field-tagged URLs = %v", fields)
+	}
 
-	// Expires and languages are service properties.
-	tags, _ := sess.DB().FindEntityTags(ctx, s, time.Time{})
+	// Expires and languages are record properties.
+	tags, _ := sess.DB().FindEntityTags(ctx, cr, time.Time{})
 	got := map[string]string{}
 	for _, tag := range tags {
 		if sp, ok := tag.Property.(*oamgen.SimpleProperty); ok {
 			got[sp.PropertyName] = sp.PropertyValue
 		}
 	}
-	if got["security_txt_expires"] == "" || got["security_txt_languages"] != "en" {
-		t.Errorf("service properties = %v", got)
+	if got[PropExpires] == "" || got[PropLanguages] != "en" {
+		t.Errorf("record properties = %v", got)
 	}
 }

@@ -10,6 +10,9 @@ import (
 	"strings"
 )
 
+// maxContacts bounds the contact values read from one file.
+const maxContacts = 5
+
 // account is one DIRECT line of an ads.txt file.
 type account struct {
 	system string // the ad system's domain, lower-cased
@@ -19,16 +22,42 @@ type account struct {
 // key is the account's ads_seller Identifier value.
 func (a account) key() string { return a.system + ":" + a.id }
 
+// adsFile is what an ads.txt file says about its publisher.
+type adsFile struct {
+	accounts []account
+	// ownerDomain is the business domain of the site's owner, from the
+	// OWNERDOMAIN variable (ads.txt 1.1)
+	ownerDomain string
+	// contacts are the values of the contact variables: an email address,
+	// a URL or a phone number each
+	contacts []string
+}
+
 // parseAdsTxt returns the DIRECT accounts an ads.txt file lists, at most max,
-// each once. A line is "<ad system domain>, <account id>, <DIRECT|RESELLER>
-// [, <certification authority id>]"; a "#" starts a comment, and variable
-// lines (contact=, subdomain=, OWNERDOMAIN= and the like) are skipped.
-func parseAdsTxt(data string, max int) []account {
-	var out []account
+// each once, its OWNERDOMAIN and its contact values. A record is "<ad system
+// domain>, <account id>, <DIRECT|RESELLER>[, <certification authority id>]";
+// a "#" starts a comment, and the other variables (subdomain=,
+// MANAGERDOMAIN= and the like) are skipped.
+func parseAdsTxt(data string, max int) adsFile {
+	var out adsFile
 	seen := map[string]bool{}
 	for _, line := range strings.Split(data, "\n") {
 		if i := strings.IndexByte(line, '#'); i >= 0 {
 			line = line[:i]
+		}
+		if name, value, ok := strings.Cut(line, "="); ok && !strings.Contains(name, ",") {
+			value = strings.TrimSpace(value)
+			switch strings.ToUpper(strings.TrimSpace(name)) {
+			case "OWNERDOMAIN":
+				if out.ownerDomain == "" {
+					out.ownerDomain = strings.TrimSuffix(strings.ToLower(value), ".")
+				}
+			case "CONTACT":
+				if value != "" && len(out.contacts) < maxContacts {
+					out.contacts = append(out.contacts, value)
+				}
+			}
+			continue
 		}
 		fields := strings.Split(line, ",")
 		if len(fields) < 3 {
@@ -45,9 +74,8 @@ func parseAdsTxt(data string, max int) []account {
 			continue
 		}
 		seen[a.key()] = true
-		out = append(out, a)
-		if len(out) >= max {
-			break
+		if len(out.accounts) < max {
+			out.accounts = append(out.accounts, a)
 		}
 	}
 	return out

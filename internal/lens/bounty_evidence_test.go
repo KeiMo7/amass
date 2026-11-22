@@ -62,22 +62,33 @@ func TestBountyAnchor(t *testing.T) {
 
 	// The apex's security.txt Policy links the program page.
 	g = base()
-	g.Assets["svc"] = graph.Asset{ID: "svc", Type: "Service", Key: "svc"}
+	g.Assets["file"] = graph.Asset{ID: "file", Type: "URL", Key: "https://acme.com/.well-known/security.txt",
+		Content: map[string]any{"url": "https://acme.com/.well-known/security.txt", "host": "acme.com",
+			"path": "/.well-known/security.txt"}}
+	g.Assets["cr"] = graph.Asset{ID: "cr", Type: "ContactRecord", Key: "https://acme.com/.well-known/security.txt"}
 	g.Assets["pol"] = graph.Asset{ID: "pol", Type: "URL", Key: "https://hackerone.com/acme?type=team",
 		Content: map[string]any{"url": "https://hackerone.com/acme?type=team", "host": "hackerone.com", "path": "/acme"}}
 	g.Assets["other"] = graph.Asset{ID: "other", Type: "URL", Key: "https://hackerone.com/someoneelse",
 		Content: map[string]any{"url": "https://hackerone.com/someoneelse", "host": "hackerone.com", "path": "/someoneelse"}}
 	g.Links = []graph.Relation{
-		{ID: "p", FromID: "apex", ToID: "svc", Label: "port", Type: "PortRelation"},
-		{ID: "s", FromID: "svc", ToID: "other", Label: "security_policy", Type: "SimpleRelation"},
+		{ID: "d", FromID: "file", ToID: "apex", Label: "domain", Type: "SimpleRelation"},
+		{ID: "c", FromID: "file", ToID: "cr", Label: "contact", Type: "SimpleRelation"},
+		{ID: "s", FromID: "cr", ToID: "other", Label: "url", Type: "SimpleRelation"},
 	}
+	g.EvidenceByID["s"] = []graph.Evidence{graphtest.SimpleProp(secTxtPropField, "policy")}
 	if got := BountyAnchor(ctx, g, g.Assets["h1"], g.Assets["apex"], "", own); got != "" {
 		t.Errorf("a link to another program tied it: %q", got)
 	}
-	g.Links = append(g.Links, graph.Relation{ID: "s2", FromID: "svc", ToID: "pol", Label: "security_policy",
+	g.Links = append(g.Links, graph.Relation{ID: "s2", FromID: "cr", ToID: "pol", Label: "url",
 		Type: "SimpleRelation"})
+	g.EvidenceByID["s2"] = []graph.Evidence{graphtest.SimpleProp(secTxtPropField, "policy")}
 	if got := BountyAnchor(ctx, g, g.Assets["h1"], g.Assets["apex"], "", own); !strings.Contains(got, "security.txt") {
 		t.Errorf("security.txt anchor = %q", got)
+	}
+	// a canonical link is not where a program page is published
+	g.EvidenceByID["s2"] = []graph.Evidence{graphtest.SimpleProp(secTxtPropField, "canonical")}
+	if got := BountyAnchor(ctx, g, g.Assets["h1"], g.Assets["apex"], "", own); got != "" {
+		t.Errorf("a canonical link tied the program: %q", got)
 	}
 }
 

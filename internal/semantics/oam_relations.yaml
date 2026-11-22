@@ -395,24 +395,6 @@ relations:
   - {source: Service, label: terms_of_service, relation_type: SimpleRelation, destination: URL,
      attribution: attribute, purpose: web,
      note: "Terms of service document."}
-  - {source: Service, label: security_contact, relation_type: SimpleRelation, destination: ContactRecord,
-     attribution: third_party, purpose: contact, vendor: false,
-     note: "Security contact from the service's security.txt (RFC 9116); whom to report issues to, which may be the operator or an external platform."}
-  - {source: Service, label: security_policy, relation_type: SimpleRelation, destination: URL,
-     attribution: attribute, purpose: web,
-     note: "Vulnerability-disclosure policy linked from the service's security.txt."}
-  - {source: Service, label: security_canonical, relation_type: SimpleRelation, destination: URL,
-     attribution: attribute, purpose: web,
-     note: "Canonical URL(s) of the service's security.txt, for integrity checking."}
-  - {source: Service, label: security_encryption, relation_type: SimpleRelation, destination: URL,
-     attribution: attribute, purpose: web,
-     note: "Encryption key (such as a PGP key) linked from the service's security.txt."}
-  - {source: Service, label: security_acknowledgments, relation_type: SimpleRelation, destination: URL,
-     attribution: attribute, purpose: web,
-     note: "Security acknowledgments page linked from the service's security.txt."}
-  - {source: Service, label: security_hiring, relation_type: SimpleRelation, destination: URL,
-     attribution: attribute, purpose: web,
-     note: "Security hiring page linked from the service's security.txt."}
   - {source: Service, label: onion_location, relation_type: SimpleRelation, destination: URL,
      attribution: same_subject, purpose: web,
      note: "Tor onion address the service advertises for itself in its Onion-Location response header."}
@@ -464,6 +446,9 @@ relations:
   - {source: TLSCertificate, label: subject_contact, relation_type: SimpleRelation, destination: ContactRecord,
      attribution: controller, purpose: certificate,
      note: "Certificate subject (engine scope association). Names the organization for OV/EV certificates; DV certificates usually have none."}
+  - {source: URL, label: contact, relation_type: SimpleRelation, destination: ContactRecord,
+     attribution: attribute, purpose: contact,
+     note: "Contact information the page or file at the URL publishes (an ads.txt file's owner domain and contact). What it names may belong to the publisher, a parent company or an agency, so control does not flow through it; the lenses weigh it."}
   - {source: URL, label: domain, relation_type: SimpleRelation, destination: FQDN,
      attribution: same_subject, purpose: web,
      note: "The host of the URL; controlled by the same party for first-party URLs."}

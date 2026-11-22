@@ -6,6 +6,7 @@ package lens
 
 import (
 	"context"
+	"slices"
 	"strings"
 	"time"
 
@@ -27,35 +28,106 @@ const (
 // adsSellerPivot finds the other registered domains tied to the
 // organization's own advertising seller accounts: a domain whose ads.txt
 // lists the same DIRECT account (strong, as a shared analytics property is,
-// within the same shared-value cap), and the domain the ad system's
-// sellers.json gives for the account when it is another domain (supporting).
+// within the same shared-value cap), the domain the ad system's sellers.json
+// gives for the account when it is another domain, the owner domain the
+// organization's own ads.txt names, and another site whose ads.txt names the
+// organization's domain as its owner's (all supporting).
 // An account the ad system lists as an INTERMEDIARY belongs to a sales house,
 // not the publisher, and gives neither.
 func adsSellerPivot(ctx context.Context, g graph.Graph, ownApexes, ownDomains []string,
 	add func(string, string, string, ...graph.WitnessEdge) bool) {
-	resolver, ok := g.(graph.AssetResolver)
-	if !ok {
-		return
-	}
-
 	seen := map[string]bool{}
 	for _, apexID := range ownApexes {
 		apex, err := g.GetAsset(ctx, apexID)
 		if err != nil || graph.FQDNName(apex) == "" {
 			continue
 		}
-		for _, path := range semantics.AdsTxtCatalog().Files {
-			res, err := resolver.ResolveAsset(ctx, graph.AssetSelector{Type: "URL", Field: "url",
-				Value: "https://" + graph.FQDNName(apex) + path}, 2)
-			if err != nil || len(res.Candidates) == 0 {
-				continue
-			}
-			file := res.Candidates[0].Asset
-			if !adsAccounts(ctx, g, file, ownDomains, seen, add) {
+		if !adsOwnedBy(ctx, g, apexID, ownDomains, add) {
+			return
+		}
+		for _, file := range hostFiles(ctx, g, apex, semantics.AdsTxtCatalog().Files) {
+			if !adsOwnerDomain(ctx, g, file, ownDomains, add) || !adsAccounts(ctx, g, file, ownDomains, seen, add) {
 				return
 			}
 		}
 	}
+}
+
+// adsOwnerDomain adds the owner's business domain an ads.txt file names
+// (URL --contact--> ContactRecord --fqdn--> FQDN, from OWNERDOMAIN), when it is
+// another domain. It returns false when add is full.
+func adsOwnerDomain(ctx context.Context, g graph.Graph, file graph.Asset, ownDomains []string,
+	add func(string, string, string, ...graph.WitnessEdge) bool) bool {
+	contacts, err := g.Edges(ctx, file.ID, "out", "contact", time.Time{})
+	if err != nil {
+		return true
+	}
+	for _, ce := range contacts {
+		owners, err := g.Edges(ctx, ce.ToID, "out", "fqdn", time.Time{})
+		if err != nil {
+			continue
+		}
+		contactW := graph.WitnessEdge{EdgeID: ce.ID, Label: "contact", RelationType: ce.Type, FromID: file.ID,
+			FromType: "URL", ToID: ce.ToID, ToType: "ContactRecord"}
+		for _, oe := range owners {
+			owner, err := g.GetAsset(ctx, oe.ToID)
+			if err != nil {
+				continue
+			}
+			host := graph.FQDNName(owner)
+			dom := graph.RegisteredDomain(host)
+			if dom == "" || withinAny(host, ownDomains) {
+				continue
+			}
+			ownerW := graph.WitnessEdge{EdgeID: oe.ID, Label: "fqdn", RelationType: oe.Type, FromID: ce.ToID,
+				FromType: "ContactRecord", ToID: oe.ToID, ToType: "FQDN", To: host}
+			if !add(dom, SigAdsOwnerDomain, "the owner domain the organization's ads.txt names", contactW,
+				ownerW) {
+				return false
+			}
+		}
+	}
+	return true
+}
+
+// adsOwnedBy adds the sites whose ads.txt names one of the organization's
+// domains as the owner's (FQDN <--fqdn-- ContactRecord <--contact-- URL
+// --domain--> the site). It returns false when add is full.
+func adsOwnedBy(ctx context.Context, g graph.Graph, apexID string, ownDomains []string,
+	add func(string, string, string, ...graph.WitnessEdge) bool) bool {
+	named, err := g.Edges(ctx, apexID, "in", "fqdn", time.Time{})
+	if err != nil {
+		return true
+	}
+	files := semantics.AdsTxtCatalog().Files
+	for _, ne := range named {
+		filesIn, err := g.Edges(ctx, ne.FromID, "in", "contact", time.Time{})
+		if err != nil {
+			continue
+		}
+		ownerW := graph.WitnessEdge{EdgeID: ne.ID, Label: "fqdn", RelationType: ne.Type, FromID: ne.FromID,
+			FromType: "ContactRecord", ToID: apexID, ToType: "FQDN"}
+		for _, fe := range filesIn {
+			file, err := g.GetAsset(ctx, fe.FromID)
+			if err != nil || file.Type != "URL" || !slices.Contains(files, graph.ContentString(file, "path")) {
+				continue
+			}
+			for _, h := range carrierHosts(ctx, g, file.ID) {
+				host := graph.FQDNName(h.host)
+				dom := graph.RegisteredDomain(host)
+				if dom == "" || withinAny(host, ownDomains) {
+					continue
+				}
+				contactW := graph.WitnessEdge{EdgeID: fe.ID, Label: "contact", RelationType: fe.Type,
+					FromID: file.ID, FromType: "URL", ToID: ne.FromID, ToType: "ContactRecord"}
+				if !add(dom, SigAdsOwnedBy, "its ads.txt names the organization's domain as the owner's",
+					ownerW, contactW, h.witness(dom)) {
+					return false
+				}
+			}
+		}
+	}
+	return true
 }
 
 // adsAccounts adds the domains tied to the DIRECT accounts one ads.txt file

@@ -41,16 +41,22 @@ func TestFindDisclosure(t *testing.T) {
 			Label: label, Type: rt})
 	}
 
-	add("svc", "Service", map[string]any{"service_type": "web-service"})
-	add("cr-sec", "ContactRecord", nil)
+	add("file", "URL", map[string]any{"url": "https://colgate.edu/.well-known/security.txt", "host": "colgate.edu",
+		"path": "/.well-known/security.txt"})
+	f0 := g.Assets["file"]
+	f0.Key = "https://colgate.edu/.well-known/security.txt"
+	g.Assets["file"] = f0
+	add("cr-sec", "ContactRecord", map[string]any{"discovered_at": "https://colgate.edu/.well-known/security.txt"})
 	add("id-sec", "Identifier", map[string]any{"id": "security@colgate.edu", "id_type": "email"})
 	add("url-policy", "URL", map[string]any{"url": "https://colgate.edu/security-policy"})
-	link("colgate.edu", "port", "svc", "PortRelation")
-	link("svc", "security_contact", "cr-sec", "SimpleRelation")
+	link("file", "domain", "colgate.edu", "SimpleRelation")
+	link("file", "contact", "cr-sec", "SimpleRelation")
 	link("cr-sec", "id", "id-sec", "SimpleRelation")
-	link("svc", "security_policy", "url-policy", "SimpleRelation")
+	link("cr-sec", "url", "url-policy", "SimpleRelation")
+	g.EvidenceByID["cr-sec-url-url-policy"] = []graph.Evidence{{Property: map[string]any{
+		"property_name": "security_txt_field", "property_value": "policy"}}}
 	// A security.txt that expired before the test clock.
-	g.EvidenceByID["svc"] = []graph.Evidence{{Property: map[string]any{
+	g.EvidenceByID["cr-sec"] = []graph.Evidence{{Property: map[string]any{
 		"property_name": "security_txt_expires", "property_value": "2020-01-01T00:00:00Z"}}}
 
 	r, err := FindDisclosure(context.Background(), g,

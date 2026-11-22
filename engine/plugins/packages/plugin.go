@@ -18,7 +18,6 @@ import (
 	"log/slog"
 	"net/url"
 	"sort"
-	"strconv"
 	"strings"
 	"time"
 
@@ -209,18 +208,8 @@ func packageURL(raw string) *oamurl.URL {
 	if err != nil || (u.Scheme != "http" && u.Scheme != "https") || u.Hostname() == "" {
 		return nil
 	}
-	host := strings.ToLower(u.Hostname())
 	u.Fragment = ""
-	ou := &oamurl.URL{Raw: u.String(), Scheme: u.Scheme, Host: host, Path: u.Path}
-	switch {
-	case u.Port() != "":
-		ou.Port, _ = strconv.Atoi(u.Port())
-	case u.Scheme == "https":
-		ou.Port = 443
-	default:
-		ou.Port = 80
-	}
-	return ou
+	return support.RawURLToOAM(u.String())
 }
 
 // ownAddress reports whether an email address is at the domain or one of its

@@ -462,13 +462,6 @@ func dkimPublicKey(txt string) string {
 	return ""
 }
 
-// securityTxtLinkLabels are the Service relations whose target URL a
-// security.txt reference signal checks for the organization's namespace.
-var securityTxtLinkLabels = map[string]bool{
-	"security_canonical": true, "security_policy": true, "security_encryption": true,
-	"security_acknowledgments": true, "security_hiring": true,
-}
-
 // securityTxtRefSignals finds names the organization does not yet own whose
 // security.txt names a contact at the organization's domain or a canonical or
 // policy URL in its namespace. A security.txt is published by whoever runs the
@@ -494,9 +487,7 @@ func (g *gapSearch) securityTxtRefSignals(apex graph.Asset) error {
 				if !HostWithin(graph.ContentString(u, "host"), name) {
 					continue
 				}
-				if svc, ok := g.reverseVia(u, securityTxtLinkLabels); ok {
-					g.addSecurityTxtCandidate(apex, svc, "canonical "+graph.AssetLabel(u), def)
-				}
+				g.addSecurityTxtCandidates(apex, u, "url", "link "+graph.AssetLabel(u), def)
 			}
 		}
 	}
@@ -516,41 +507,42 @@ func (g *gapSearch) securityTxtRefSignals(apex graph.Asset) error {
 					!HostWithin(host, name) {
 					continue
 				}
-				cr, ok := g.reverseVia(id, map[string]bool{"id": true})
-				if !ok {
-					continue
-				}
-				if svc, ok := g.reverseVia(cr, map[string]bool{"security_contact": true}); ok {
-					g.addSecurityTxtCandidate(apex, svc, "contact "+graph.ContentString(id, "id"), def)
-				}
+				g.addSecurityTxtCandidates(apex, id, "id", "contact "+graph.ContentString(id, "id"), def)
 			}
 		}
 	}
 	return nil
 }
 
-// reverseVia returns the asset that points to target through one of labels.
-func (g *gapSearch) reverseVia(target graph.Asset, labels map[string]bool) (graph.Asset, bool) {
-	steps, err := g.w.steps(target)
+// addSecurityTxtCandidates adds the names whose security.txt names ref (a
+// URL or an email Identifier) through its ContactRecord's label relation:
+// ContactRecord --label--> ref, URL(security.txt) --contact--> ContactRecord,
+// URL --domain--> the name.
+func (g *gapSearch) addSecurityTxtCandidates(apex, ref graph.Asset, label, detail string, def OwnershipSignal) {
+	steps, err := g.w.steps(ref)
 	if err != nil {
-		return graph.Asset{}, false
-	}
-	for _, s := range steps {
-		if !s.forward && labels[s.edge.Label] {
-			return s.other, true
-		}
-	}
-	return graph.Asset{}, false
-}
-
-// addSecurityTxtCandidate adds the FQDN that a referencing service hangs off.
-func (g *gapSearch) addSecurityTxtCandidate(apex, service graph.Asset, detail string, def OwnershipSignal) {
-	host, ok := g.reverseVia(service, map[string]bool{"port": true})
-	if !ok || host.Type != "FQDN" {
 		return
 	}
-	witness := append(g.pathTo(apex.ID), matched(apex, host, "security_txt_reference", detail))
-	g.add(host, def.ID, "FQDN security.txt FQDN", witness)
+	// A value published in more than GapMaxShared files (a managed provider's
+	// contact, a copied template) says nothing about any one of them.
+	var hosts []graph.Asset
+	for _, s := range steps {
+		if s.forward || s.edge.Label != label || s.other.Type != "ContactRecord" {
+			continue
+		}
+		for _, file := range securityTxtFilesOf(g.w.ctx, g.w.graph, s.other) {
+			if host, ok := fileHost(g.w.ctx, g.w.graph, file); ok {
+				hosts = append(hosts, host)
+			}
+			if len(hosts) > GapMaxShared {
+				return
+			}
+		}
+	}
+	for _, host := range hosts {
+		witness := append(g.pathTo(apex.ID), matched(apex, host, "security_txt_reference", detail))
+		g.add(host, def.ID, "FQDN security.txt FQDN", witness)
+	}
 }
 
 func (g *gapSearch) fingerprintSignals(owned graph.Asset) error {

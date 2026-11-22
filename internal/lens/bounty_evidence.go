@@ -7,6 +7,7 @@ package lens
 import (
 	"context"
 	"net/url"
+	"slices"
 	"strings"
 	"time"
 
@@ -45,7 +46,6 @@ const (
 	bountyMaxPrograms = 10
 	bountyMaxScope    = 200
 	bountyMaxHosts    = 200
-	bountyMaxServices = 10
 )
 
 // isBountyProgram reports whether a is a bug-bounty program Account.
@@ -118,50 +118,28 @@ func BountyAnchor(ctx context.Context, gr graph.Graph, program, apex graph.Asset
 	return ""
 }
 
-// securityTxtLinkLabelsToProgram are the security.txt fields whose URL can
-// be the program's page.
-var securityTxtLinkLabelsToProgram = []string{"security_policy", "security_acknowledgments", "security_hiring"}
+// securityTxtProgramFields are the security.txt fields whose URL can be the
+// program's page; "" is a Contact entry.
+var securityTxtProgramFields = []string{"policy", "acknowledgments", "hiring", ""}
 
 // securityTxtProgramLink returns the URL in the apex's security.txt (a
-// Policy or Acknowledgments field, or a Contact URL) that is the program's
-// page, or "" when there is none.
+// Policy, Acknowledgments or Hiring field, or a Contact URL) that is the
+// program's page, or "" when there is none.
 func securityTxtProgramLink(ctx context.Context, gr graph.Graph, apexID string, plat semantics.BountyPlatform,
 	handle string) string {
-	ports, err := gr.Edges(ctx, apexID, "out", "port", time.Time{})
+	apex, err := gr.GetAsset(ctx, apexID)
 	if err != nil {
 		return ""
 	}
-
-	var urlIDs []string
-	for i, pe := range ports {
-		if i >= bountyMaxServices {
-			break
-		}
-		for _, label := range securityTxtLinkLabelsToProgram {
-			if edges, err := gr.Edges(ctx, pe.ToID, "out", label, time.Time{}); err == nil {
-				for _, e := range edges {
-					urlIDs = append(urlIDs, e.ToID)
-				}
+	for _, st := range readSecurityTxt(ctx, gr, apex) {
+		for _, u := range st.urls {
+			if !slices.Contains(securityTxtProgramFields, u.field) {
+				continue
 			}
-		}
-		if crs, err := gr.Edges(ctx, pe.ToID, "out", "security_contact", time.Time{}); err == nil {
-			for _, cr := range crs {
-				if edges, err := gr.Edges(ctx, cr.ToID, "out", "url", time.Time{}); err == nil {
-					for _, e := range edges {
-						urlIDs = append(urlIDs, e.ToID)
-					}
-				}
+			if plat.OwnsHost(graph.ContentString(u.url, "host")) &&
+				pathNamesHandle(graph.ContentString(u.url, "path"), handle) {
+				return graph.AssetLabel(u.url)
 			}
-		}
-	}
-
-	for _, id := range urlIDs {
-		u, err := gr.GetAsset(ctx, id)
-		if err != nil || u.Type != "URL" {
-			continue
-		}
-		if plat.OwnsHost(graph.ContentString(u, "host")) && pathNamesHandle(graph.ContentString(u, "path"), handle) {
-			return graph.AssetLabel(u)
 		}
 	}
 	return ""

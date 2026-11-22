@@ -264,7 +264,7 @@
       "rationale": "A security.txt is published by whoever runs the site, and its contact and canonical URL are normally the operator's own. A file that reports to the organization's mailbox or points to the organization's canonical copy was usually published for the organization.",
       "guards": [
         "The contact host or URL host must be one of the organization's apex domains or a name below one; a name that merely contains it never counts.",
-        "A value shared by more than 50 services never counts.",
+        "A value shared by more than 50 security.txt files never counts.",
         "Never proposes on its own; it needs a strong signal."
       ],
       "counter_indications": [

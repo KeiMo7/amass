@@ -20,6 +20,8 @@ Horizontal correlation associates more registered (apex) domains with a target o
 | [Listed by the organization's bug-bounty program](#bug-bounty-scope) | supporting | declaration | 0.70 |
 | [Shared DIRECT ad seller account](#shared-ads-seller) | strong | identity | 0.70 |
 | [Domain an ad system gives for the organization's seller account](#ads-seller-domain) | supporting | identity | 0.50 |
+| [Owner domain named in the organization's ads.txt](#ads-owner-domain) | supporting | declaration | 0.50 |
+| [Names the organization as its owner in ads.txt](#ads-owned-by) | supporting | declaration | 0.50 |
 | [Publisher site of the organization's verified Maven group](#package-publisher-site) | strong | declaration | 0.70 |
 | [Named by the organization's published packages](#package-website) | supporting | declaration | 0.50 |
 | [SOA administrator mailbox at the organization's domain](#soa-mailbox-own-domain) | strong | dns | 0.70 |
@@ -192,6 +194,44 @@ Horizontal correlation associates more registered (apex) domains with a target o
 
 - An agency that manages a site's ads can be the seller of record.
 - A parent company's domain can be listed for its brands' accounts.
+
+<a id="ads-owner-domain"></a>
+## Owner domain named in the organization's ads.txt
+
+`ads-owner-domain`: supporting declaration signal, weight 0.50 (confidence 50).
+
+**Finds:** The business domain of the site's owner that one of the organization's own ads.txt or app-ads.txt files names in its OWNERDOMAIN variable, when it is another domain.
+
+**Why it counts:** Only a site's operator can publish its ads.txt, and OWNERDOMAIN is where the operator names the business domain of the company that owns the site, for ad buyers to check the seller's identity. It is supporting because the owner can be a parent or holding company that is a separate organization, and a copied file can keep another owner's value.
+
+**Guards:**
+
+- Only the organization's own domains' files are read.
+- Never expands scope on its own.
+
+**Can still mislead when:**
+
+- A parent company's domain names the owner of a brand that is run as a separate organization.
+- An ads.txt template copied from another site can keep its OWNERDOMAIN.
+
+<a id="ads-owned-by"></a>
+## Names the organization as its owner in ads.txt
+
+`ads-owned-by`: supporting declaration signal, weight 0.50 (confidence 50).
+
+**Finds:** Another registered domain whose ads.txt or app-ads.txt names one of the organization's own domains in its OWNERDOMAIN variable, as the business domain of the company that owns the site.
+
+**Why it counts:** OWNERDOMAIN is the site operator's own statement of who owns the site, for ad buyers to check. A site that names the organization's domain there is usually one of its brands or properties. It is supporting because any site can write any domain there: ad-fraud sites spoof well-known owners, and nothing but the buyers' own checks against sellers.json holds it to the truth.
+
+**Guards:**
+
+- Only files Amass has read are seen, so the signal confirms domains found by other evidence more often than it discovers new ones.
+- Never expands scope on its own.
+
+**Can still mislead when:**
+
+- A spoofing site names a well-known owner to sell its ad space at a better price.
+- A former brand can keep naming its old owner after a sale.
 
 <a id="package-publisher-site"></a>
 ## Publisher site of the organization's verified Maven group

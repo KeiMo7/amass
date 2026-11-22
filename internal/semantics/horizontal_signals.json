@@ -153,6 +153,42 @@
       ]
     },
     {
+      "id": "ads-owner-domain",
+      "title": "Owner domain named in the organization's ads.txt",
+      "kind": "declaration",
+      "strength": "supporting",
+      "weight": 0.5,
+      "matcher": "ads_owner_domain",
+      "finds": "The business domain of the site's owner that one of the organization's own ads.txt or app-ads.txt files names in its OWNERDOMAIN variable, when it is another domain.",
+      "rationale": "Only a site's operator can publish its ads.txt, and OWNERDOMAIN is where the operator names the business domain of the company that owns the site, for ad buyers to check the seller's identity. It is supporting because the owner can be a parent or holding company that is a separate organization, and a copied file can keep another owner's value.",
+      "guards": [
+        "Only the organization's own domains' files are read.",
+        "Never expands scope on its own."
+      ],
+      "counter_indications": [
+        "A parent company's domain names the owner of a brand that is run as a separate organization.",
+        "An ads.txt template copied from another site can keep its OWNERDOMAIN."
+      ]
+    },
+    {
+      "id": "ads-owned-by",
+      "title": "Names the organization as its owner in ads.txt",
+      "kind": "declaration",
+      "strength": "supporting",
+      "weight": 0.5,
+      "matcher": "ads_owned_by",
+      "finds": "Another registered domain whose ads.txt or app-ads.txt names one of the organization's own domains in its OWNERDOMAIN variable, as the business domain of the company that owns the site.",
+      "rationale": "OWNERDOMAIN is the site operator's own statement of who owns the site, for ad buyers to check. A site that names the organization's domain there is usually one of its brands or properties. It is supporting because any site can write any domain there: ad-fraud sites spoof well-known owners, and nothing but the buyers' own checks against sellers.json holds it to the truth.",
+      "guards": [
+        "Only files Amass has read are seen, so the signal confirms domains found by other evidence more often than it discovers new ones.",
+        "Never expands scope on its own."
+      ],
+      "counter_indications": [
+        "A spoofing site names a well-known owner to sell its ad space at a better price.",
+        "A former brand can keep naming its old owner after a sale."
+      ]
+    },
+    {
       "id": "package-publisher-site",
       "title": "Publisher site of the organization's verified Maven group",
       "kind": "declaration",

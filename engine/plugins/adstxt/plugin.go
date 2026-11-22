@@ -22,10 +22,11 @@ import (
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	"github.com/owasp-amass/amass/v5/internal/fingerprint"
 	"github.com/owasp-amass/amass/v5/internal/semantics"
+	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
+	"github.com/owasp-amass/open-asset-model/contact"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
 	"github.com/owasp-amass/open-asset-model/general"
-	oamurl "github.com/owasp-amass/open-asset-model/url"
 	"golang.org/x/time/rate"
 )
 
@@ -79,9 +80,10 @@ func (a *adsTxt) Start(r et.Registry) error {
 		Name:         a.name + "-Handler",
 		Position:     41,
 		MaxInstances: support.MinHandlerInstances,
-		Transforms:   []string{string(oam.URL), string(oam.Identifier)},
-		EventType:    oam.FQDN,
-		Callback:     a.check,
+		Transforms: []string{string(oam.URL), string(oam.Identifier), string(oam.ContactRecord), string(oam.FQDN),
+			string(oam.Phone)},
+		EventType: oam.FQDN,
+		Callback:  a.check,
 	}); err != nil {
 		return err
 	}
@@ -104,24 +106,27 @@ func (a *adsTxt) check(e *et.Event) error {
 		if err != nil {
 			continue
 		}
-		accounts := parseAdsTxt(string(data), a.catalog.MaxAccounts)
-		if len(accounts) > 0 {
-			a.store(e, apex, u, accounts)
+		if f := parseAdsTxt(string(data), a.catalog.MaxAccounts); len(f.accounts) > 0 || f.ownerDomain != "" {
+			a.store(e, apex, u, f)
 		}
 	}
 	return nil
 }
 
-// store records the ads.txt URL, joined to its domain, and each DIRECT
-// account as a fingerprint Identifier with its sellers.json details.
-func (a *adsTxt) store(e *et.Event, apex, raw string, accounts []account) {
+// store records the ads.txt URL, joined to its domain, with the owner domain
+// it names, and each DIRECT account as a fingerprint Identifier with its
+// sellers.json details.
+func (a *adsTxt) store(e *et.Event, apex, raw string, f adsFile) {
 	ctx, cancel := context.WithTimeout(e.Session.Ctx(), time.Minute)
 	defer cancel()
 	sess := e.Session
 	db := sess.DB()
 
-	path := strings.TrimPrefix(raw, "https://"+apex)
-	urlEnt, err := db.CreateAsset(ctx, &oamurl.URL{Raw: raw, Scheme: "https", Host: apex, Path: path, Port: 443})
+	u := support.RawURLToOAM(raw)
+	if u == nil {
+		return
+	}
+	urlEnt, err := db.CreateAsset(ctx, u)
 	if err != nil || urlEnt == nil {
 		return
 	}
@@ -129,8 +134,9 @@ func (a *adsTxt) store(e *et.Event, apex, raw string, accounts []account) {
 	if dom, err := db.CreateAsset(ctx, &oamdns.FQDN{Name: apex}); err == nil && dom != nil {
 		support.Link(ctx, sess, urlEnt, "domain", dom, a.source)
 	}
+	a.storeContact(ctx, e, urlEnt, raw, f)
 
-	for _, acct := range accounts {
+	for _, acct := range f.accounts {
 		value := acct.key()
 		if !support.StoreFingerprint(e, urlEnt, a.source, fingerprint.AdsSeller, value) {
 			continue
@@ -147,6 +153,57 @@ func (a *adsTxt) store(e *et.Event, apex, raw string, accounts []account) {
 		support.AddProperty(ctx, sess, ident, PropSellerName, s.Name)
 		support.AddProperty(ctx, sess, ident, PropSellerDomain, strings.ToLower(s.Domain))
 		support.AddProperty(ctx, sess, ident, PropSellerType, strings.ToUpper(s.Type))
+	}
+}
+
+// storeContact records what the file names about its owner as the file's
+// ContactRecord (URL --contact--> ContactRecord): the OWNERDOMAIN as an FQDN,
+// and each contact value as an email Identifier, a URL or a phone.
+func (a *adsTxt) storeContact(ctx context.Context, e *et.Event, urlEnt *dbt.Entity, raw string, f adsFile) {
+	if f.ownerDomain == "" && len(f.contacts) == 0 {
+		return
+	}
+	sess := e.Session
+	db := sess.DB()
+
+	cr, err := db.CreateAsset(ctx, &contact.ContactRecord{DiscoveredAt: raw})
+	if err != nil || cr == nil {
+		return
+	}
+	support.AddSource(ctx, sess, cr, a.source)
+	support.Link(ctx, sess, urlEnt, "contact", cr, a.source)
+
+	if f.ownerDomain != "" {
+		if dom, err := db.CreateAsset(ctx, &oamdns.FQDN{Name: f.ownerDomain}); err == nil && dom != nil {
+			support.AddSource(ctx, sess, dom, a.source)
+			support.Link(ctx, sess, cr, "fqdn", dom, a.source)
+		}
+	}
+	for _, c := range f.contacts {
+		c = strings.TrimPrefix(c, "mailto:")
+		switch {
+		case strings.Contains(c, "@"):
+			email := strings.ToLower(c)
+			if ent, err := db.CreateAsset(ctx, &general.Identifier{UniqueID: general.EmailAddress + ":" + email,
+				ID: email, Type: general.EmailAddress}); err == nil && ent != nil {
+				support.AddSource(ctx, sess, ent, a.source)
+				support.Link(ctx, sess, cr, "id", ent, a.source)
+			}
+		case strings.HasPrefix(strings.ToLower(c), "http://") || strings.HasPrefix(strings.ToLower(c), "https://"):
+			if u := support.RawURLToOAM(c); u != nil {
+				if ent, err := db.CreateAsset(ctx, u); err == nil && ent != nil {
+					support.AddSource(ctx, sess, ent, a.source)
+					support.Link(ctx, sess, cr, "url", ent, a.source)
+				}
+			}
+		default:
+			if ph := support.PhoneToOAMPhone(c, "", ""); ph != nil {
+				if ent, err := db.CreateAsset(ctx, ph); err == nil && ent != nil {
+					support.AddSource(ctx, sess, ent, a.source)
+					support.Link(ctx, sess, cr, "phone", ent, a.source)
+				}
+			}
+		}
 	}
 }
 

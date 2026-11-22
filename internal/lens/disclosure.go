@@ -34,15 +34,6 @@ var disclosureLens = SubjectLens{
 // Disclosure finding kinds.
 const DisclosureExpired = "expired"
 
-// securityTxtRelations are the Service relations a security.txt populates.
-var securityTxtLinkRelations = map[string]string{
-	"security_policy":          "policy",
-	"security_canonical":       "canonical",
-	"security_encryption":      "encryption",
-	"security_acknowledgments": "acknowledgments",
-	"security_hiring":          "hiring",
-}
-
 // DisclosureReport is the result of the disclosure lens.
 type DisclosureReport struct {
 	lensBase
@@ -69,9 +60,10 @@ type DisclosureFinding struct {
 // disclosureNow is the clock the expiry is measured against; tests replace it.
 var disclosureNow = time.Now
 
-// FindDisclosure reports the security.txt published for the services a domain
-// or organization controls: their security contacts and policy links, and
-// which files have expired. It walks the controlled footprint and reads only.
+// FindDisclosure reports the security.txt files published on the names a
+// domain or organization controls: their security contacts and policy links,
+// and which files have expired. It walks the controlled footprint and reads
+// only.
 func FindDisclosure(ctx context.Context, g graph.Graph, schema graph.SchemaCatalog, root graph.Asset,
 	limits LensLimits) (DisclosureReport, error) {
 	out := DisclosureReport{}
@@ -80,7 +72,6 @@ func FindDisclosure(ctx context.Context, g graph.Graph, schema graph.SchemaCatal
 		return out, err
 	}
 
-	seen := map[string]bool{}
 	for _, id := range s.order {
 		if s.spent() {
 			break
@@ -90,23 +81,12 @@ func FindDisclosure(ctx context.Context, g graph.Graph, schema graph.SchemaCatal
 		if host.Type != "FQDN" {
 			continue
 		}
-		steps, err := s.w.steps(host)
-		if err != nil {
-			return out, err
-		}
-		for _, st := range steps {
-			if !st.forward || st.other.Type != "Service" || seen[st.other.ID] {
-				continue
+		for _, st := range readSecurityTxt(ctx, s.w.graph, host) {
+			file := DisclosureFile{Host: graph.FQDNName(host), Contacts: st.contacts, Links: st.links,
+				Expires: st.expires}
+			if t, ok := parseExpires(st.expires); ok && t.Before(disclosureNow()) {
+				file.Expired = true
 			}
-
-			file, ok, err := s.w.securityTxtOf(st.other, graph.FQDNName(host))
-			if err != nil {
-				return out, err
-			}
-			if !ok {
-				continue
-			}
-			seen[st.other.ID] = true
 			out.Files = append(out.Files, file)
 			if file.Expired {
 				out.Findings = append(out.Findings, DisclosureFinding{Kind: DisclosureExpired, Host: file.Host,
@@ -118,76 +98,6 @@ func FindDisclosure(ctx context.Context, g graph.Graph, schema graph.SchemaCatal
 	sort.Slice(out.Files, func(i, j int) bool { return out.Files[i].Host < out.Files[j].Host })
 	out.lensBase = s.base()
 	return out, nil
-}
-
-// securityTxtOf reads the security.txt a service published: its contacts, its
-// policy links and its expiry. It returns ok=false when the service has no
-// security_contact relation, which marks a service that published no file.
-func (w *lensWalker) securityTxtOf(service graph.Asset, host string) (DisclosureFile, bool, error) {
-	file := DisclosureFile{Host: host}
-	steps, err := w.steps(service)
-	if err != nil {
-		return file, false, err
-	}
-
-	var found bool
-	for _, s := range steps {
-		if !s.forward {
-			continue
-		}
-		switch {
-		case s.edge.Label == "security_contact" && s.other.Type == "ContactRecord":
-			found = true
-			file.Contacts = append(file.Contacts, w.contactValues(s.other)...)
-		default:
-			if kind, ok := securityTxtLinkRelations[s.edge.Label]; ok {
-				found = true
-				graph.AddUnique(&file.Links, kind+": "+graph.AssetLabel(s.other))
-			}
-		}
-	}
-	if !found {
-		return file, false, nil
-	}
-
-	if ev, err := w.graph.Evidence(w.ctx, service.ID, 100); err == nil {
-		if vals := propertyValues(ev, "security_txt_expires"); len(vals) > 0 {
-			file.Expires = vals[0]
-			if t, ok := parseExpires(file.Expires); ok && t.Before(disclosureNow()) {
-				file.Expired = true
-			}
-		}
-	}
-
-	sort.Strings(file.Contacts)
-	sort.Strings(file.Links)
-	return file, true, nil
-}
-
-// contactValues returns the email, URL and phone values of a contact record.
-func (w *lensWalker) contactValues(cr graph.Asset) []string {
-	steps, err := w.steps(cr)
-	if err != nil {
-		return nil
-	}
-
-	var out []string
-	for _, s := range steps {
-		if !s.forward {
-			continue
-		}
-		switch s.edge.Label {
-		case "id":
-			if strings.EqualFold(graph.ContentString(s.other, "id_type"), "email") {
-				graph.AddUnique(&out, graph.ContentString(s.other, "id"))
-			}
-		case "url":
-			graph.AddUnique(&out, graph.AssetLabel(s.other))
-		case "phone":
-			graph.AddUnique(&out, graph.AssetLabel(s.other))
-		}
-	}
-	return out
 }
 
 // parseExpires reads the RFC 9116 Expires field (an RFC 3339 timestamp).
@@ -211,7 +121,7 @@ func (r DisclosureReport) Text() string {
 		subject, r.Footprint, r.Reads)
 	b.WriteString(r.summarizedNote())
 	if len(r.Files) == 0 {
-		b.WriteString("\nNo security.txt is stored for its services.\n")
+		b.WriteString("\nNo security.txt is stored for its domains.\n")
 		return b.String()
 	}
 

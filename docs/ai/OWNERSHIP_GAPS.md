@@ -64,8 +64,9 @@ read once per search, at most 10 programs. `lens.BountyAnchor` must tie the
 program to the subject (its `bounty_program_website` property in the
 subject's namespace, its `bounty_program_name` equal to the subject's name
 after case and white-space folding, the platform's `txt_prefix` record on the
-apex, or a `security_policy`, `security_acknowledgments`, `security_hiring`
-or security-contact URL on the apex's services pointing at the program page
+apex, or a policy, acknowledgments, hiring or contact URL in the apex's
+security.txt (the `URL --contact--> ContactRecord --url--> URL` layout read
+by `readSecurityTxt`, with the field in the `url` edge's evidence) pointing at the program page
 with every part of the handle in its path). Its other `in_scope` assets, at
 most 200, become candidates; names under `cloud_providers.json` hosting
 domains and the platforms' own hosts are skipped. The horizontal

@@ -7,8 +7,12 @@ and `/app-ads.txt` for each in-scope registered domain
 
 - **Parsing (`parseAdsTxt`):** `<ad system domain>, <account id>,
   <DIRECT|RESELLER>[, <cert id>]`; comments (`#`) and variable lines
-  (`contact=`, `OWNERDOMAIN=`) are skipped. Only DIRECT lines are kept, each
-  once, at most `max_accounts`, from a file of at most `max_file_bytes`.
+  (`subdomain=`, `MANAGERDOMAIN=`) are skipped, except `OWNERDOMAIN=` and
+  `contact=`. Only DIRECT lines are kept, each once, at most `max_accounts`,
+  from a file of at most `max_file_bytes`.
+- **Contact (`storeContact`):** `URL --contact--> ContactRecord{discovered_at:
+  the file's URL}`, with `fqdn` → the OWNERDOMAIN and each `contact=` value
+  as an email Identifier (`id`), a URL (`url`) or a phone (`phone`).
 - **Storage:** the file's URL (`URL --domain--> FQDN` to the apex) and, per
   account, `support.StoreFingerprint` with id_type `fingerprint.AdsSeller`
   (`ads_seller`, value `<ad system>:<account id>`), so domains listing the
@@ -28,3 +32,9 @@ fingerprint not typed `INTERMEDIARY` gives:
   and URL carriers; same `fpMaxApexes` cap as analytics IDs);
 - `ads-seller-domain` (supporting 0.5): the `seller_domain`, when it is
   another domain and not the ad system's own.
+
+The owner domain of the organization's own files, when it is another domain,
+is `ads-owner-domain` (supporting 0.5; `adsOwnerDomain`). Another site whose
+ads.txt ContactRecord names one of the organization's domains (`fqdn` in →
+`contact` in → URL → `domain`) is `ads-owned-by` (supporting 0.5;
+`adsOwnedBy`).

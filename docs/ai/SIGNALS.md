@@ -188,7 +188,7 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 **Guards:**
 
 - The contact host or URL host must be one of the organization's apex domains or a name below one; a name that merely contains it never counts.
-- A value shared by more than 50 services never counts.
+- A value shared by more than 50 security.txt files never counts.
 - Never proposes on its own; it needs a strong signal.
 
 **Can still mislead when:**

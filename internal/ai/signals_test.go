@@ -516,9 +516,9 @@ func TestDKIMKeyReuseSignal(t *testing.T) {
 	}
 }
 
-// TestSecurityTxtReferenceSignal: an unowned service whose security.txt points
-// its canonical URL, or its security contact, into the organization's
-// namespace is linked by the security_txt_reference signal.
+// TestSecurityTxtReferenceSignal: an unowned name whose security.txt points a
+// URL, or its security contact, into the organization's namespace is linked
+// by the security_txt_reference signal.
 func TestSecurityTxtReferenceSignal(t *testing.T) {
 	g := signalsFixture()
 	add := func(id, typ string, content map[string]any) {
@@ -530,22 +530,28 @@ func TestSecurityTxtReferenceSignal(t *testing.T) {
 			Label: label, Type: rt})
 	}
 
+	// secTxt stores a security.txt for host: its URL, joined to the host, and
+	// the file's ContactRecord.
+	secTxt := func(host string) string {
+		file, cr := "file-"+host, "cr-"+host
+		add(file, "URL", map[string]any{"url": "https://" + host + "/.well-known/security.txt", "host": host,
+			"path": "/.well-known/security.txt"})
+		add(cr, "ContactRecord", map[string]any{"discovered_at": "https://" + host + "/.well-known/security.txt"})
+		link(file, "domain", host, "SimpleRelation")
+		link(file, "contact", cr, "SimpleRelation")
+		return cr
+	}
+
 	// An unowned site whose security.txt canonical URL is in colgate.edu.
 	fqdn("partner-run.example")
-	add("svc-a", "Service", map[string]any{"service_type": "web-service"})
 	add("url-canon", "URL", map[string]any{"url": "https://colgate.edu/.well-known/security.txt",
 		"host": "colgate.edu"})
-	link("partner-run.example", "port", "svc-a", "PortRelation")
-	link("svc-a", "security_canonical", "url-canon", "SimpleRelation")
+	link(secTxt("partner-run.example"), "url", "url-canon", "SimpleRelation")
 
 	// An unowned site whose security contact is a mailbox at colgate.edu.
 	fqdn("vendor-site.example")
-	add("svc-b", "Service", map[string]any{"service_type": "web-service"})
-	add("cr-b", "ContactRecord", nil)
 	add("id-b", "Identifier", map[string]any{"id": "security@colgate.edu", "id_type": "email"})
-	link("vendor-site.example", "port", "svc-b", "PortRelation")
-	link("svc-b", "security_contact", "cr-b", "SimpleRelation")
-	link("cr-b", "id", "id-b", "SimpleRelation")
+	link(secTxt("vendor-site.example"), "id", "id-b", "SimpleRelation")
 
 	r := signalsReport(t, g)
 	for _, id := range []string{"partner-run.example", "vendor-site.example"} {

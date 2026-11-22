@@ -140,9 +140,18 @@ relations:
   - {source: FQDN, label: dns_record, relation_type: SRVDNSRelation, destination: FQDN,
      attribution: infrastructure, purpose: dns,
      note: "DNS resolution (A, AAAA, CNAME and others). Targets are hosting or CDN infrastructure that many parties share; does not carry ownership."}
+  - {source: FQDN, label: soa_rname, relation_type: SimpleRelation, destination: Identifier,
+     attribution: attribute, purpose: dns,
+     note: "The zone administrator's mailbox from the domain's SOA record (RNAME). Often a managed-DNS provider's default rather than the owner's."}
   - {source: FQDN, label: spf_authorizes, relation_type: SimpleRelation, destination: FQDN,
      attribution: shared, purpose: dns, reviewed: true,
      note: "The source domain's SPF record authorizes this host to send mail for it. Targets are usually shared mail-provider infrastructure (_spf.google.com, spf.protection.outlook.com), so ownership does not pass through; same-organization targets are correlated by the horizontal mail-policy signal instead."}
+  - {source: FQDN, label: spf_authorizes, relation_type: SimpleRelation, destination: IPAddress,
+     attribution: shared, purpose: dns,
+     note: "The source domain's SPF record (an ip4:/ip6: mechanism) authorizes this address to send its mail: often the organization's own mail server, but also outside senders (marketing, ticketing), so ownership does not pass through."}
+  - {source: FQDN, label: spf_authorizes, relation_type: SimpleRelation, destination: Netblock,
+     attribution: shared, purpose: dns,
+     note: "The source domain's SPF record (an ip4:/ip6: mechanism) authorizes this range to send its mail; the infrastructure lens weighs it as supporting evidence only."}
   - {source: FQDN, label: dmarc_reports_to, relation_type: SimpleRelation, destination: FQDN,
      attribution: shared, purpose: dns, reviewed: true,
      note: "The source domain's DMARC policy sends aggregate/forensic reports to this domain: either a DMARC-processing vendor (dmarcian, Valimail) or a related domain of the same organization. The target may be shared with unrelated parties, so ownership does not pass through; same-organization targets are correlated by the horizontal mail-policy signal instead."}

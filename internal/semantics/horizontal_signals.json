@@ -114,6 +114,43 @@
       ]
     },
     {
+      "id": "soa-mailbox-own-domain",
+      "title": "SOA administrator mailbox at the organization's domain",
+      "kind": "dns",
+      "strength": "strong",
+      "weight": 0.7,
+      "matcher": "soa_mailbox_own_domain",
+      "finds": "Another registered domain whose SOA record names, as its zone administrator (RNAME), a mailbox at one of the organization's own domains that one of the organization's zones also names.",
+      "rationale": "A zone's SOA record names the mailbox of the person responsible for it. A zone whose administrator is a mailbox at the organization's own domain, the same one its own zones list, is run by the organization's DNS staff.",
+      "guards": [
+        "The mailbox must be at one of the organization's own registered domains or a name below one.",
+        "A DNS host's default mailbox is skipped: a managed-DNS provider's, or one at the registered domain of a primary name server outside the organization.",
+        "A mailbox that more than 25 domains list is skipped."
+      ],
+      "counter_indications": [
+        "A zone copied from the organization's template can keep its mailbox after the domain changes hands.",
+        "An agency running DNS for a client may list the client's mailbox in zones of its own."
+      ]
+    },
+    {
+      "id": "shared-soa-mailbox",
+      "title": "Shared SOA administrator mailbox",
+      "kind": "dns",
+      "strength": "supporting",
+      "weight": 0.5,
+      "matcher": "soa_mailbox",
+      "finds": "Another registered domain whose SOA record names the same zone administrator mailbox (RNAME) as one of the organization's zones, when that mailbox is outside the organization's domains.",
+      "rationale": "The same administrator mailbox in two zones points to one administrator. It is supporting rather than strong for an outside mailbox: a web agency, registrar or IT contractor administers many clients' zones from its own mailbox.",
+      "guards": [
+        "A DNS host's default mailbox is skipped.",
+        "A mailbox that more than 25 domains list is skipped.",
+        "Never expands scope on its own."
+      ],
+      "counter_indications": [
+        "An agency or contractor administers unrelated clients' zones from one mailbox."
+      ]
+    },
+    {
       "id": "shared-mx",
       "title": "Shared mail exchanger",
       "kind": "infrastructure",

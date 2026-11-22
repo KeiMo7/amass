@@ -111,6 +111,24 @@
       "counter_indications": [
         "An upstream ISP or hosting provider keeps route objects for many customers under one maintainer."
       ]
+    },
+    {
+      "id": "spf-declared-range",
+      "title": "Mail sender declared in the organization's SPF record",
+      "kind": "infrastructure",
+      "strength": "supporting",
+      "weight": 0.5,
+      "matcher": "spf_range",
+      "finds": "A netblock that the SPF record of a domain registered to the target organization authorizes to send its mail (an ip4: or ip6: mechanism), or the stored netblock holding an address it authorizes.",
+      "rationale": "An organization lists its own mail servers' addresses in its SPF record, so a declared range is often its own network. It is supporting rather than strong because SPF also lists the addresses of outside senders: marketing, ticketing and newsletter services the organization mails through.",
+      "guards": [
+        "Ranges broader than a /16 (IPv4) or a /32 (IPv6), private ranges, and ranges a minus qualifier excludes are not stored.",
+        "A netblock a cloud provider publishes as its own is skipped.",
+        "Never expands scope on its own."
+      ],
+      "counter_indications": [
+        "A bulk-mail or ticketing vendor's sending range is listed exactly like the organization's own."
+      ]
     }
   ]
 }

@@ -33,11 +33,16 @@ const (
 	SigAllowedOrigin = "allowed-origin"
 	// SigBountyScope is another apex a bug-bounty program tied to the
 	// organization lists in its scope.
-	SigBountyScope     = "bug-bounty-scope"
-	SigSharedMX        = "shared-mx"
-	SigDMARCReportsTo  = "dmarc-reports-to"
-	SigSPFAuthorizes   = "spf-authorizes"
-	SigOfficialWebsite = "official-website"
+	SigBountyScope = "bug-bounty-scope"
+	// SigSOAMailboxOwn is another apex whose SOA names an administrator
+	// mailbox at one of the organization's domains; SigSharedSOAMailbox one
+	// sharing an outside mailbox with one of its zones.
+	SigSOAMailboxOwn    = "soa-mailbox-own-domain"
+	SigSharedSOAMailbox = "shared-soa-mailbox"
+	SigSharedMX         = "shared-mx"
+	SigDMARCReportsTo   = "dmarc-reports-to"
+	SigSPFAuthorizes    = "spf-authorizes"
+	SigOfficialWebsite  = "official-website"
 	// Shared service fingerprints: another apex whose service carries the
 	// same distinctive fingerprint Identifier as one of the org's services.
 	SigSharedAnalyticsID = "shared-analytics-id"
@@ -58,12 +63,14 @@ const (
 	matchHorDelegationSet = "provider_delegation_set"
 	matchHorAllowedOrigin = "allowed_origin"
 	matchHorBountyScope   = "bounty_program_scope"
+	matchHorSOAOwn        = "soa_mailbox_own_domain"
+	matchHorSOAShared     = "soa_mailbox"
 )
 
 var horizontalMatchers = map[string]bool{matchHorRegistrantOrg: true, matchHorCertOrg: true,
 	matchHorNameServer: true, matchHorMX: true, matchHorDMARC: true, matchHorSPF: true, matchHorWebsite: true,
 	matchHorFingerprint: true, matchHorDelegationSet: true, matchHorAllowedOrigin: true,
-	matchHorBountyScope: true}
+	matchHorBountyScope: true, matchHorSOAOwn: true, matchHorSOAShared: true}
 
 var loadHorizontalCatalog = sync.OnceValues(func() (signalCatalog, error) {
 	var c signalCatalog

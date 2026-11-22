@@ -242,7 +242,7 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 
 `self_hosted_dns`: strong operation signal, weight 0.35.
 
-**Finds:** A name or domain registration the organization does not yet own whose NS or MX records, or whose registered name servers, are names the organization controls.
+**Finds:** A name or domain registration the organization does not yet own whose NS or MX records, SOA primary name server, or registered name servers are names the organization controls.
 
 **Why it counts:** Pointing a domain's name servers or mail exchangers at another party's hosts hands that party the domain's DNS or email. Organizations do that for their own domains; DNS and email providers do it for customers, but those providers' names are third parties in the semantics table, not part of the organization's footprint.
 

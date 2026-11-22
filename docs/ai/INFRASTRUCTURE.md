@@ -16,6 +16,7 @@ Infrastructure correlation associates more netblocks and autonomous systems with
 | [RPKI ROA authorizes the organization's AS](#roa-authorizes-own-asn) | strong | infrastructure | 0.75 |
 | [Routing registry maintainer of the organization's netblocks](#irr-maintainer-own-origins) | strong | infrastructure | 0.70 |
 | [Shared routing registry maintainer](#shared-irr-maintainer) | supporting | infrastructure | 0.50 |
+| [Mail sender declared in the organization's SPF record](#spf-declared-range) | supporting | infrastructure | 0.50 |
 
 <a id="ipnet-registrant-org"></a>
 ## Shared netblock registrant organization
@@ -132,3 +133,22 @@ Infrastructure correlation associates more netblocks and autonomous systems with
 **Can still mislead when:**
 
 - An upstream ISP or hosting provider keeps route objects for many customers under one maintainer.
+
+<a id="spf-declared-range"></a>
+## Mail sender declared in the organization's SPF record
+
+`spf-declared-range`: supporting infrastructure signal, weight 0.50 (confidence 50).
+
+**Finds:** A netblock that the SPF record of a domain registered to the target organization authorizes to send its mail (an ip4: or ip6: mechanism), or the stored netblock holding an address it authorizes.
+
+**Why it counts:** An organization lists its own mail servers' addresses in its SPF record, so a declared range is often its own network. It is supporting rather than strong because SPF also lists the addresses of outside senders: marketing, ticketing and newsletter services the organization mails through.
+
+**Guards:**
+
+- Ranges broader than a /16 (IPv4) or a /32 (IPv6), private ranges, and ranges a minus qualifier excludes are not stored.
+- A netblock a cloud provider publishes as its own is skipped.
+- Never expands scope on its own.
+
+**Can still mislead when:**
+
+- A bulk-mail or ticketing vendor's sending range is listed exactly like the organization's own.

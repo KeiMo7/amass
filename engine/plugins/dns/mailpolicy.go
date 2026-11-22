@@ -6,6 +6,7 @@ package dns
 
 import (
 	"context"
+	"net/netip"
 	"strings"
 	"time"
 
@@ -13,8 +14,10 @@ import (
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	dbt "github.com/owasp-amass/asset-db/types"
+	oam "github.com/owasp-amass/open-asset-model"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
 	"github.com/owasp-amass/open-asset-model/general"
+	oamnet "github.com/owasp-amass/open-asset-model/network"
 )
 
 // A domain's published mail policy names other domains: its SPF record
@@ -45,6 +48,91 @@ func (d *dnsSubs) storeSPFEdges(e *et.Event, apex *dbt.Entity, subdomain string)
 		for _, domain := range spfAuthorizedDomains(txtData(t)) {
 			d.storeMailPolicyEdge(e, apex, domain, relSPFAuthorizes)
 		}
+		for _, p := range spfAuthorizedRanges(txtData(t)) {
+			d.storeSPFRange(e, apex, p)
+		}
+	}
+}
+
+// Ranges broader than these, in an SPF record, say nothing about one
+// organization's mail servers.
+const (
+	spfMinIPv4Bits = 16
+	spfMinIPv6Bits = 32
+)
+
+// spfAuthorizedRanges returns the address ranges an SPF record authorizes
+// to send its mail, from its ip4: and ip6: mechanisms (RFC 7208 section
+// 5.6): a single address is a full-length prefix. Private, reserved and
+// overly broad ranges are dropped.
+func spfAuthorizedRanges(txt string) []netip.Prefix {
+	t := strings.TrimSpace(txt)
+	if !strings.HasPrefix(strings.ToLower(t), "v=spf1") {
+		return nil
+	}
+
+	var out []netip.Prefix
+	for _, f := range strings.Fields(t) {
+		term := strings.ToLower(strings.TrimLeft(f, "+-~?"))
+		var v string
+		switch {
+		case strings.HasPrefix(term, "ip4:"):
+			v = term[len("ip4:"):]
+		case strings.HasPrefix(term, "ip6:"):
+			v = term[len("ip6:"):]
+		default:
+			continue
+		}
+		// a minus qualifier excludes the range; it authorizes nothing
+		if strings.HasPrefix(f, "-") {
+			continue
+		}
+		p, err := netip.ParsePrefix(v)
+		if err != nil {
+			addr, aerr := netip.ParseAddr(v)
+			if aerr != nil {
+				continue
+			}
+			p = netip.PrefixFrom(addr, addr.BitLen())
+		}
+		p = p.Masked()
+		if (p.Addr().Is4() && p.Bits() < spfMinIPv4Bits) || (p.Addr().Is6() && p.Bits() < spfMinIPv6Bits) ||
+			!p.Addr().IsGlobalUnicast() || p.Addr().IsPrivate() {
+			continue
+		}
+		out = append(out, p)
+	}
+	return out
+}
+
+// storeSPFRange records a spf_authorizes edge from the apex to the netblock
+// (or, for a single address, the IP address) its SPF record authorizes.
+func (d *dnsSubs) storeSPFRange(e *et.Event, apex *dbt.Entity, p netip.Prefix) {
+	if apex == nil {
+		return
+	}
+	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 5*time.Second)
+	defer cancel()
+
+	kind := "IPv4"
+	if p.Addr().Is6() {
+		kind = "IPv6"
+	}
+	var asset oam.Asset = &oamnet.Netblock{CIDR: p, Type: kind}
+	if p.Bits() == p.Addr().BitLen() {
+		asset = &oamnet.IPAddress{Address: p.Addr(), Type: kind}
+	}
+	to, err := e.Session.DB().CreateAsset(ctx, asset)
+	if err != nil || to == nil {
+		return
+	}
+	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
+		Relation:   &general.SimpleRelation{Name: relSPFAuthorizes},
+		FromEntity: apex,
+		ToEntity:   to,
+	})
+	if err == nil && edge != nil {
+		d.sourced(ctx, e, edge)
 	}
 }
 

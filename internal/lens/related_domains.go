@@ -318,6 +318,7 @@ nsPivot:
 	}
 	allowedOriginPivot(ctx, g, ownApexes, add)
 	bountyScopePivot(ctx, g, name, ownApexes, add)
+	soaMailboxPivot(ctx, g, ownApexes, add)
 	sharedDNSHostPivot(ctx, g, ownApexes, RRTypeNS, SigSharedNameServer, "shared name server", nsMaxApexes,
 		isNameServerProvider, add)
 	sharedDNSHostPivot(ctx, g, ownApexes, rrTypeMX, SigSharedMX, "shared mail exchanger", mxMaxApexes,

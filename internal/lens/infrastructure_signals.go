@@ -34,6 +34,9 @@ const (
 	// SigSharedIRRMaintainer the same maintainer otherwise.
 	SigIRRMaintainerOwn    = "irr-maintainer-own-origins"
 	SigSharedIRRMaintainer = "shared-irr-maintainer"
+	// SigSPFDeclaredRange is a netblock the SPF record of one of the
+	// organization's domains authorizes to send its mail.
+	SigSPFDeclaredRange = "spf-declared-range"
 )
 
 // Infrastructure signal matchers: how each signal is found in the graph.
@@ -44,10 +47,12 @@ const (
 	matchInfraROA         = "roa_own_asn"
 	matchInfraIRROwn      = "irr_maintainer_own_origins"
 	matchInfraIRRShared   = "irr_maintainer"
+	matchInfraSPFRange    = "spf_range"
 )
 
 var infrastructureMatchers = map[string]bool{matchInfraIPNetReg: true, matchInfraASNReg: true,
-	matchInfraASNAnnounce: true, matchInfraROA: true, matchInfraIRROwn: true, matchInfraIRRShared: true}
+	matchInfraASNAnnounce: true, matchInfraROA: true, matchInfraIRROwn: true, matchInfraIRRShared: true,
+	matchInfraSPFRange: true}
 
 var loadInfrastructureCatalog = sync.OnceValues(func() (signalCatalog, error) {
 	var c signalCatalog

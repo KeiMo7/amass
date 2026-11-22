@@ -77,6 +77,8 @@ func rrTypeName(rr int) string {
 		return "NS"
 	case rrTypeMX:
 		return "MX"
+	case rrTypeSOA:
+		return "SOA"
 	}
 
 	return ""

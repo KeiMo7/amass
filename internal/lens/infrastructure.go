@@ -154,6 +154,17 @@ contacts:
 						ownNetblocks[ne.FromID] = true
 					}
 				}
+			case "DomainRecord":
+				// the mail senders the organization's domains declare
+				apexes, err := g.Edges(ctx, re.FromID, "in", "registration", time.Time{})
+				if err != nil {
+					continue
+				}
+				for _, ae := range apexes {
+					if !spfRanges(ctx, g, ae.FromID, name, add) {
+						break contacts
+					}
+				}
 			case "AutnumRecord":
 				w := graph.WitnessEdge{EdgeID: re.ID, Label: "registrant", RelationType: re.Type,
 					FromID: re.FromID, FromType: "AutnumRecord", ToID: re.ToID, ToType: "ContactRecord"}

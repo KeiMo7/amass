@@ -55,7 +55,7 @@ func NewSubs(p *dnsPlugin) *dnsSubs {
 		types: []subsQtypes{
 			{Qtype: dns.TypeNS, Rtype: "ns_record"},
 			{Qtype: dns.TypeMX, Rtype: "mx_record"},
-			//{Qtype: dns.TypeSOA, Rtype: "soa_record"},
+			// the SOA record is asked for once per apex (querySOA)
 			//{Qtype: dns.TypeSPF, Rtype: "spf_record"},
 		},
 		done:      make(chan struct{}),
@@ -217,6 +217,7 @@ func (d *dnsSubs) query(e *et.Event, subdomain string) []*relSubs {
 	apexEnt := d.plugin.getApex(subdomain)
 	d.queryPolicies(e, apexEnt, subdomain)
 	d.queryCAA(e, apexEnt, subdomain)
+	d.querySOA(e, apexEnt, subdomain)
 	d.queryAXFR(e, apexEnt, subdomain)
 
 	srvs := NamesByTier(Tier3)

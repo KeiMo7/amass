@@ -18,6 +18,8 @@ Horizontal correlation associates more registered (apex) domains with a target o
 | [Same DNS provider delegation set](#dns-provider-delegation-set) | supporting | infrastructure | 0.70 |
 | [Allowed cross-origin by the organization's site](#allowed-origin) | supporting | web | 0.55 |
 | [Listed by the organization's bug-bounty program](#bug-bounty-scope) | supporting | declaration | 0.70 |
+| [SOA administrator mailbox at the organization's domain](#soa-mailbox-own-domain) | strong | dns | 0.70 |
+| [Shared SOA administrator mailbox](#shared-soa-mailbox) | supporting | dns | 0.50 |
 | [Shared mail exchanger](#shared-mx) | supporting | infrastructure | 0.60 |
 | [DMARC reports to the organization](#dmarc-reports-to) | strong | infrastructure | 0.70 |
 | [SPF authorizes the organization's senders](#spf-authorizes) | supporting | infrastructure | 0.55 |
@@ -142,6 +144,45 @@ Horizontal correlation associates more registered (apex) domains with a target o
 
 - A vendor-hosted tenant or a partner's system can be listed so researchers may test it.
 - A parent's program can cover subsidiaries and acquisitions that are separate organizations.
+
+<a id="soa-mailbox-own-domain"></a>
+## SOA administrator mailbox at the organization's domain
+
+`soa-mailbox-own-domain`: strong dns signal, weight 0.70 (confidence 70).
+
+**Finds:** Another registered domain whose SOA record names, as its zone administrator (RNAME), a mailbox at one of the organization's own domains that one of the organization's zones also names.
+
+**Why it counts:** A zone's SOA record names the mailbox of the person responsible for it. A zone whose administrator is a mailbox at the organization's own domain, the same one its own zones list, is run by the organization's DNS staff.
+
+**Guards:**
+
+- The mailbox must be at one of the organization's own registered domains or a name below one.
+- A DNS host's default mailbox is skipped: a managed-DNS provider's, or one at the registered domain of a primary name server outside the organization.
+- A mailbox that more than 25 domains list is skipped.
+
+**Can still mislead when:**
+
+- A zone copied from the organization's template can keep its mailbox after the domain changes hands.
+- An agency running DNS for a client may list the client's mailbox in zones of its own.
+
+<a id="shared-soa-mailbox"></a>
+## Shared SOA administrator mailbox
+
+`shared-soa-mailbox`: supporting dns signal, weight 0.50 (confidence 50).
+
+**Finds:** Another registered domain whose SOA record names the same zone administrator mailbox (RNAME) as one of the organization's zones, when that mailbox is outside the organization's domains.
+
+**Why it counts:** The same administrator mailbox in two zones points to one administrator. It is supporting rather than strong for an outside mailbox: a web agency, registrar or IT contractor administers many clients' zones from its own mailbox.
+
+**Guards:**
+
+- A DNS host's default mailbox is skipped.
+- A mailbox that more than 25 domains list is skipped.
+- Never expands scope on its own.
+
+**Can still mislead when:**
+
+- An agency or contractor administers unrelated clients' zones from one mailbox.
 
 <a id="shared-mx"></a>
 ## Shared mail exchanger

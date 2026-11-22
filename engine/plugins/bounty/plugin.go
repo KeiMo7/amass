@@ -24,7 +24,6 @@ import (
 	"net/netip"
 	"os"
 	"path/filepath"
-	"strings"
 	"sync"
 	"time"
 
@@ -37,7 +36,6 @@ import (
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
 	"github.com/owasp-amass/open-asset-model/general"
 	oamnet "github.com/owasp-amass/open-asset-model/network"
-	"golang.org/x/net/publicsuffix"
 )
 
 const (
@@ -103,27 +101,10 @@ func (b *bountyScopes) Start(r et.Registry) error {
 func (b *bountyScopes) Stop() { b.log.Info("Plugin stopped") }
 
 func (b *bountyScopes) check(e *et.Event) error {
-	fqdn, ok := e.Entity.Asset.(*oamdns.FQDN)
-	if !ok {
-		return nil
-	}
-
-	apex := strings.ToLower(fqdn.Name)
-	if dom, err := publicsuffix.EffectiveTLDPlusOne(apex); err != nil || dom != apex {
-		return nil
-	}
-	if _, conf := e.Session.Scope().IsAssetInScope(fqdn, 0); conf == 0 {
-		return nil
-	}
-
-	since, err := support.TTLStartTime(e.Session.Config(), string(oam.FQDN), string(oam.Account), b.name)
-	if err != nil {
+	apex, err := support.InScopeApexToCheck(e, oam.Account, b.source, b.name)
+	if err != nil || apex == "" {
 		return err
 	}
-	if support.AssetMonitoredWithinTTL(e.Session, e.Entity, b.source, since) {
-		return nil
-	}
-	support.MarkAssetMonitored(e.Session, e.Entity, b.source)
 
 	d := b.load(e)
 	if d == nil {
@@ -237,7 +218,7 @@ func (b *bountyScopes) store(e *et.Event, apex string, p *program) *dbt.Entity {
 	if err != nil || acct == nil {
 		return nil
 	}
-	b.sourced(ctx, e, acct)
+	support.AddSource(ctx, e.Session, acct, b.source)
 	for name, value := range map[string]string{
 		PropProgramName: p.name, PropProgramWebsite: p.website, PropPlatform: p.platform.Title,
 	} {
@@ -248,7 +229,7 @@ func (b *bountyScopes) store(e *et.Event, apex string, p *program) *dbt.Entity {
 
 	if u := support.RawURLToOAM(p.page); u != nil {
 		if ent, err := db.CreateAsset(ctx, u); err == nil && ent != nil {
-			b.link(ctx, e, acct, "program_page", ent)
+			support.Link(ctx, e.Session, acct, "program_page", ent, b.source)
 		}
 	}
 
@@ -263,8 +244,8 @@ func (b *bountyScopes) store(e *et.Event, apex string, p *program) *dbt.Entity {
 			continue
 		}
 		stored++
-		b.sourced(ctx, e, ent)
-		b.link(ctx, e, acct, "in_scope", ent)
+		support.AddSource(ctx, e.Session, ent, b.source)
+		support.Link(ctx, e.Session, acct, "in_scope", ent, b.source)
 		if _, conf := e.Session.Scope().IsAssetInScope(fqdn, 0); conf > 0 && h != apex {
 			_ = e.Dispatcher.DispatchEvent(&et.Event{Name: h, Entity: ent, Session: e.Session})
 		}
@@ -278,8 +259,8 @@ func (b *bountyScopes) store(e *et.Event, apex string, p *program) *dbt.Entity {
 			continue
 		}
 		stored++
-		b.sourced(ctx, e, ent)
-		b.link(ctx, e, acct, "in_scope", ent)
+		support.AddSource(ctx, e.Session, ent, b.source)
+		support.Link(ctx, e.Session, acct, "in_scope", ent, b.source)
 	}
 	if total := len(p.hosts) + len(p.prefixes); total > stored {
 		e.Session.Log().Info(fmt.Sprintf("bug-bounty program %s lists %d assets; stored %d", p.id(), total, stored),
@@ -296,26 +277,4 @@ func netblockType(pf netip.Prefix) string {
 		return "IPv4"
 	}
 	return "IPv6"
-}
-
-func (b *bountyScopes) sourced(ctx context.Context, e *et.Event, ent *dbt.Entity) {
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, ent, &general.SourceProperty{
-		Source:     b.source.Name,
-		Confidence: b.source.Confidence,
-	})
-}
-
-func (b *bountyScopes) link(ctx context.Context, e *et.Event, from *dbt.Entity, label string, to *dbt.Entity) {
-	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &general.SimpleRelation{Name: label},
-		FromEntity: from,
-		ToEntity:   to,
-	})
-	if err != nil || edge == nil {
-		return
-	}
-	_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-		Source:     b.source.Name,
-		Confidence: b.source.Confidence,
-	})
 }

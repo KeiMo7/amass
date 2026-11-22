@@ -24,7 +24,6 @@ import (
 	"encoding/pem"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"slices"
 	"strings"
 	"time"
@@ -32,13 +31,10 @@ import (
 	"github.com/miekg/dns"
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
-	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	"github.com/owasp-amass/open-asset-model/contact"
-	oamdns "github.com/owasp-amass/open-asset-model/dns"
 	"github.com/owasp-amass/open-asset-model/general"
-	"golang.org/x/net/publicsuffix"
 	"golang.org/x/time/rate"
 )
 
@@ -102,26 +98,10 @@ func (b *bimiPlugin) Start(r et.Registry) error {
 func (b *bimiPlugin) Stop() { b.log.Info("Plugin stopped") }
 
 func (b *bimiPlugin) check(e *et.Event) error {
-	fqdn, ok := e.Entity.Asset.(*oamdns.FQDN)
-	if !ok {
-		return nil
-	}
-	apex := strings.ToLower(fqdn.Name)
-	if dom, err := publicsuffix.EffectiveTLDPlusOne(apex); err != nil || dom != apex {
-		return nil
-	}
-	if _, conf := e.Session.Scope().IsAssetInScope(fqdn, 0); conf == 0 {
-		return nil
-	}
-
-	since, err := support.TTLStartTime(e.Session.Config(), string(oam.FQDN), string(oam.TLSCertificate), b.name)
-	if err != nil {
+	apex, err := support.InScopeApexToCheck(e, oam.TLSCertificate, b.source, b.name)
+	if err != nil || apex == "" {
 		return err
 	}
-	if support.AssetMonitoredWithinTTL(e.Session, e.Entity, b.source, since) {
-		return nil
-	}
-	support.MarkAssetMonitored(e.Session, e.Entity, b.source)
 
 	rec, ok := b.record(e, apex)
 	if !ok || rec.evidence == "" {
@@ -187,15 +167,11 @@ func (b *bimiPlugin) fetch(e *et.Event, u, apex string) *x509.Certificate {
 	if !strings.HasPrefix(strings.ToLower(u), "https://") {
 		return nil
 	}
-	_ = support.WaitLimit(e.Session.Ctx(), b.rlimit)
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	resp, err := amasshttp.RequestWebPage(ctx, e.Session.Clients().General, &amasshttp.Request{URL: u})
-	if err != nil || resp == nil || resp.StatusCode != http.StatusOK || len(resp.Body) > maxEvidenceLen {
+	body, err := support.FetchBody(e, u, b.rlimit, maxEvidenceLen)
+	if err != nil {
 		return nil
 	}
-	return markCertificate([]byte(resp.Body), apex, time.Now())
+	return markCertificate(body, apex, time.Now())
 }
 
 // markCertificate returns the first certificate in a PEM evidence document
@@ -271,25 +247,25 @@ func (b *bimiPlugin) store(e *et.Event, cert *x509.Certificate, rec bimiRecord) 
 	if err != nil || certEnt == nil {
 		return
 	}
-	b.sourced(ctx, e, certEnt)
+	support.AddSource(ctx, e.Session, certEnt, b.source)
 	if rec.logo != "" {
-		b.property(ctx, e, certEnt, PropBIMILogo, rec.logo)
+		support.AddProperty(ctx, e.Session, certEnt, PropBIMILogo, rec.logo)
 	}
 
 	cr, err := db.CreateAsset(ctx, &contact.ContactRecord{DiscoveredAt: support.X509ContactKey(cert, "Subject")})
 	if err == nil && cr != nil {
-		b.link(ctx, e, certEnt, "subject_contact", cr)
+		support.Link(ctx, e.Session, certEnt, "subject_contact", cr, b.source)
 		d := subjectDetails(cert)
 		if d.markType != "" {
-			b.property(ctx, e, cr, PropMarkType, d.markType)
+			support.AddProperty(ctx, e.Session, cr, PropMarkType, d.markType)
 		}
 		if d.wordMark != "" {
-			b.property(ctx, e, cr, PropWordMark, d.wordMark)
+			support.AddProperty(ctx, e.Session, cr, PropWordMark, d.wordMark)
 		}
 		if d.trademark != "" && d.country != "" {
 			id := d.country + ":" + d.trademark
 			if ident := b.identifier(ctx, e, cr, general.TrademarkRegistration, id); ident != nil && d.office != "" {
-				b.property(ctx, e, ident, PropTMOffice, d.office)
+				support.AddProperty(ctx, e.Session, ident, PropTMOffice, d.office)
 			}
 		}
 		if d.lei != "" {
@@ -313,34 +289,7 @@ func (b *bimiPlugin) identifier(ctx context.Context, e *et.Event, cr *dbt.Entity
 	if err != nil || ent == nil {
 		return nil
 	}
-	b.sourced(ctx, e, ent)
-	b.link(ctx, e, cr, "id", ent)
+	support.AddSource(ctx, e.Session, ent, b.source)
+	support.Link(ctx, e.Session, cr, "id", ent, b.source)
 	return ent
-}
-
-func (b *bimiPlugin) sourced(ctx context.Context, e *et.Event, ent *dbt.Entity) {
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, ent, &general.SourceProperty{
-		Source:     b.source.Name,
-		Confidence: b.source.Confidence,
-	})
-}
-
-func (b *bimiPlugin) property(ctx context.Context, e *et.Event, ent *dbt.Entity, name, value string) {
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, ent, &general.SimpleProperty{PropertyName: name,
-		PropertyValue: value})
-}
-
-func (b *bimiPlugin) link(ctx context.Context, e *et.Event, from *dbt.Entity, label string, to *dbt.Entity) {
-	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &general.SimpleRelation{Name: label},
-		FromEntity: from,
-		ToEntity:   to,
-	})
-	if err != nil || edge == nil {
-		return
-	}
-	_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-		Source:     b.source.Name,
-		Confidence: b.source.Confidence,
-	})
 }

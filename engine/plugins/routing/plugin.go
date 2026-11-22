@@ -21,7 +21,6 @@ import (
 	"io"
 	"log/slog"
 	"net"
-	"net/http"
 	"net/netip"
 	"net/url"
 	"sort"
@@ -33,7 +32,6 @@ import (
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	amassnet "github.com/owasp-amass/amass/v5/internal/net"
-	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
 	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
@@ -173,18 +171,7 @@ func (r *routingRecords) statGet(e *et.Event, call string, params url.Values) ([
 	params.Set("sourceapp", r.catalog.SourceApp)
 	u := fmt.Sprintf("%s/%s/data.json?%s", strings.TrimSuffix(r.catalog.StatAPI, "/"), call, params.Encode())
 
-	_ = support.WaitLimit(e.Session.Ctx(), r.rlimit)
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	resp, err := amasshttp.RequestWebPage(ctx, e.Session.Clients().General, &amasshttp.Request{URL: u})
-	if err != nil {
-		return nil, err
-	}
-	if resp == nil || resp.StatusCode != http.StatusOK {
-		return nil, fmt.Errorf("RIPEstat %s: unexpected answer", call)
-	}
-	return []byte(resp.Body), nil
+	return support.FetchBody(e, u, r.rlimit, 0)
 }
 
 func (r *routingRecords) statWhois(e *et.Event, prefix netip.Prefix) ([]routeObject, error) {
@@ -207,8 +194,8 @@ func (r *routingRecords) storeMaintainer(e *et.Event, nbent *dbt.Entity, m maint
 	if err != nil || id == nil {
 		return nil
 	}
-	r.sourced(ctx, e, id)
-	r.link(ctx, e, nbent, "irr_maintainer", id)
+	support.AddSource(ctx, e.Session, id, r.source)
+	support.Link(ctx, e.Session, nbent, "irr_maintainer", id, r.source)
 	return id
 }
 
@@ -241,7 +228,7 @@ func (r *routingRecords) expand(e *et.Event, id *dbt.Entity, m maintainer) {
 
 	ctx, cancel := context.WithTimeout(e.Session.Ctx(), time.Minute)
 	defer cancel()
-	r.property(ctx, e, id, PropIRRRoutes, strconv.Itoa(len(routes)))
+	support.AddProperty(ctx, e.Session, id, PropIRRRoutes, strconv.Itoa(len(routes)))
 	origins := map[int]bool{}
 	for _, o := range routes {
 		origins[o.origin] = true
@@ -255,7 +242,7 @@ func (r *routingRecords) expand(e *et.Event, id *dbt.Entity, m maintainer) {
 		if i > r.catalog.MaxOrigins {
 			break
 		}
-		r.property(ctx, e, id, PropIRROrigin, fmt.Sprintf("AS%d", n))
+		support.AddProperty(ctx, e.Session, id, PropIRROrigin, fmt.Sprintf("AS%d", n))
 	}
 	if len(routes) > r.catalog.MaxRoutes {
 		return
@@ -270,8 +257,8 @@ func (r *routingRecords) expand(e *et.Event, id *dbt.Entity, m maintainer) {
 		if err != nil || nbent == nil {
 			continue
 		}
-		r.sourced(ctx, e, nbent)
-		r.link(ctx, e, nbent, "irr_maintainer", id)
+		support.AddSource(ctx, e.Session, nbent, r.source)
+		support.Link(ctx, e.Session, nbent, "irr_maintainer", id, r.source)
 	}
 	e.Session.Log().Info("routing registry maintainer read", "maintainer", m.id(), "routes", len(routes),
 		slog.Group("plugin", "name", r.name, "handler", r.name+"-Handler"))
@@ -353,41 +340,14 @@ func (r *routingRecords) rpki(e *et.Event, nbent *dbt.Entity, prefix netip.Prefi
 	}
 
 	if status != "" {
-		r.property(ctx, e, nbent, PropRPKIStatus, status)
+		support.AddProperty(ctx, e.Session, nbent, PropRPKIStatus, status)
 	}
 	for n := range authorized {
 		asent, err := e.Session.DB().CreateAsset(ctx, &oamnet.AutonomousSystem{Number: n})
 		if err != nil || asent == nil {
 			continue
 		}
-		r.sourced(ctx, e, asent)
-		r.link(ctx, e, nbent, "rpki_origin", asent)
+		support.AddSource(ctx, e.Session, asent, r.source)
+		support.Link(ctx, e.Session, nbent, "rpki_origin", asent, r.source)
 	}
-}
-
-func (r *routingRecords) sourced(ctx context.Context, e *et.Event, ent *dbt.Entity) {
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, ent, &general.SourceProperty{
-		Source:     r.source.Name,
-		Confidence: r.source.Confidence,
-	})
-}
-
-func (r *routingRecords) property(ctx context.Context, e *et.Event, ent *dbt.Entity, name, value string) {
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, ent, &general.SimpleProperty{PropertyName: name,
-		PropertyValue: value})
-}
-
-func (r *routingRecords) link(ctx context.Context, e *et.Event, from *dbt.Entity, label string, to *dbt.Entity) {
-	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &general.SimpleRelation{Name: label},
-		FromEntity: from,
-		ToEntity:   to,
-	})
-	if err != nil || edge == nil {
-		return
-	}
-	_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-		Source:     r.source.Name,
-		Confidence: r.source.Confidence,
-	})
 }

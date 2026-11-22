@@ -59,7 +59,7 @@ func configure(cfg *config.Config, plan Plan) ([]oam.Asset, error) {
 	cfg.BruteForcing = plan.BruteForce
 	cfg.Alterations = plan.Alterations
 
-	entries := append([]ScopeEntry{{Type: plan.ScopeType, Value: plan.ScopeValue}}, plan.Also...)
+	entries := plan.Entries()
 	assets := make([]oam.Asset, 0, len(entries))
 	for _, e := range entries {
 		a, err := addScope(cfg, e)
@@ -73,34 +73,30 @@ func configure(cfg *config.Config, plan Plan) ([]oam.Asset, error) {
 	return assets, nil
 }
 
-// addScope puts one approved target in cfg's scope and returns its asset.
-func addScope(cfg *config.Config, e ScopeEntry) (oam.Asset, error) {
+// Entries returns the plan's scope: its own target first, then the targets it
+// adds.
+func (p Plan) Entries() []ScopeEntry {
+	return append([]ScopeEntry{{Type: p.ScopeType, Value: p.ScopeValue}}, p.Also...)
+}
+
+// Asset returns the asset a scope entry names.
+func (e ScopeEntry) Asset() (oam.Asset, error) {
 	switch e.Type {
 	case "domain":
-		n := len(cfg.Scope.Domains)
-		cfg.AddDomain(e.Value)
-		if len(cfg.Scope.Domains) != n+1 || cfg.Scope.Domains[n] != e.Value {
-			return nil, errors.New("failed to set exact FQDN scope")
-		}
-
 		return oamdns.FQDN{Name: e.Value}, nil
 	case "ip":
 		addr, err := netip.ParseAddr(e.Value)
-		ip := net.ParseIP(e.Value)
-		if err != nil || ip == nil {
+		if err != nil || net.ParseIP(e.Value) == nil {
 			return nil, errors.New("invalid approved IP")
 		}
 
-		cfg.Scope.Addresses = append(cfg.Scope.Addresses, ip)
 		return oamnet.IPAddress{Address: addr, Type: ipKind(addr)}, nil
 	case "cidr":
 		prefix, err := netip.ParsePrefix(e.Value)
-		_, cidr, cerr := net.ParseCIDR(e.Value)
-		if err != nil || cerr != nil {
+		if _, _, cerr := net.ParseCIDR(e.Value); err != nil || cerr != nil {
 			return nil, errors.New("invalid approved CIDR")
 		}
 
-		cfg.Scope.CIDRs = append(cfg.Scope.CIDRs, cidr)
 		return oamnet.Netblock{CIDR: prefix, Type: ipKind(prefix.Addr())}, nil
 	case "asn":
 		num, err := strconv.Atoi(e.Value)
@@ -108,17 +104,44 @@ func addScope(cfg *config.Config, e ScopeEntry) (oam.Asset, error) {
 			return nil, errors.New("invalid approved ASN")
 		}
 
-		cfg.Scope.ASNs = append(cfg.Scope.ASNs, num)
 		return oamnet.AutonomousSystem{Number: num}, nil
 	case "phone":
-		cfg.Scope.Phones = append(cfg.Scope.Phones, e.Value)
 		return oamcontact.Phone{E164: e.Value, Raw: e.Value}, nil
 	case "street_address":
-		cfg.Scope.StreetAddresses = append(cfg.Scope.StreetAddresses, e.Value)
 		return oamcontact.StreetAddress{Address: e.Value}, nil
 	}
 
 	return nil, errors.New("unsupported collection scope type")
+}
+
+// addScope puts one approved target in cfg's scope and returns its asset.
+func addScope(cfg *config.Config, e ScopeEntry) (oam.Asset, error) {
+	a, err := e.Asset()
+	if err != nil {
+		return nil, err
+	}
+
+	switch v := a.(type) {
+	case oamdns.FQDN:
+		n := len(cfg.Scope.Domains)
+		cfg.AddDomain(e.Value)
+		if len(cfg.Scope.Domains) != n+1 || cfg.Scope.Domains[n] != e.Value {
+			return nil, errors.New("failed to set exact FQDN scope")
+		}
+	case oamnet.IPAddress:
+		cfg.Scope.Addresses = append(cfg.Scope.Addresses, net.ParseIP(e.Value))
+	case oamnet.Netblock:
+		_, cidr, _ := net.ParseCIDR(e.Value)
+		cfg.Scope.CIDRs = append(cfg.Scope.CIDRs, cidr)
+	case oamnet.AutonomousSystem:
+		cfg.Scope.ASNs = append(cfg.Scope.ASNs, v.Number)
+	case oamcontact.Phone:
+		cfg.Scope.Phones = append(cfg.Scope.Phones, e.Value)
+	case oamcontact.StreetAddress:
+		cfg.Scope.StreetAddresses = append(cfg.Scope.StreetAddresses, e.Value)
+	}
+
+	return a, nil
 }
 
 func ipKind(addr netip.Addr) string {

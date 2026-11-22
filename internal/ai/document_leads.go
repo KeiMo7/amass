@@ -18,6 +18,7 @@ import (
 	"github.com/owasp-amass/amass/v5/internal/graph"
 	"github.com/owasp-amass/amass/v5/internal/lens"
 	"github.com/owasp-amass/amass/v5/internal/review"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamcontact "github.com/owasp-amass/open-asset-model/contact"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
@@ -46,10 +47,12 @@ func leadFor(t, value, region string) (documentLead, bool) {
 	sel := func(field, v string) graph.AssetSelector { return graph.AssetSelector{Type: t, Field: field, Value: v} }
 	switch t {
 	case "Organization":
-		// a unit of the publisher ("Office of Events") is kept as a finding:
-		// the engine has nothing to look up for it
+		// a unit of the publisher ("Office of Events") or a generic office or
+		// service name ("Counseling", "Rapid Response") is kept as a finding:
+		// the engine has nothing to look up for it, and the registries match
+		// such a name to unrelated bodies
 		return documentLead{asset: oamorg.Organization{ID: value, Name: value}, name: value},
-			properName(value) && !genericUnit(value)
+			properName(value) && !genericUnit(value) && !semantics.GenericOrganizationName(value)
 	case "FQDN":
 		name := strings.ToLower(strings.TrimSuffix(value, "."))
 		return documentLead{asset: oamdns.FQDN{Name: name}, selector: sel("name", name), name: name},

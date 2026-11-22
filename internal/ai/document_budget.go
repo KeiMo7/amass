@@ -10,6 +10,7 @@ import (
 
 	"github.com/owasp-amass/amass/v5/internal/collect"
 	"github.com/owasp-amass/amass/v5/internal/review"
+	oam "github.com/owasp-amass/open-asset-model"
 )
 
 // The lead budget adapts to how the run's leads fare: it starts at
@@ -31,6 +32,9 @@ const (
 	// confirmation rate can hold new leads back: a few early leads going
 	// nowhere say little.
 	leadRateSample = 10
+	// leadRecheckInterval is how often an unconfirmed lead is checked again;
+	// a check walks the stored relations around the lead.
+	leadRecheckInterval = time.Minute
 )
 
 // submittedLead is a lead given to the run, and whether the engine has
@@ -39,6 +43,19 @@ type submittedLead struct {
 	entityID  string
 	at        time.Time
 	confirmed bool
+	checkedAt time.Time
+}
+
+// leadTargets returns a plan's targets, which a lead must be tied to before
+// it counts as confirmed: its scope value and the targets it adds.
+func leadTargets(p collect.Plan) review.LeadTargets {
+	var assets []oam.Asset
+	for _, e := range p.Entries() {
+		if a, err := e.Asset(); err == nil {
+			assets = append(assets, a)
+		}
+	}
+	return review.NewLeadTargets(assets)
 }
 
 // queuedLead is a lead waiting for the budget to allow it.
@@ -58,8 +75,9 @@ func (c *DocumentCompanion) allowance(ctx context.Context, st *companionRun, act
 			continue
 		}
 		checked++
-		if !s.confirmed && review.LeadConfirmed(ctx, c.Store, s.entityID) {
-			s.confirmed = true
+		if !s.confirmed && now.Sub(s.checkedAt) >= leadRecheckInterval {
+			s.checkedAt = now
+			s.confirmed = review.LeadConfirmed(ctx, c.Store, s.entityID, st.targets)
 		}
 		if s.confirmed {
 			confirmed++

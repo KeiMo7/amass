@@ -102,6 +102,9 @@ type companionRun struct {
 	seen      map[string]bool
 	submitted []*submittedLead
 	queue     []queuedLead
+	// targets are the run's own targets, which a lead must be tied to
+	// before it counts as confirmed
+	targets review.LeadTargets
 	// failed counts each File's failed attempts in this run, and holds the
 	// last failure's kind
 	failed map[string]failedDocument
@@ -134,7 +137,7 @@ func (c *DocumentCompanion) Begin(ctx context.Context, run collect.Run, act coll
 	}
 
 	st := &companionRun{nudge: make(chan struct{}, 1), roots: map[string]graph.Asset{}, seen: map[string]bool{},
-		failed: map[string]failedDocument{}}
+		failed: map[string]failedDocument{}, targets: leadTargets(run.Plan)}
 	interval := c.Interval
 	if interval <= 0 {
 		interval = DefaultDocumentInterval
@@ -172,8 +175,8 @@ func (c *DocumentCompanion) Begin(ctx context.Context, run collect.Run, act coll
 }
 
 // Finish implements collect.Finisher: when the run ends, each lead it was
-// given is settled. One the engine linked to other assets, or another source
-// reported, is kept and the relations it led to cite the document; any other
+// given is settled. One the engine tied to the run's targets is kept and the
+// relations it led to cite the document; any other
 // is retracted as expired. Then the relationships the targets' documents
 // state between stored assets are recorded as review-gated proposals
 // (lens.FindDocumentRelations); nothing is written until a reviewer accepts
@@ -182,7 +185,7 @@ func (c *DocumentCompanion) Finish(ctx context.Context, run collect.Run) {
 	if c == nil || c.Store == nil || c.Journal == nil {
 		return
 	}
-	_, _, _ = review.SettleDocumentLeads(ctx, c.Store, c.Journal, run.ID)
+	_, _, _ = review.SettleDocumentLeads(ctx, c.Store, c.Journal, run.ID, leadTargets(run.Plan))
 	_, _ = c.recordDocumentRelations(ctx, run)
 }
 
@@ -218,16 +221,7 @@ func (c *DocumentCompanion) recordDocumentRelations(ctx context.Context, run col
 
 // documentTargets returns the domains a run collects.
 func documentTargets(run collect.Run) []string {
-	var out []string
-	if run.Plan.ScopeType == "domain" && run.Plan.ScopeValue != "" {
-		out = append(out, run.Plan.ScopeValue)
-	}
-	for _, e := range run.Plan.Also {
-		if e.Type == "domain" && e.Value != "" {
-			out = append(out, e.Value)
-		}
-	}
-	return out
+	return leadTargets(run.Plan).Domains
 }
 
 // pass reads the next unread documents of each of the run's targets and

@@ -148,6 +148,10 @@ for MCP-started runs:
   "department of", "center for", …) plus at most three words as the
   publisher's own unit, unless a public-body marker ("federal", "state",
   "county", "city of", …) appears.
+- **Generic names:** an Organization whose name has no entity form word and
+  only generic office or service words ("Counseling", "Rapid Response";
+  `semantics.GenericOrganizationName`, catalog `document_leads.json`) is a
+  finding only: the registries match such a name to unrelated bodies.
 - **Known assets:** a lead the database already holds (`knownLead`, an exact
   `ResolveAsset` or `ResolveOrganizations`) is not submitted. Each name is
   submitted once per run (`seen`).
@@ -166,7 +170,9 @@ for MCP-started runs:
 
 **Stale documents:** `lens.DocumentSource.Dated` is the newest parseable
 `doc_modified`/`doc_created` (RFC 3339, `2006-01-02T15:04:05` or
-`2006-01-02`; years before 1990 are tool defaults and ignored), and `Stale`
+`2006-01-02`, after `docmeta.NormalizeDate`, which also reads a PDF date
+stored without its `D:` prefix; years before 1990 are tool defaults and
+ignored), and `Stale`
 is set when it is older than `lens.DocumentStaleAge` (5 years). A stale
 document is read (after the current ones: `ReadDocuments` sorts stale last)
 and its findings stored, but:
@@ -179,7 +185,9 @@ and its findings stored, but:
 
 **Budget (`allowance`):**
 - It starts at `InitialDocumentLeads` (50), plus `leadsPerConfirmation` (2)
-  for each lead the engine confirmed.
+  for each lead the engine confirmed (`LeadConfirmed`, below). An unconfirmed
+  lead is checked again at most every `leadRecheckInterval` (1 minute), since
+  a check walks the relations around it.
 - Once `leadRateSample` (10) leads have been checked (a lead counts as checked
   after `leadCheckAge`, 2 minutes), new leads wait while fewer than
   `leadConfirmationRate` (half) of them are confirmed.
@@ -194,8 +202,19 @@ Each submitted lead is tagged `amass-ai` with a `doc_lead` property
 
 `Finish` calls `review.SettleDocumentLeads`:
 
-- **Confirmed** (`LeadConfirmed`: the engine linked the lead to other assets,
-  or another source tagged it):
+- **Confirmed** (`LeadConfirmed`): the engine tied the lead to the run's
+  targets (`review.LeadTargets`, from the plan's scope value and `also`
+  entries: domains, address ranges, AS numbers). The lead is a target asset
+  (an FQDN at or under a target domain, an address or netblock inside a target
+  range, a target AS) with at least one relation, or a target asset is within
+  `tieDepth` (4) relations of it (`tiedToTargets`; up to `tieMaxSeen` (300)
+  entities). An asset with more than `tieMaxEdges` (100) relations is checked
+  but not walked through, and FundsTransfers are not walked through, since a
+  transfer joins payer and recipient and would tie organizations paid by the
+  same agency. Linking the lead to anything at all is not enough: an
+  organization named in passing collects records of its own (its funding, its
+  registrations). Without targets the old rule applies: any relation, or
+  another source's tag. When confirmed:
   - the `doc_lead` property is copied onto each relation that touches the
     lead;
   - the footprint is recorded (`leadFootprint`): relations created after

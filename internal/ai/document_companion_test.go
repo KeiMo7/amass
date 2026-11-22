@@ -175,6 +175,7 @@ func TestLeadFor(t *testing.T) {
 		{"Person", "Jane Doe"}, {"Product", "Workday"}, {"FQDN", "not a host"}, {"Phone", "555-0100"},
 		{"Identifier", "LEI 5493001KJTIIGC8Y1R12"}, {"Organization", "third parties"},
 		{"Organization", "Office of Events"}, {"Organization", "Department of Computer Science"},
+		{"Organization", "Counseling"}, {"Organization", "Rapid Response"}, {"Organization", "Health Center"},
 		{"URL", "https://www.mvcc.edu/about/?subject='To"}, {"URL", "mailto:help@mvcc.edu"},
 	} {
 		if _, ok := leadFor(tc.typ, tc.value, "US"); ok {

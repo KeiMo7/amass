@@ -160,8 +160,9 @@ func TestDocumentLeadsRecordAndRetract(t *testing.T) {
 	}
 }
 
-// When a run ends, a lead the engine linked to other assets, or another source
-// reported, is kept and its relations cite the document; any other expires.
+// When a run ends without known targets, a lead the engine linked to other
+// assets, or another source reported, is kept and its relations cite the
+// document; any other expires.
 func TestSettleDocumentLeads(t *testing.T) {
 	ctx := context.Background()
 	s := newLeadStore("vpn.example.edu", "Acme Dining Inc.", "SUNY System Administration")
@@ -180,7 +181,7 @@ func TestSettleDocumentLeads(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	confirmed, expired, err := SettleDocumentLeads(ctx, s, j, "run1")
+	confirmed, expired, err := SettleDocumentLeads(ctx, s, j, "run1", LeadTargets{})
 	if err != nil || confirmed != 2 || expired != 1 {
 		t.Fatalf("confirmed %d, expired %d, %v", confirmed, expired, err)
 	}

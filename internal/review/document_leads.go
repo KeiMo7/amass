@@ -57,8 +57,8 @@ type DocumentLead struct {
 	Predicate string   `json:"predicate"`
 	Model     string   `json:"model"`
 	TagIDs    []string `json:"tag_ids,omitempty"`
-	// Confirmed is set when the run ended with the engine having linked the
-	// lead to other assets, or another source having reported it;
+	// Confirmed is set when the run ended with the engine having tied the
+	// lead to the run's targets (LeadConfirmed);
 	// EdgeTagIDs are the doc_lead properties then put on those relations.
 	Confirmed  bool     `json:"confirmed,omitempty"`
 	EdgeTagIDs []string `json:"edge_tag_ids,omitempty"`
@@ -233,13 +233,13 @@ func noEdges(edges []*dbt.Edge, err error) bool {
 }
 
 // SettleDocumentLeads decides, when a run ends, each lead the document model
-// gave it. A lead is confirmed when the engine linked it to other assets or
-// another source reported it: the doc_lead property is then also put on each
+// gave it. A lead is confirmed when the engine tied it to the run's targets
+// (see LeadConfirmed): the doc_lead property is then also put on each
 // relation that touches it, so what the lead led to cites the document. Any
 // other lead is retracted as expired, removing the asset when nothing links
 // to it; the finding stays on the File, so a later run can raise it again.
-func SettleDocumentLeads(ctx context.Context, w DocumentLeadStore, j *Journal, runID string) (confirmed, expired int,
-	err error) {
+func SettleDocumentLeads(ctx context.Context, w DocumentLeadStore, j *Journal, runID string,
+	targets LeadTargets) (confirmed, expired int, err error) {
 	leads, err := j.DocumentLeads()
 	if err != nil {
 		return 0, 0, err
@@ -265,7 +265,7 @@ func SettleDocumentLeads(ctx context.Context, w DocumentLeadStore, j *Journal, r
 		}
 
 		edges := entityEdges(ctx, w, ent)
-		if len(edges) == 0 && !otherSource(ctx, w, ent) {
+		if !confirmedEntity(ctx, w, ent, edges, targets) {
 			if _, err := RetractDocumentLead(ctx, w, j, l.ID, DocumentLeadExpiredReviewer); err != nil {
 				return confirmed, expired, err
 			}
@@ -324,19 +324,34 @@ func otherSource(ctx context.Context, w DocumentLeadStore, ent *dbt.Entity) bool
 	return false
 }
 
-// LeadConfirmed reports whether the engine has confirmed a lead: it linked
-// the lead's asset to other assets, or a source other than amass-ai reported
-// it. A lead whose asset is gone is not confirmed.
-func LeadConfirmed(ctx context.Context, w DocumentLeadStore, entityID string) bool {
+// LeadConfirmed reports whether the engine has confirmed a lead. With the
+// run's targets known, it must have tied the lead to one of them: the lead is
+// a target asset the engine linked to others, or stored relations join it to
+// a target asset within a few steps. Linking the lead to anything at all is
+// not enough, since an organization named in passing collects records of its
+// own (its funding, its registrations) that say nothing about the target.
+// Without targets, any relation or another source than amass-ai confirms it.
+// A lead whose asset is gone is not confirmed.
+func LeadConfirmed(ctx context.Context, w DocumentLeadStore, entityID string, targets LeadTargets) bool {
 	ent, err := w.FindEntityById(ctx, entityID)
 	if err != nil || ent == nil {
 		return false
 	}
-	return len(entityEdges(ctx, w, ent)) > 0 || otherSource(ctx, w, ent)
+	return confirmedEntity(ctx, w, ent, entityEdges(ctx, w, ent), targets)
+}
+
+// confirmedEntity applies LeadConfirmed's rule to a lead's entity and its
+// relations.
+func confirmedEntity(ctx context.Context, w DocumentLeadStore, ent *dbt.Entity, edges []*dbt.Edge,
+	targets LeadTargets) bool {
+	if targets.Empty() {
+		return len(edges) > 0 || otherSource(ctx, w, ent)
+	}
+	return len(edges) > 0 && tiedToTargets(ctx, w, ent, edges, targets)
 }
 
 // entityEdges returns the relations to and from an entity.
-func entityEdges(ctx context.Context, w DocumentLeadStore, ent *dbt.Entity) []*dbt.Edge {
+func entityEdges(ctx context.Context, w leadEdgeReader, ent *dbt.Entity) []*dbt.Edge {
 	in, ierr := w.IncomingEdges(ctx, ent, time.Time{})
 	out, oerr := w.OutgoingEdges(ctx, ent, time.Time{})
 	return append(knownEdges(in, ierr), knownEdges(out, oerr)...)

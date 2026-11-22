@@ -68,7 +68,8 @@ func (a *companionActivity) activity() collect.Activity {
 // During a run the companion fetches the target's documents, reads all of
 // their text, stores the findings and hands the run's session every asset
 // they name that the engine collects from and the database lacks, within the
-// run's lead budget; an asset the database holds is never a lead.
+// run's lead budget; an asset the database holds is never a lead, and an
+// organization the document ties to no anchor is not one either.
 func TestDocumentCompanionSubmitsLeads(t *testing.T) {
 	g := documentFixture()
 	reply := `{"category": "annual_report", "assets": [
@@ -111,9 +112,9 @@ func TestDocumentCompanionSubmitsLeads(t *testing.T) {
 	defer act.mu.Unlock()
 	got := append([]string(nil), act.submitted...)
 	sort.Strings(got)
-	// a host, a range and an organization fit the budget of 3; the second
-	// organization waits for the budget, and the product is no lead
-	want := []string{"FQDN:vpn.herkimer.edu", "Netblock:192.0.2.0/24", "Organization:Herkimer College Foundation"}
+	// a host and a range are leads; the organizations are named only in
+	// relation to each other, and the product is no lead
+	want := []string{"FQDN:vpn.herkimer.edu", "Netblock:192.0.2.0/24"}
 	if len(got) != len(want) {
 		t.Fatalf("submitted %v, want %v", got, want)
 	}
@@ -122,13 +123,13 @@ func TestDocumentCompanionSubmitsLeads(t *testing.T) {
 			t.Fatalf("submitted %v, want %v", got, want)
 		}
 	}
-	if act.counts[ActivityDocumentsRead] != 1 || act.counts[ActivityLeads] != 3 ||
-		act.counts[ActivityLeadsWaiting] != 1 {
+	if act.counts[ActivityDocumentsRead] != 1 || act.counts[ActivityLeads] != 2 ||
+		act.counts[ActivityLeadsWaiting] != 0 {
 		t.Fatalf("counts %v", act.counts)
 	}
 
 	leads, err := j.DocumentLeads()
-	if err != nil || len(leads) != 3 {
+	if err != nil || len(leads) != 2 {
 		t.Fatalf("journaled leads %+v, %v", leads, err)
 	}
 	for _, l := range leads {
@@ -206,5 +207,68 @@ func TestGenericUnit(t *testing.T) {
 		if got := genericUnit(name); got != want {
 			t.Errorf("genericUnit(%q) = %v, want %v", name, got, want)
 		}
+	}
+}
+
+// An organization is a lead only when a finding of the same document relates
+// it to an anchor; one related only to another organization, or named alone,
+// is kept as a finding.
+func TestAnchoredOrganizations(t *testing.T) {
+	anchored := anchoredOrganizations([]review.StoredStatement{
+		{Kind: FindingRelation, Subject: "Acme  Hosting Partners", SubjectType: "Organization",
+			Predicate: "location", Object: "1 Main St, Utica, NY 13501", ObjectType: "StreetAddress"},
+		{Kind: FindingRelation, Subject: "registrar.example.net", SubjectType: "FQDN",
+			Predicate: "registrant", Object: "Example Registrar LLC", ObjectType: "Organization"},
+		{Kind: FindingRelation, Subject: "Herkimer College Foundation", SubjectType: "Organization",
+			Predicate: "unit_of", Object: "Herkimer County Community College", ObjectType: "Organization"},
+		{Kind: FindingAsset, Subject: "Sodexho", SubjectType: "Organization"},
+		{Kind: FindingAttribute, Subject: "Sodexho", SubjectType: "Organization", Field: "industry",
+			Detail: "Food service"},
+	})
+	for name, want := range map[string]bool{
+		"Acme Hosting Partners":             true,
+		"Example Registrar LLC":             true,
+		"Herkimer College Foundation":       false,
+		"Herkimer County Community College": false,
+		"Sodexho":                           false,
+	} {
+		l, ok := leadFor("Organization", name)
+		if !ok {
+			t.Fatalf("leadFor(Organization, %q) gave no lead", name)
+		}
+		if got := anchoredLead(l, anchored); got != want {
+			t.Errorf("anchoredLead(%q) = %v, want %v", name, got, want)
+		}
+	}
+	if l, _ := leadFor("FQDN", "vpn.example.edu"); !anchoredLead(l, anchored) {
+		t.Error("a host was held back as unanchored")
+	}
+}
+
+// The companion submits an anchored organization with its anchor, and holds
+// back one named alone without marking it seen, so a later document that ties
+// it to an anchor still makes it a lead.
+func TestDocumentCompanionAnchorsOrganizations(t *testing.T) {
+	store := &companionStore{runStore{props: map[string]oam.Property{}}}
+	c := &DocumentCompanion{Graph: documentFixture(), Store: store,
+		Journal: &review.Journal{Path: filepath.Join(t.TempDir(), "review.jsonl")}, ModelID: "test-model"}
+	st := &companionRun{seen: map[string]bool{}}
+	act := &companionActivity{counts: map[string]int{}}
+	run := collect.Run{ID: "r"}
+
+	c.submitLeads(context.Background(), run, act.activity(), st, DocumentResult{Stored: []review.StoredStatement{
+		{Kind: FindingAsset, Subject: "Zenith Facilities Group", SubjectType: "Organization"}}})
+	if len(act.submitted) != 0 {
+		t.Fatalf("submitted %v for an organization named alone", act.submitted)
+	}
+
+	c.submitLeads(context.Background(), run, act.activity(), st, DocumentResult{Stored: []review.StoredStatement{
+		{Kind: FindingRelation, Subject: "Zenith Facilities Group", SubjectType: "Organization",
+			Predicate: "website", Object: "https://zenithfacilities.example/", ObjectType: "URL"}}})
+	got := append([]string(nil), act.submitted...)
+	sort.Strings(got)
+	if len(got) != 2 || got[0] != "Organization:Zenith Facilities Group" ||
+		got[1] != "URL:https://zenithfacilities.example/" {
+		t.Fatalf("submitted %v", got)
 	}
 }

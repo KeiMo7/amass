@@ -228,8 +228,14 @@ func (c *DocumentCompanion) submitLeads(ctx context.Context, run collect.Run, ac
 		return
 	}
 
+	anchored := anchoredOrganizations(d.Stored)
 	for _, s := range d.Stored {
 		for _, l := range statementLeads(s) {
+			// before seen: a later document may tie the organization to an
+			// anchor
+			if !anchoredLead(l, anchored) {
+				continue
+			}
 			key := strings.ToLower(string(l.asset.AssetType()) + "\x00" + l.name)
 			if st.seen[key] {
 				continue

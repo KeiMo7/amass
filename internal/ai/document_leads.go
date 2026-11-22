@@ -143,6 +143,48 @@ func knownLead(ctx context.Context, g DocumentGraph, l documentLead) bool {
 	return err != nil || len(res.Candidates) > 0
 }
 
+// anchorTypes are the asset types that tie an organization a document names
+// to something the engine can look up: a name, a network, an address, a phone,
+// an email address or a URL.
+var anchorTypes = map[string]bool{"FQDN": true, "URL": true, "IPAddress": true, "Netblock": true,
+	"AutonomousSystem": true, "StreetAddress": true, "Phone": true, "Identifier": true}
+
+// anchoredOrganizations returns the organizations a document's findings relate
+// to an anchor (an asset of one of anchorTypes), keyed by orgKey. A name on
+// its own gives the engine nothing to collect from: it can only search the
+// registries by that name, where vendors and units of the publisher match
+// nothing or the wrong body.
+func anchoredOrganizations(stored []review.StoredStatement) map[string]bool {
+	out := make(map[string]bool)
+	for _, s := range stored {
+		if s.Kind != FindingRelation && (s.Kind != "" || s.ObjectType == "") {
+			continue
+		}
+		switch {
+		case s.SubjectType == "Organization" && anchorTypes[s.ObjectType]:
+			out[orgKey(s.Subject)] = true
+		case s.ObjectType == "Organization" && anchorTypes[s.SubjectType]:
+			out[orgKey(s.Object)] = true
+		}
+	}
+	return out
+}
+
+// anchoredLead reports whether a lead may go to the engine: any lead but an
+// organization, and an organization only when the document ties it to an
+// anchor. An organization left out is still stored as a finding.
+func anchoredLead(l documentLead, anchored map[string]bool) bool {
+	if _, ok := l.asset.(oamorg.Organization); !ok {
+		return true
+	}
+	return anchored[orgKey(l.name)]
+}
+
+// orgKey folds an organization name for comparison.
+func orgKey(name string) string {
+	return strings.ToLower(strings.Join(strings.Fields(name), " "))
+}
+
 // unitPrefixes start the names of an organization's own units.
 var unitPrefixes = []string{"office of ", "department of ", "dept. of ", "division of ", "school of ",
 	"center for ", "centre for ", "college of ", "program in ", "programs in "}

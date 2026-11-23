@@ -55,6 +55,12 @@ func (cr *companyRounds) check(e *et.Event) error {
 		return err
 	}
 
+	// Fan-out collection runs only for the enumeration's own organizations
+	// (org.InScope), not for every vendor the target uses.
+	if orgent := cr.plugin.identOrg(e, e.Entity); orgent == nil || !org.InScope(e.Session, orgent) {
+		return nil
+	}
+
 	var fundents []*dbt.Entity
 	src := &et.Source{
 		Name:       cr.name,

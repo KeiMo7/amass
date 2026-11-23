@@ -51,6 +51,7 @@ func TestAwardsStoresTheWinnersContracts(t *testing.T) {
 	p.awards = &awards{name: p.name + "-Awards-Handler", plugin: p}
 
 	orgent := sess.Asset(t, &oamorg.Organization{ID: "acme:test", Name: "acme"})
+	sess.Scope().Add(orgent.Asset)
 	d := &plugintest.Dispatcher{}
 	e := &et.Event{Entity: orgent, Session: sess, Dispatcher: d}
 	if err := p.awards.check(e); err != nil {

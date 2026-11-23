@@ -104,6 +104,7 @@ func orgWithAddress(t *testing.T, sess *plugintest.Session, name, country, posta
 	t.Helper()
 
 	orgent := sess.Asset(t, &oamorg.Organization{ID: name + ":test", Name: name})
+	sess.Scope().Add(orgent.Asset)
 	addr := sess.Asset(t, &contact.StreetAddress{Address: "1 Main Street Springfield " + postal + " " + country,
 		BuildingNumber: "1", StreetName: "Main Street", City: "Springfield", Country: country, PostalCode: postal})
 	sess.Edge(t, orgent, &oamgen.SimpleRelation{Name: "legal_address"}, addr)
@@ -207,6 +208,7 @@ func TestFuzzyCompletionsUsesAKnownLEI(t *testing.T) {
 	serveRecords(t, sess, servedRecord(acmeLEI, "ACME WIDGETS INC", "US", "62701"))
 
 	orgent := sess.Asset(t, &oamorg.Organization{ID: "acme:test", Name: "Acme"})
+	sess.Scope().Add(orgent.Asset)
 	ident := sess.Asset(t, &oamgen.Identifier{UniqueID: oamgen.LEICode + ":" + acmeLEI, ID: acmeLEI, Type: oamgen.LEICode})
 	sess.Edge(t, orgent, &oamgen.SimpleRelation{Name: "id"}, ident)
 
@@ -234,6 +236,7 @@ func TestRelatedOrgsAddsTheParentAndChildren(t *testing.T) {
 		jsonBody(t, MultipleResponse{Data: []LEIRecord{child}}))
 
 	orgent := sess.Asset(t, &oamorg.Organization{ID: "acme:test", Name: "Acme Widgets"})
+	sess.Scope().Add(orgent.Asset)
 	ident, err := g.createLEIIdentifier(sess, orgent,
 		&oamgen.Identifier{UniqueID: oamgen.LEICode + ":" + acmeLEI, ID: acmeLEI, Type: oamgen.LEICode}, 100)
 	if err != nil {

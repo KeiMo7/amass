@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
+	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
 	dbt "github.com/owasp-amass/asset-db/types"
@@ -51,6 +52,12 @@ func (ae *employees) check(e *et.Event) error {
 		string(oam.Identifier), string(oam.Person), ae.plugin.name)
 	if err != nil {
 		return err
+	}
+
+	// Fan-out collection runs only for the enumeration's own organizations
+	// (org.InScope), not for every vendor the target uses.
+	if orgent := ae.plugin.identOrg(e, e.Entity); orgent == nil || !org.InScope(e.Session, orgent) {
+		return nil
 	}
 
 	var orgent *dbt.Entity

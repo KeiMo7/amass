@@ -30,6 +30,12 @@ func (ro *relatedOrgs) check(e *et.Event) error {
 	} else if ident.Type != oamgen.LEICode {
 		return nil
 	}
+	// The corporate family is collected only for the enumeration's own
+	// organizations (org.InScope), not for every vendor the target uses.
+	if orgent, err := org.FindOrgByLEICode(e.Session, ident.ID, ro.plugin.source); err != nil ||
+		!org.InScope(e.Session, orgent) {
+		return nil
+	}
 
 	since, err := support.TTLStartTime(e.Session.Config(),
 		string(oam.Identifier), string(oam.Identifier), ro.plugin.name)

@@ -43,6 +43,7 @@ func TestFilingsCollectsTheNonprofit(t *testing.T) {
 	p.filings = &filings{name: p.name + "-Filings-Handler", plugin: p}
 
 	orgent := sess.Asset(t, &oamorg.Organization{ID: "colgate:test", Name: "colgate university"})
+	sess.Scope().Add(orgent.Asset)
 	e := &et.Event{Entity: orgent, Session: sess, Dispatcher: &plugintest.Dispatcher{}}
 	if err := p.filings.check(e); err != nil {
 		t.Fatal(err)
@@ -112,6 +113,7 @@ func TestFilingsSkipsADifferentNonprofit(t *testing.T) {
 	p.filings = &filings{name: p.name + "-Filings-Handler", plugin: p}
 
 	orgent := sess.Asset(t, &oamorg.Organization{ID: "colgate:test", Name: "colgate university"})
+	sess.Scope().Add(orgent.Asset)
 	if err := p.filings.check(&et.Event{Entity: orgent, Session: sess, Dispatcher: &plugintest.Dispatcher{}}); err != nil {
 		t.Fatal(err)
 	}

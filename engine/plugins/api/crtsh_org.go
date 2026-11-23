@@ -14,6 +14,7 @@ import (
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
+	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	amassdns "github.com/owasp-amass/amass/v5/internal/net/dns"
 	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
@@ -85,6 +86,11 @@ func (c *crtshOrg) check(e *et.Event) error {
 	o, ok := e.Entity.Asset.(*oamorg.Organization)
 	if !ok {
 		return errors.New("failed to cast the Organization asset")
+	}
+	// Fan-out collection runs only for the enumeration's own organizations, not
+	// for every vendor or provider the target uses (org.InScope).
+	if !org.InScope(e.Session, e.Entity) {
+		return nil
 	}
 	// Horizontal discovery only runs when scope expansion is allowed.
 	if e.Session.Config().Rigid || strings.TrimSpace(o.Name) == "" {

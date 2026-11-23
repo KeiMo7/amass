@@ -58,6 +58,11 @@ func (h *awards) check(e *et.Event) error {
 	if !ok {
 		return errors.New("failed to extract the Organization asset")
 	}
+	// Fan-out collection runs only for the enumeration's own organizations, not
+	// for every vendor or provider the target uses (org.InScope).
+	if !org.InScope(e.Session, e.Entity) {
+		return nil
+	}
 
 	since, err := support.TTLStartTime(e.Session.Config(),
 		string(oam.Organization), string(oam.FundsTransfer), h.plugin.name)

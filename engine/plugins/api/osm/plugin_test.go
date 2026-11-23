@@ -97,6 +97,7 @@ func contactTargets(t *testing.T, sess *plugintest.Session, orgent *dbt.Entity, 
 func TestPhonesStoresTheOrganizationsNumbers(t *testing.T) {
 	o, sess, queries := newTestOSM(t)
 	orgent := sess.Asset(t, &oamorg.Organization{ID: "colgate:test", Name: "colgate university"})
+	sess.Scope().Add(orgent.Asset)
 
 	d := &plugintest.Dispatcher{}
 	e := &et.Event{Entity: orgent, Session: sess, Dispatcher: d}

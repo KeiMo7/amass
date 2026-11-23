@@ -122,6 +122,7 @@ func TestEmployeesTriesTheNextKeyForTheSamePage(t *testing.T) {
 	p, sess, disp := newAviato(t, a)
 
 	org := sess.Asset(t, &oamorg.Organization{ID: "example", Name: "Example"})
+	sess.Scope().Add(org.Asset)
 	ident := sess.Asset(t, &oamgen.Identifier{UniqueID: AviatoCompanyID + ":co-1", ID: "co-1", Type: AviatoCompanyID})
 	sess.Edge(t, org, &oamgen.SimpleRelation{Name: "id"}, ident)
 	e := &et.Event{Entity: ident, Session: sess, Dispatcher: disp}
@@ -149,6 +150,7 @@ func TestCompanySearchLinksTheID(t *testing.T) {
 	p, sess, disp := newAviato(t, a)
 
 	org := sess.Asset(t, &oamorg.Organization{ID: "example", Name: "Example, Inc."})
+	sess.Scope().Add(org.Asset)
 	e := &et.Event{Entity: org, Session: sess, Dispatcher: disp}
 
 	ident := p.companySearch.query(e, org, []string{"bad", "good"})
@@ -166,6 +168,7 @@ func TestCompanySearchLinksTheID(t *testing.T) {
 
 	// an organization the API does not know gets no ID
 	other := sess.Asset(t, &oamorg.Organization{ID: "other", Name: "Unknown Things"})
+	sess.Scope().Add(other.Asset)
 	if got := p.companySearch.query(&et.Event{Entity: other, Session: sess, Dispatcher: disp}, other,
 		[]string{"good"}); got != nil {
 		t.Errorf("an unknown organization got %v", got.Asset)
@@ -179,6 +182,7 @@ func linkedCompany(t *testing.T, p *aviato, sess *plugintest.Session, disp *plug
 
 	sess.APIKeys(p.name, "bad", "good")
 	org := sess.Asset(t, &oamorg.Organization{ID: "example", Name: "Example"})
+	sess.Scope().Add(org.Asset)
 	ident := p.companySearch.store(&et.Event{Entity: org, Session: sess, Dispatcher: disp}, org, "co-1")
 	if ident == nil {
 		t.Fatal("the company ID was not linked")

@@ -89,6 +89,7 @@ func newTestUSASpending(t *testing.T) (*usaspending, *plugintest.Session) {
 func TestAwardsStoresTheOrganizationsAwards(t *testing.T) {
 	u, sess := newTestUSASpending(t)
 	orgent := sess.Asset(t, &oamorg.Organization{ID: "acme:test", Name: semantics.OrgNameKey("Acme Widgets, Inc.")})
+	sess.Scope().Add(orgent.Asset)
 
 	d := &plugintest.Dispatcher{}
 	if err := u.awards.check(&et.Event{Entity: orgent, Session: sess, Dispatcher: d}); err != nil {
@@ -150,6 +151,7 @@ func TestAwardsStopsAGroupOnAnError(t *testing.T) {
 	u, sess := newTestUSASpending(t)
 	// The API refuses a search for any other name.
 	orgent := sess.Asset(t, &oamorg.Organization{ID: "other:test", Name: "other things"})
+	sess.Scope().Add(orgent.Asset)
 
 	d := &plugintest.Dispatcher{}
 	if err := u.awards.check(&et.Event{Entity: orgent, Session: sess, Dispatcher: d}); err != nil {

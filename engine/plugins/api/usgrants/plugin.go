@@ -23,6 +23,7 @@ import (
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
+	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
@@ -91,6 +92,11 @@ func (h *source) check(e *et.Event) error {
 	o, ok := e.Entity.Asset.(*oamorg.Organization)
 	if !ok {
 		return errors.New("failed to extract the Organization asset")
+	}
+	// Fan-out collection runs only for the enumeration's own organizations, not
+	// for every vendor or provider the target uses (org.InScope).
+	if !org.InScope(e.Session, e.Entity) {
+		return nil
 	}
 
 	since, err := support.TTLStartTime(e.Session.Config(),

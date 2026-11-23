@@ -70,6 +70,7 @@ func TestFilingsCollectsTheRegistrant(t *testing.T) {
 	ed.filings = &filings{name: ed.name + "-Filings-Handler", plugin: ed}
 
 	orgent := sess.Asset(t, &oamorg.Organization{ID: "example:test", Name: semantics.OrgNameKey("Example Corporation")})
+	sess.Scope().Add(orgent.Asset)
 	d := &plugintest.Dispatcher{}
 	e := &et.Event{Entity: orgent, Session: sess, Dispatcher: d}
 	if err := ed.filings.check(e); err != nil {
@@ -134,6 +135,7 @@ func TestFilingsCollectsTheRegistrant(t *testing.T) {
 		t.Fatal(err)
 	}
 	other := sess.Asset(t, &oamorg.Organization{ID: "other:test", Name: "unknown"})
+	sess.Scope().Add(other.Asset)
 	if err := ed.filings.check(&et.Event{Entity: other, Session: sess, Dispatcher: d}); err != nil {
 		t.Fatal(err)
 	}

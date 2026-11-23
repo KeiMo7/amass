@@ -302,6 +302,11 @@ func (h *handler) check(e *et.Event) error {
 	if !ok {
 		return nil
 	}
+	// Fan-out collection runs only for the enumeration's own organizations, not
+	// for every vendor or provider the target uses (org.InScope).
+	if !org.InScope(e.Session, e.Entity) {
+		return nil
+	}
 	country := h.orgCountry(e)
 
 	for _, pub := range loadPublishers() {

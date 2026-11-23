@@ -71,6 +71,7 @@ func TestHandlerQueriesASupplierSearch(t *testing.T) {
 	]}`)
 
 	orgent := sess.Asset(t, &oamorg.Organization{ID: "acme:test", Name: "acme widgets"})
+	sess.Scope().Add(orgent.Asset)
 	d := &plugintest.Dispatcher{}
 	e := &et.Event{Entity: orgent, Session: sess, Dispatcher: d}
 	if err := o.handler.check(e); err != nil {
@@ -120,6 +121,7 @@ func TestHandlerIngestsABulkExportForItsCountry(t *testing.T) {
 
 	// An organization from elsewhere does not fetch the export.
 	us := sess.Asset(t, &oamorg.Organization{ID: "us:test", Name: "gamma", Jurisdiction: "US"})
+	sess.Scope().Add(us.Asset)
 	if err := o.handler.check(&et.Event{Entity: us, Session: sess, Dispatcher: &plugintest.Dispatcher{}}); err != nil {
 		t.Fatal(err)
 	}
@@ -128,6 +130,7 @@ func TestHandlerIngestsABulkExportForItsCountry(t *testing.T) {
 	}
 
 	mx := sess.Asset(t, &oamorg.Organization{ID: "mx:test", Name: "gamma sa de cv", Jurisdiction: "MX"})
+	sess.Scope().Add(mx.Asset)
 	d := &plugintest.Dispatcher{}
 	if err := o.handler.check(&et.Event{Entity: mx, Session: sess, Dispatcher: d}); err != nil {
 		t.Fatal(err)
@@ -139,6 +142,7 @@ func TestHandlerIngestsABulkExportForItsCountry(t *testing.T) {
 
 	// A second Mexican organization reuses the downloaded export.
 	other := sess.Asset(t, &oamorg.Organization{ID: "mx2:test", Name: "delta", Jurisdiction: "MX"})
+	sess.Scope().Add(other.Asset)
 	if err := o.handler.check(&et.Event{Entity: other, Session: sess, Dispatcher: &plugintest.Dispatcher{}}); err != nil {
 		t.Fatal(err)
 	}

@@ -71,6 +71,7 @@ func TestGrantSourcesStoreTheOrganizationsGrants(t *testing.T) {
 			h.rlimit = rate.NewLimiter(rate.Inf, 1)
 
 			orgent := sess.Asset(t, &oamorg.Organization{ID: "colgate:test", Name: "colgate university"})
+			sess.Scope().Add(orgent.Asset)
 			d := &plugintest.Dispatcher{}
 			e := &et.Event{Entity: orgent, Session: sess, Dispatcher: d}
 			if err := h.check(e); err != nil {
@@ -108,5 +109,21 @@ func TestGrantSourcesStoreTheOrganizationsGrants(t *testing.T) {
 				t.Errorf("requests = %v", reqs)
 			}
 		})
+	}
+}
+
+// A vendor the target merely uses is identified elsewhere but its grants are
+// not collected (org.InScope).
+func TestGrantSourcesSkipAnOrganizationOutsideTheScope(t *testing.T) {
+	sess := grantsSession(t)
+	h := NewNSF().(*source)
+	h.rlimit = rate.NewLimiter(rate.Inf, 1)
+
+	vendor := sess.Asset(t, &oamorg.Organization{ID: "colgate:test", Name: "colgate university"})
+	if err := h.check(&et.Event{Entity: vendor, Session: sess, Dispatcher: &plugintest.Dispatcher{}}); err != nil {
+		t.Fatal(err)
+	}
+	if reqs := sess.Web().Requests(); len(reqs) != 0 {
+		t.Errorf("an organization outside the scope was queried: %v", reqs)
 	}
 }

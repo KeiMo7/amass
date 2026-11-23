@@ -356,20 +356,21 @@ func (d dependencyScan) party(a graph.Asset) (string, string, bool, []graph.Witn
 	if c.own {
 		return "", "", true, c.witness(c.visited[len(c.visited)-1].ID, d.w.assets), nil
 	}
-	if org, ok := namedOrganization(c.orgs); ok {
-		_, own := d.owned[org.ID]
-		return graph.AssetLabel(org), org.ID, own, c.witness(org.ID, d.w.assets), nil
-	}
 	// A netblock a provider publishes as its own names that provider as the
 	// operator, from the provider's authoritative range feed. This is the
 	// cloud or CDN hosting the address, more precise than the block's
-	// registrant, so it is preferred when stored.
+	// registrant (which may be any of the provider's legal entities), so it
+	// is preferred over the registrant when stored.
 	if org, from, s, ok, err := d.cloudProvider(c.visited); err != nil {
 		return "", "", false, nil, err
 	} else if ok {
 		_, own := d.owned[org.ID]
 		witness := append(c.witness(from.ID, d.w.assets), WitnessOf(s.edge, from, org))
 		return graph.AssetLabel(org), org.ID, own, witness, nil
+	}
+	if org, ok := namedOrganization(c.orgs); ok {
+		_, own := d.owned[org.ID]
+		return graph.AssetLabel(org), org.ID, own, c.witness(org.ID, d.w.assets), nil
 	}
 	for _, v := range c.visited {
 		steps, err := d.w.steps(v)

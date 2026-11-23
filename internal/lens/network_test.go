@@ -144,9 +144,17 @@ func TestFindNetworkInfrastructure(t *testing.T) {
 
 // TestNetworkHostingNamesCloudProvider checks that an address published in a
 // provider's range feed, stored as a Netblock -> provider -> Organization,
-// is attributed to that provider in the hosting breakdown, with no AS or
-// registrant on the block.
+// is attributed to that provider in the hosting breakdown, whether or not a
+// registrant is stored on the block too.
 func TestNetworkHostingNamesCloudProvider(t *testing.T) {
+	for _, withRegistrant := range []bool{false, true} {
+		testNetworkHostingNamesCloudProvider(t, withRegistrant)
+	}
+}
+
+func testNetworkHostingNamesCloudProvider(t *testing.T, withRegistrant bool) {
+	t.Helper()
+
 	g := graphtest.VendorFixture()
 	add := func(id, typ, key string, content map[string]any) {
 		g.Assets[id] = graph.Asset{ID: id, Type: typ, Key: key, Content: content}
@@ -164,10 +172,19 @@ func TestNetworkHostingNamesCloudProvider(t *testing.T) {
 	g.Links = append(g.Links, graph.Relation{ID: "host-a", FromID: "host.colgate.edu", ToID: "ip-cloud",
 		Label: "dns_record", Type: "BasicDNSRelation", Content: map[string]any{"header": map[string]any{"rr_type": 1}}})
 	link("nb-cloud", "contains", "ip-cloud")
-	// The provider the range feed published; no AS announces the block and no
-	// registrant is stored, so only the provider edge can name it. The feed's
-	// region and service are stored as properties on the block.
+	// The provider the range feed published names the block's hosting. The
+	// feed's region and service are stored as properties on the block.
 	link("nb-cloud", "provider", "org-aws")
+	if withRegistrant {
+		// The block's registrant is one of the provider's legal entities;
+		// the provider's own feed still names the hosting.
+		add("ipnet-cloud", "IPNetRecord", "52.95.0.0/16", map[string]any{"name": "AMAZON-4"})
+		add("cr-amazon", "ContactRecord", "cr-amazon", map[string]any{"discovered_at": "rdap"})
+		add("org-amazon", "Organization", "org-amazon", map[string]any{"name": "amazon.com"})
+		link("nb-cloud", "registration", "ipnet-cloud")
+		link("ipnet-cloud", "registrant", "cr-amazon")
+		link("cr-amazon", "organization", "org-amazon")
+	}
 	g.EvidenceByID = map[string][]graph.Evidence{
 		"nb-cloud": {graphtest.SimpleProp("cloud_region", "us-east-1"), graphtest.SimpleProp("cloud_service", "S3")},
 	}

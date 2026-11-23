@@ -110,9 +110,11 @@ func (p *plugin) check(e *et.Event) error {
 	if !ok {
 		return errors.New("failed to extract the IPAddress asset")
 	}
-	// Only addresses the enumeration is scoped to are attributed, so the
-	// writes stay bounded and relevant.
-	if _, conf := e.Session.Scope().IsAssetInScope(ip, 0); conf <= 0 {
+	// Only addresses that belong to the enumeration are attributed, so the
+	// writes stay bounded and relevant: an address in scope, or one an
+	// in-scope name resolves to (a domain enumeration scopes names, not
+	// addresses).
+	if !support.AddressInScope(e.Session, e.Entity) {
 		return nil
 	}
 

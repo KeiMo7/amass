@@ -18,6 +18,7 @@ import (
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	"github.com/owasp-amass/amass/v5/internal/semantics/cloudranges"
 	dbt "github.com/owasp-amass/asset-db/types"
+	oamdns "github.com/owasp-amass/open-asset-model/dns"
 	oamgen "github.com/owasp-amass/open-asset-model/general"
 	oamnet "github.com/owasp-amass/open-asset-model/network"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
@@ -153,4 +154,37 @@ func simpleProps(t *testing.T, sess *plugintest.Session, ent *dbt.Entity) (regio
 		}
 	}
 	return region, service
+}
+
+// A domain enumeration scopes names, not addresses: an address an in-scope
+// name resolves to is attributed, and one no in-scope name resolves to is not.
+func TestCheckAttributesAddressesOfInScopeNames(t *testing.T) {
+	sess := plugintest.NewSession(t)
+	sess.TTL(60)
+	sess.Scope().AddDomain("example.com")
+	p := testPlugin()
+	p.fetch = func(_ context.Context, _ et.Session, url string) ([]byte, error) {
+		if url == "https://ip-ranges.amazonaws.com/ip-ranges.json" {
+			return []byte(awsFeed), nil
+		}
+		return nil, errors.New("unreachable in test")
+	}
+
+	www := sess.Asset(t, &oamdns.FQDN{Name: "www.example.com"})
+	hosted := sess.Asset(t, &oamnet.IPAddress{Address: netip.MustParseAddr("52.95.4.5"), Type: "IPv4"})
+	sess.Edge(t, www, &oamdns.BasicDNSRelation{Name: "dns_record",
+		Header: oamdns.RRHeader{RRType: 1, Class: 1}}, hosted)
+	other := sess.Asset(t, &oamnet.IPAddress{Address: netip.MustParseAddr("52.95.9.9"), Type: "IPv4"})
+
+	for _, ip := range []*dbt.Entity{hosted, other} {
+		require.NoError(t, p.check(&et.Event{Entity: ip, Session: sess, Dispatcher: &plugintest.Dispatcher{}}))
+	}
+
+	ctx := context.Background()
+	nb, err := sess.DB().CreateAsset(ctx, &oamnet.Netblock{Type: "IPv4", CIDR: netip.MustParsePrefix("52.95.0.0/16")})
+	require.NoError(t, err)
+	edges, err := sess.DB().OutgoingEdges(ctx, nb, time.Time{}, "contains")
+	require.NoError(t, err)
+	require.Len(t, edges, 1, "only the address an in-scope name resolves to should be attributed")
+	assert.Equal(t, hosted.ID, edges[0].ToEntity.ID)
 }

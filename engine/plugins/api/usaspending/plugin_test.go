@@ -18,6 +18,7 @@ import (
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	"github.com/owasp-amass/amass/v5/internal/semantics"
 	oamfin "github.com/owasp-amass/open-asset-model/financial"
+	oamgen "github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 	"golang.org/x/time/rate"
 )
@@ -26,15 +27,15 @@ import (
 // a different recipient and an award repeated on the second page.
 var contractPages = map[int]string{
 	1: `{"results":[
-	  {"Award ID":"C-1","Recipient Name":"ACME WIDGETS, INC.","Award Amount":250000,
+	  {"Award ID":"C-1","Recipient Name":"ACME WIDGETS, INC.","Recipient UEI":"acmeuei12345","Award Amount":250000,
 	   "Awarding Agency":"Department of Energy","Start Date":"2023-04-01","generated_internal_id":"CONT_AWD_C-1"},
-	  {"Award ID":"C-9","Recipient Name":"Acme Widgets Foundation","Award Amount":10,
+	  {"Award ID":"C-9","Recipient Name":"Acme Widgets Foundation","Recipient UEI":"OTHERUEI0001","Award Amount":10,
 	   "Awarding Agency":"Department of Energy","Start Date":"2023-04-01","generated_internal_id":"CONT_AWD_C-9"}
 	],"page_metadata":{"hasNext":true}}`,
 	2: `{"results":[
-	  {"Award ID":"C-1","Recipient Name":"ACME WIDGETS, INC.","Award Amount":250000,
+	  {"Award ID":"C-1","Recipient Name":"ACME WIDGETS, INC.","Recipient UEI":"acmeuei12345","Award Amount":250000,
 	   "Awarding Agency":"Department of Energy","Start Date":"2023-04-01","generated_internal_id":"CONT_AWD_C-1"},
-	  {"Award ID":"C-2","Recipient Name":"Acme Widgets","Award Amount":5000,
+	  {"Award ID":"C-2","Recipient Name":"Acme Widgets","Recipient UEI":"ACMEUEI12345","Award Amount":5000,
 	   "Awarding Agency":"Department of Defense","Start Date":"2022-01-15"}
 	],"page_metadata":{"hasNext":false}}`,
 }
@@ -163,5 +164,36 @@ func TestAwardsStopsAGroupOnAnError(t *testing.T) {
 	// One failed request per group, no further pages.
 	if reqs := sess.Web().Requests(); len(reqs) != len(awardTypeGroups) {
 		t.Errorf("requests = %v", reqs)
+	}
+}
+
+// Every award matched to the organization names the same Unique Entity ID,
+// so it is stored as the organization's identifier; the foundation's awards,
+// which do not match the name, do not make it ambiguous.
+func TestAwardsStoreTheRecipientsUEI(t *testing.T) {
+	u, sess := newTestUSASpending(t)
+	orgent := sess.Asset(t, &oamorg.Organization{ID: "acme:test", Name: semantics.OrgNameKey("Acme Widgets, Inc.")})
+	sess.Scope().Add(orgent.Asset)
+
+	if err := u.awards.check(&et.Event{Entity: orgent, Session: sess, Dispatcher: &plugintest.Dispatcher{}}); err != nil {
+		t.Fatal(err)
+	}
+
+	ctx := context.Background()
+	edges, err := sess.DB().OutgoingEdges(ctx, orgent, time.Time{}, "id")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	var ueis []string
+	for _, e := range edges {
+		if ent, err := sess.DB().FindEntityById(ctx, e.ToEntity.ID); err == nil {
+			if id, ok := ent.Asset.(*oamgen.Identifier); ok && id.Type == "uei" {
+				ueis = append(ueis, id.ID)
+			}
+		}
+	}
+	if !slices.Equal(ueis, []string{"ACMEUEI12345"}) {
+		t.Errorf("UEIs = %v, want ACMEUEI12345", ueis)
 	}
 }

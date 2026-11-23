@@ -6,6 +6,7 @@ package lens
 
 import (
 	"fmt"
+	"net/netip"
 	"strings"
 	"sync"
 
@@ -47,6 +48,12 @@ const (
 	matchEmailDomain           = "registrant_email_domain"
 	matchDKIMKey               = "dkim_key"
 	matchSecurityTxtRef        = "security_txt_reference"
+	matchCAAAccount            = "caa_account"
+	matchPrivateAddress        = "private_address"
+	matchMarkCertificate       = "mark_certificate"
+	matchSecurityTxtKey        = "security_txt_key"
+	matchPageOrganization      = "page_organization"
+	matchPageBucket            = "page_bucket"
 	signalCatalogMaxWeight     = 1
 )
 
@@ -55,7 +62,8 @@ var signalMatchers = map[string]bool{matchSharedAttribute: true, matchInfrastruc
 	matchHTTPRedirect: true, matchReverseDNS: true, matchNameserverSet: true, matchFingerprint: true,
 	matchNameToken: true, matchParkedPage: true, matchEmailDomain: true, matchDKIMKey: true,
 	matchSecurityTxtRef: true, matchDocumentStatement: true, matchProviderNameserverSet: true,
-	matchBountyScope: true, matchRPKIOwnASN: true}
+	matchBountyScope: true, matchRPKIOwnASN: true, matchCAAAccount: true, matchPrivateAddress: true,
+	matchMarkCertificate: true, matchSecurityTxtKey: true, matchPageOrganization: true, matchPageBucket: true}
 
 // SignalParams configures a signal's matcher.
 type SignalParams struct {
@@ -83,6 +91,15 @@ type SignalParams struct {
 	// semantics.OrgNameKey (org_names.json).
 	IDTypes        []string `json:"id_types,omitempty"`
 	NamesMustAgree bool     `json:"names_must_agree,omitempty"`
+	// SkipSharedInfrastructure keeps a fingerprint signal from pivoting off a
+	// service on shared infrastructure (a cloud or CDN range, a private
+	// address), where the fingerprint describes the provider, not the site.
+	SkipSharedInfrastructure bool `json:"skip_shared_infrastructure,omitempty"`
+	// MinShared and IgnoreRanges configure the shared private address
+	// signal: how many distinct addresses must be shared, and the default
+	// ranges whose addresses never count.
+	MinShared    int      `json:"min_shared,omitempty"`
+	IgnoreRanges []string `json:"ignore_ranges,omitempty"`
 }
 
 // OwnershipSignal is one kind of ownership evidence and why it counts.
@@ -148,8 +165,18 @@ func validateSignals(signals []OwnershipSignal) error {
 			return fmt.Errorf("signal %s: min_length must be at least 3", s.ID)
 		case s.Matcher == matchParkedPage && len(s.Params.Phrases) == 0:
 			return fmt.Errorf("signal %s: phrases required", s.ID)
+		case s.Matcher == matchPrivateAddress && s.Params.MinShared < 2:
+			return fmt.Errorf("signal %s: min_shared must be at least 2", s.ID)
+		case s.Matcher == matchPageOrganization && s.Params.MinLength < 3:
+			return fmt.Errorf("signal %s: min_length must be at least 3", s.ID)
 		case (s.Strength == StrengthNegative) != (s.Matcher == matchParkedPage):
 			return fmt.Errorf("signal %s: only the parked_page matcher is negative", s.ID)
+		}
+
+		for _, r := range s.Params.IgnoreRanges {
+			if _, err := netip.ParsePrefix(r); err != nil {
+				return fmt.Errorf("signal %s: ignore_ranges entry %q is not a CIDR range", s.ID, r)
+			}
 		}
 
 		seen[s.ID] = true

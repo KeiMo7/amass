@@ -136,15 +136,22 @@ func (g *gapSearch) valueSignals(order []string) error {
 }
 
 // valueSignalsOf runs the value signals one controlled asset gives in a
-// pass: verification tokens, email authentication and redirects for apex
-// domains, key matches for certificates and provider accounts for domain
-// registrations first, then the fingerprints (JARM, page titles, analytics
-// identifiers, content and favicon hashes) of controlled names, addresses
-// and URLs.
+// pass: verification tokens, email authentication, security.txt references
+// and keys, CAA accounts and redirects for apex domains, key matches for
+// certificates and provider accounts for domain registrations first, then the
+// fingerprints (JARM, page titles, analytics identifiers, content and favicon
+// hashes) of controlled names, addresses and URLs and the buckets their pages
+// load from.
 func (g *gapSearch) valueSignalsOf(a graph.Asset, pass int) error {
 	if pass == 1 {
 		switch a.Type {
-		case "FQDN", "IPAddress", "URL":
+		case "FQDN", "IPAddress":
+			if err := g.fingerprintSignals(a); err != nil {
+				return err
+			}
+
+			return g.bucketReferenceSignals(a)
+		case "URL":
 			return g.fingerprintSignals(a)
 		}
 
@@ -164,6 +171,12 @@ func (g *gapSearch) valueSignalsOf(a graph.Asset, pass int) error {
 				return err
 			}
 			if err := g.securityTxtRefSignals(a); err != nil {
+				return err
+			}
+			if err := g.securityTxtKeySignals(a); err != nil {
+				return err
+			}
+			if err := g.caaAccountSignals(a); err != nil {
 				return err
 			}
 
@@ -380,6 +393,11 @@ func (g *gapSearch) dmarcDomain(f graph.Asset) graph.Asset {
 // certificateSignals finds certificates that share a key identifier with a
 // controlled certificate; the candidate is the name each was issued to.
 func (g *gapSearch) certificateSignals(cert graph.Asset) error {
+	// a CDN or hosting provider's certificate and keys serve many customers
+	if managed, err := g.providerManagedCertificate(cert); err != nil || managed {
+		return err
+	}
+
 	for _, def := range signalsByMatcher(matchCertificateField) {
 		value := graph.ContentString(cert, def.Params.Attribute)
 		if value == "" || !g.read() {

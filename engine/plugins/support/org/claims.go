@@ -85,6 +85,38 @@ func CreateOrgRegistrationIDClaim(sess et.Session, orgent *dbt.Entity, regID str
 	return createIDClaim(sess, orgent, registrationIDType, regID, src)
 }
 
+// UEIIdentifier is the id_type of a SAM.gov Unique Entity ID, the identifier
+// the US government issues to every entity it funds or contracts with.
+const UEIIdentifier = "uei"
+
+// CreateOrgIdentifier records an identifier the organization holds, of idType
+// and value, claimed by src.
+func CreateOrgIdentifier(sess et.Session, orgent *dbt.Entity, idType, value string, src *et.Source) (*dbt.Entity, error) {
+	return createIDClaim(sess, orgent, idType, value, src)
+}
+
+// StoreUnambiguousIdentifier records the organization's identifier of idType
+// when every record a collector matched to it by name agrees on one value. A
+// name match can join the records of several entities with the same name, so
+// differing values are none of them the organization's for certain, and
+// nothing is stored.
+func StoreUnambiguousIdentifier(sess et.Session, orgent *dbt.Entity, idType string, values []string, src *et.Source) {
+	var value string
+	for _, v := range values {
+		v = strings.ToUpper(strings.TrimSpace(v))
+		if v == "" {
+			continue
+		}
+		if value != "" && v != value {
+			return
+		}
+		value = v
+	}
+	if value != "" {
+		_, _ = createIDClaim(sess, orgent, idType, value, src)
+	}
+}
+
 // createIDClaim links the organization to the Identifier of idType and
 // value, with src as the source of the Identifier and of the edge.
 func createIDClaim(sess et.Session, orgent *dbt.Entity, idType, value string, src *et.Source) (*dbt.Entity, error) {

@@ -51,6 +51,7 @@ evidence does and nothing is left behind to clean up.
 | `amass review retract -proposal <id> -reviewer <name>` | Undo an applied proposal |
 | `amass review signals` | Why each ownership signal counts ([SIGNALS.md](ai/SIGNALS.md)) |
 | `amass review duplicate-signals` | Why each duplicate signal counts ([DUPLICATES.md](ai/DUPLICATES.md)) |
+| `amass review signal-precision` | How reviewers judged the proposals each ownership signal stood behind: applied, rejected, retracted and pending counts, and precision (applied over applied plus rejected); signals with fewer than 5 reviewed proposals are flagged |
 
 Every command takes `-format text` (the default) or `-format json`, `-dir`
 and `-config` like the other subcommands, and `-journal` for the review

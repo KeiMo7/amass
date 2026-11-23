@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"math"
 	"net/netip"
 	"net/url"
 	"sort"
@@ -152,6 +151,9 @@ type gapSearch struct {
 	valueReads int
 	// bountyPrograms are the bug-bounty programs already read.
 	bountyPrograms map[string]bool
+	// shared caches, by asset ID, whether an address or netblock is shared
+	// infrastructure (sharedAddress).
+	shared map[string]bool
 }
 
 // SearchOwnershipGaps runs the ownership-gap lens from root, an
@@ -223,10 +225,16 @@ func SearchOwnershipGaps(ctx context.Context, gr graph.Graph, schema graph.Schem
 			return report, err
 		}
 	}
+	if err := g.privateAddressSignals(order); err != nil {
+		return report, err
+	}
 	if err := g.valueSignals(order); err != nil {
 		return report, err
 	}
 	if err := g.documentSignals(); err != nil {
+		return report, err
+	}
+	if err := g.organizationSignals(); err != nil {
 		return report, err
 	}
 	for _, c := range g.found {
@@ -262,117 +270,6 @@ func SearchOwnershipGaps(ctx context.Context, gr graph.Graph, schema graph.Schem
 // pathTo returns the attribution witness from the subject to an owned asset.
 func (g *gapSearch) pathTo(id string) []graph.WitnessEdge {
 	return PathWitness(g.w.path(id, g.owned))
-}
-
-// signalsFrom collects the signals that one controlled asset gives.
-func (g *gapSearch) signalsFrom(cur graph.Asset) error {
-	steps, err := g.w.steps(cur)
-	if err != nil {
-		return err
-	}
-	for _, s := range steps {
-		if _, mine := g.owned[s.other.ID]; mine {
-			continue
-		}
-
-		hop := WitnessOf(s.edge, cur, s.other)
-		via := s.other.Type + " " + s.edge.Label + " " + cur.Type
-		switch {
-		case !s.forward && g.reverseDNS(s):
-			// Its reverse DNS names one of the subject's hosts.
-			if err := g.reverseDNSSignals(cur, s, hop); err != nil {
-				return err
-			}
-		case !s.forward && g.selfHostedDNS(s):
-			// Its name or mail servers are the subject's own hosts.
-			if rr := rrTypeName(relationRRType(s.edge)); rr != "" {
-				via = s.other.Type + " " + rr + " " + cur.Type
-			}
-
-			g.add(s.other, sigSelfHostedDNS, via, append(g.pathTo(cur.ID), hop))
-		case s.attr == graph.AttrInfrastructure && !s.forward:
-			// Something outside the footprint depends on a controlled asset.
-			g.add(s.other, sigHosting, via, append(g.pathTo(cur.ID), hop))
-		case s.attr == "attribute" && s.forward && cur.Type != "Organization":
-			if err := g.identity(cur, s, hop); err != nil {
-				return err
-			}
-		case s.attr == graph.AttrShared && !s.forward:
-			if err := g.colisting(cur, s.other, hop); err != nil {
-				return err
-			}
-		}
-	}
-
-	return nil
-}
-
-// identity follows an attribute value (a phone, address or identifier) of a
-// controlled asset to other assets that carry the same value.
-//
-// A value that identifies no one gives no signal: a redaction or privacy
-// placeholder, or a value carried by more than gapMaxShared assets.
-func (g *gapSearch) identity(cur graph.Asset, s step, hop graph.WitnessEdge) error {
-	value := s.other
-	if graph.IsPlaceholder(value) {
-		return nil
-	}
-
-	steps, err := g.w.steps(value)
-	if err != nil {
-		return err
-	}
-
-	var holders []step
-	for _, t := range steps {
-		if !t.forward && t.attr == "attribute" {
-			holders = append(holders, t)
-		}
-	}
-	if len(holders) > GapMaxShared {
-		return nil
-	}
-	for _, t := range holders {
-		other := t.other
-		if _, mine := g.owned[other.ID]; mine || other.Type == "Organization" || other.Type == "Person" {
-			continue
-		}
-
-		witness := append(append(g.pathTo(cur.ID), hop), WitnessOf(t.edge, value, other))
-		g.add(other, sigSharedRegistrant, cur.Type+" "+s.edge.Label+" "+value.Type, witness)
-	}
-
-	return nil
-}
-
-// colisting follows a shared asset (a certificate listing a controlled
-// name) to the other assets it lists, unless it lists too many to signal
-// anything (a provider's multi-tenant certificate).
-func (g *gapSearch) colisting(cur, shared graph.Asset, hop graph.WitnessEdge) error {
-	steps, err := g.w.steps(shared)
-	if err != nil {
-		return err
-	}
-
-	var listed []step
-	for _, t := range steps {
-		if t.forward && t.attr == graph.AttrShared {
-			listed = append(listed, t)
-		}
-	}
-	if len(listed) > gapMaxColisted {
-		return nil
-	}
-	for _, t := range listed {
-		if _, mine := g.owned[t.other.ID]; mine {
-			continue
-		}
-
-		witness := append(append(g.pathTo(cur.ID), hop), WitnessOf(t.edge, shared, t.other))
-		g.add(t.other, sigColisting, shared.Type+" "+t.edge.Label, witness)
-	}
-
-	return nil
 }
 
 // add records signal id, found via a route, for candidate a.
@@ -507,196 +404,4 @@ func (g *gapSearch) finish(c *GapCandidate) error {
 	c.Score, c.Decision = ScoreGap(c.Signals, len(edges) == 1)
 	_, c.AutoDecision = ScoreGap(WithoutDocumentSignals(c.Signals), len(edges) == 1)
 	return nil
-}
-
-// ScoreGap rates a candidate's signals by their catalog strength and
-// weight. A strong signal (shared registrant details, a shared verification
-// token) points to one owner; a supporting one (hosting, co-listing) is
-// consistent with many; a tiebreaker (a name token, a TLS fingerprint)
-// only ranks and never corroborates a proposal; a negative one (a parked
-// page) counts against
-// ownership and keeps the candidate from being proposed. Each signal counts
-// at most twice toward the score, which ranks candidates and is not a
-// probability.
-func ScoreGap(signals []GapSignal, attachable bool) (float64, string) {
-	return scoreSignals(signals, attachable, LookupOwnershipSignal)
-}
-
-// scoreSignals applies the shared decision rules to signals defined by
-// lookup.
-func scoreSignals(signals []GapSignal, attachable bool, lookup func(string) (OwnershipSignal, bool)) (float64, string) {
-	count := map[string]int{}
-	corroborating := map[string]bool{}
-	strong := 0
-	negative := false
-	score := 0.0
-	for _, s := range signals {
-		def, ok := lookup(s.Signal)
-		if !ok {
-			continue
-		}
-		if def.Strength == StrengthNegative {
-			negative = true
-			score -= def.Weight
-			continue
-		}
-
-		count[s.Signal]++
-		if !def.Tiebreaker {
-			corroborating[s.Signal] = true
-		}
-		if def.Strength == StrengthStrong {
-			strong++
-		}
-		if count[s.Signal] <= 2 {
-			w := def.Weight
-			if s.Weight > 0 && s.Weight < w {
-				w = s.Weight
-			}
-			score += w
-		}
-	}
-
-	// A strong signal is corroborated by a different signal that is not a
-	// tiebreaker.
-	score = math.Max(0, math.Min(1, score))
-	switch {
-	case attachable && !negative && (strong >= 2 || (strong >= 1 && len(corroborating) >= 2)):
-		return score, GapPropose
-	case strong >= 1 || len(count) >= 2:
-		return score, GapReview
-	default:
-		return score, GapWeak
-	}
-}
-
-// attachment finds, along the candidate's ownership chain, the closest
-// asset that an OAM relationship can attribute to an Organization (a
-// contact record's organization, an organization's website) and that has
-// no such relationship yet, and the assets that edge would bring under the
-// subject.
-func (g *gapSearch) attachment(a graph.Asset, ctl controller) ([]ProposedEdge, []graph.Asset, error) {
-	for _, v := range ctl.visited {
-		edges := g.attachEdges(v)
-		if len(edges) == 0 {
-			continue
-		}
-
-		gains, err := g.gains(v)
-		return edges, gains, err
-	}
-
-	return nil, nil, nil
-}
-
-// attachEdges returns the catalog relationships that would attribute v to
-// the subject, sorted by label.
-func (g *gapSearch) attachEdges(v graph.Asset) []ProposedEdge {
-	var out []ProposedEdge
-	for _, r := range g.w.relations {
-		m, ok := g.w.meaning(r.SourceType, r.Label, r.RelationType, r.DestinationType)
-		if !ok {
-			continue
-		}
-		switch {
-		case r.SourceType == v.Type && r.DestinationType == "Organization" &&
-			(m.Attribution == graph.AttrSameSubject || m.Attribution == graph.AttrController):
-			out = append(out, ProposedEdge{FromID: v.ID, FromType: v.Type, From: graph.AssetLabel(v), Label: r.Label,
-				RelationType: r.RelationType, ToID: g.owner.ID, ToType: "Organization", To: graph.AssetLabel(g.owner)})
-		case r.SourceType == "Organization" && r.DestinationType == v.Type && m.Attribution == graph.AttrControls &&
-			v.Type != "Organization":
-			out = append(out, ProposedEdge{FromID: g.owner.ID, FromType: "Organization", From: graph.AssetLabel(g.owner),
-				Label: r.Label, RelationType: r.RelationType, ToID: v.ID, ToType: v.Type, To: graph.AssetLabel(v)})
-		}
-	}
-
-	sort.Slice(out, func(i, j int) bool { return out[i].Label < out[j].Label })
-	return out
-}
-
-// gains lists the assets that attributing v would bring under the subject.
-func (g *gapSearch) gains(v graph.Asset) ([]graph.Asset, error) {
-	seen := map[string]bool{v.ID: true}
-	queue := []graph.Asset{v}
-	var out []graph.Asset
-	for len(queue) > 0 && len(out) < gapMaxGainsCounted {
-		cur := queue[0]
-		queue = queue[1:]
-		steps, err := g.w.steps(cur)
-		if err != nil {
-			return nil, err
-		}
-		for _, s := range steps {
-			if seen[s.other.ID] || !footprintPass(s) || platformStep(cur, s) || s.other.Type == "Organization" ||
-				s.other.Type == "Person" {
-				continue
-			}
-
-			seen[s.other.ID] = true
-			out = append(out, s.other)
-			queue = append(queue, s.other)
-			if len(out) >= gapMaxGainsCounted {
-				break
-			}
-		}
-	}
-
-	sort.Slice(out, func(i, j int) bool {
-		return out[i].Type+" "+graph.AssetLabel(out[i]) < out[j].Type+" "+graph.AssetLabel(out[j])
-	})
-	return out, nil
-}
-
-// GapAnswer renders an OwnershipGapReport as plain text.
-func GapAnswer(r OwnershipGapReport) string {
-	subject := graph.AssetLabel(r.Root) + " (" + r.Root.Type + ")"
-	if r.Owner.ID == "" {
-		return "No documented owner for " + subject + ", so there is no footprint to compare unattributed assets with."
-	}
-
-	var b strings.Builder
-	if len(r.Candidates) == 0 {
-		fmt.Fprintf(&b, "No unattributed assets share ownership signals with the %d assets controlled by %s.",
-			r.Footprint, graph.AssetLabel(r.Owner))
-		if r.Truncated && r.Reason != "" {
-			fmt.Fprintf(&b, " Results are partial (%s).", r.Reason)
-		}
-
-		return b.String()
-	}
-
-	fmt.Fprintf(&b, "%d unattributed asset(s) share signals with the %d assets controlled by %s:\n", len(r.Candidates),
-		r.Footprint, graph.AssetLabel(r.Owner))
-	for _, c := range r.Candidates {
-		kinds := map[string]bool{}
-		var names []string
-		for _, s := range c.Signals {
-			if !kinds[s.Kind] {
-				kinds[s.Kind] = true
-				names = append(names, s.Kind)
-			}
-		}
-
-		fmt.Fprintf(&b, "  [%s %.2f] %s %s: %s", c.Decision, c.Score, c.Type, c.Asset, strings.Join(names, ", "))
-		if c.Attachment != nil {
-			fmt.Fprintf(&b, "; would record %s", c.Attachment)
-			for _, alt := range c.Alternatives {
-				fmt.Fprintf(&b, " or %s", alt.Label)
-			}
-		} else {
-			b.WriteString("; no OAM relationship can record its owner without new records")
-		}
-		if len(c.Gains) > 0 {
-			fmt.Fprintf(&b, "; brings %s", strings.Join(c.Gains, ", "))
-		}
-
-		b.WriteString("\n")
-	}
-
-	b.WriteString("These are proposals from stored signals, not documented ownership. Nothing has been written.")
-	if r.Truncated {
-		b.WriteString(" Results are partial (" + r.Reason + ").")
-	}
-
-	return b.String()
 }

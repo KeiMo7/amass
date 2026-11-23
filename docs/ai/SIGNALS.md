@@ -42,6 +42,12 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 | [Same page content](#same_page_content) | supporting | fingerprint | 0.20 |
 | [Same page title](#same_page_title) | supporting (tiebreaker) | fingerprint | 0.10 |
 | [SSH host key reuse](#ssh_host_key_reuse) | strong | identity | 0.40 |
+| [Same certificate account in CAA](#caa_account_binding) | strong | identity | 0.50 |
+| [Same internal addresses in public DNS](#shared_private_addresses) | strong | operation | 0.40 |
+| [Mark certificate for the organization's LEI](#mark_certificate_identifier) | strong | identity | 0.50 |
+| [security.txt names the organization's encryption key](#security_txt_shared_key) | strong | identity | 0.45 |
+| [Web page names the organization](#page_names_organization) | supporting | operation | 0.30 |
+| [Organization's pages load from the bucket](#page_references_bucket) | supporting | operation | 0.30 |
 
 <a id="shared_registrant_details"></a>
 ## Shared registrant details
@@ -54,9 +60,11 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 
 **Guards:**
 
+- A third party's contact record never counts on either side: one named only as a domain's registrar, a network's abuse desk or a certificate's issuer (semantics.ThirdPartyContactLabels).
 - Redaction and privacy-service placeholders never count (phrases in semantics/placeholder_values.json).
 - A value carried by more than 50 assets never counts: it belongs to a registrar, provider or privacy service, not an owner.
 - Assets another organization is documented as controlling are never candidates.
+- A phone number that independent sources (registration records, OpenStreetMap, SEC filings) all give for the organization counts twice: it is corroborated as the organization's own.
 
 **Can still mislead when:**
 
@@ -134,6 +142,7 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 
 **Guards:**
 
+- A certificate a CDN or hosting provider manages for many customers (one covering a name in provider_managed_names in certificates.json, such as cloudflaressl.com or incapsula.com) never counts.
 - A key identifier shared by more than 50 certificates never counts.
 
 **Can still mislead when:**
@@ -151,6 +160,7 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 
 **Guards:**
 
+- A certificate a CDN or hosting provider manages for many customers (one covering a name in provider_managed_names in certificates.json, such as cloudflaressl.com or incapsula.com) never counts.
 - A public key shared by more than 50 certificates never counts.
 
 **Can still mislead when:**
@@ -168,6 +178,7 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 
 **Guards:**
 
+- A certificate a CDN or hosting provider manages for many customers (one covering a name in provider_managed_names in certificates.json, such as cloudflaressl.com or incapsula.com) never counts.
 - The issuing certificate must be stored, and no certificate up the chain (to four levels) may name a public certificate authority (the authorities in certificates.json). Public intermediates with short names chain to well-known public roots, so the walk finds them; a certificate whose chain is unknown never counts.
 - An issuing key shared by more than 50 certificates never counts.
 
@@ -283,11 +294,13 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 
 **Guards:**
 
+- Never counts through shared infrastructure: an address in a cloud or CDN provider's published range, a private or reserved address, or a name that resolves only to such addresses.
 - Never proposes on its own; it needs a strong signal.
 
 **Can still mislead when:**
 
 - Shared hosting, colocation and customers of a network operator.
+- A provider's own netblocks: its customers depend on them without being owned by it, which is why provider ranges are skipped.
 
 <a id="certificate_colisting"></a>
 ## Listed on the organization's certificate
@@ -300,6 +313,7 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 
 **Guards:**
 
+- A certificate a CDN or hosting provider manages for many customers (one covering a name in provider_managed_names in certificates.json, such as cloudflaressl.com or incapsula.com) never counts.
 - Certificates listing more than 10 names never count.
 - Never proposes on its own; it needs a strong signal.
 
@@ -396,6 +410,7 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 
 **Guards:**
 
+- Never counts from a service on shared infrastructure (a cloud or CDN provider's range, or a private address): behind a CDN the fingerprint is the CDN's, not the site's.
 - A fingerprint shared by more than 50 services never counts.
 - A tiebreaker: it never counts as the second signal that lets a strong signal propose, so it can only rank candidates or send one to review.
 
@@ -558,3 +573,115 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 **Can still mislead when:**
 
 - Vendor appliances and published VM images that share one default key across customers (the 50-service limit catches widely deployed ones).
+
+<a id="caa_account_binding"></a>
+## Same certificate account in CAA
+
+`caa_account_binding`: strong identity signal, weight 0.50.
+
+**Finds:** A domain the organization does not yet own whose CAA record binds certificate issuance to the same ACME account (accounturi, RFC 8657) as a CAA record of a domain the organization controls.
+
+**Why it counts:** An accounturi parameter lets only one ACME account obtain certificates for the domain. The account belongs to whoever requests the certificates, so two domains bound to the same account have their certificates issued by the same operator.
+
+**Guards:**
+
+- The account URI must match exactly.
+- An account URI published by more than 50 domains never counts: a hosting provider's shared account.
+
+**Can still mislead when:**
+
+- A managed hosting or certificate service may bind all its customers' domains to its own account.
+
+<a id="shared_private_addresses"></a>
+## Same internal addresses in public DNS
+
+`shared_private_addresses`: strong operation signal, weight 0.40.
+
+**Finds:** Names under a domain the organization does not yet own that resolve to at least two of the same private (RFC 1918) or other reserved addresses as names the organization controls.
+
+**Why it counts:** A private address only means something inside one network. Public names that resolve to the same internal addresses come from the same internal DNS, which one operator runs; two unrelated organizations rarely publish the same two internal addresses.
+
+**Guards:**
+
+- At least two distinct addresses must be shared with the same registered domain.
+- Addresses in the most common default ranges (192.168.0.0/23, 10.0.0.0/24, 172.16.0.0/24) and addresses ending in .0, .1, .254 or .255 never count.
+- An address more than 50 names resolve to never counts.
+
+**Can still mislead when:**
+
+- Two organizations that merged, or that share an outsourced IT provider's internal DNS, can publish the same internal addresses.
+
+<a id="mark_certificate_identifier"></a>
+## Mark certificate for the organization's LEI
+
+`mark_certificate_identifier`: strong identity signal, weight 0.50.
+
+**Finds:** A domain the organization does not yet own with a BIMI mark certificate whose subject carries the same Legal Entity Identifier as the organization.
+
+**Why it counts:** A certificate authority verifies the organization behind a mark certificate before issuing it, and the LEI it records identifies exactly one legal entity. A domain with a mark certificate for the organization's LEI was certified as the organization's.
+
+**Guards:**
+
+- The LEI must match exactly.
+- Only mark certificates (extended key usage for BIMI) count; an ordinary certificate's subject is not verified the same way.
+
+**Can still mislead when:**
+
+- A brand licensed to another company can be certified for the licensee, whose LEI is its own.
+
+<a id="security_txt_shared_key"></a>
+## security.txt names the organization's encryption key
+
+`security_txt_shared_key`: strong identity signal, weight 0.45.
+
+**Finds:** A name the organization does not yet own whose security.txt gives the same Encryption key URL as a security.txt of a domain the organization controls.
+
+**Why it counts:** The Encryption field names the key reports to the security team should be encrypted with. One security team holds that key, so two files naming the same key report to the same team.
+
+**Guards:**
+
+- The key URL must match exactly.
+- A key URL named by more than 50 security.txt files never counts: a managed provider's or platform's key.
+
+**Can still mislead when:**
+
+- A managed security provider or bug-bounty platform may publish its own key in several clients' files.
+
+<a id="page_names_organization"></a>
+## Web page names the organization
+
+`page_names_organization`: supporting operation signal, weight 0.30.
+
+**Finds:** A name or address the organization does not yet own whose web page carries a copyright notice for the organization, or describes the organization in its schema.org Organization markup.
+
+**Why it counts:** A site's footer and its structured data name whoever publishes it. A page that declares itself the organization's was usually published for the organization, though a vendor building a site for a client publishes the client's name too.
+
+**Guards:**
+
+- The organization's name must follow a copyright marker (©, &copy; or Copyright) or be the name of a schema.org Organization; a mention anywhere else on the page never counts.
+- Names shorter than six characters never count.
+- A name found on more than 50 services never counts.
+- Never proposes on its own; it needs a strong signal.
+
+**Can still mislead when:**
+
+- A news site, directory or partner page can carry markup describing the organization.
+- A site copied from a template can keep another organization's copyright line.
+
+<a id="page_references_bucket"></a>
+## Organization's pages load from the bucket
+
+`page_references_bucket`: supporting operation signal, weight 0.30.
+
+**Finds:** An object-storage bucket host (Amazon S3, Google Cloud Storage, Azure Blob and the other providers in bucket_providers.json) the organization does not yet own that a web page on a name the organization controls loads from or links to.
+
+**Why it counts:** Organizations serve their sites' images, documents and scripts from their own buckets, so a bucket their pages load from is usually theirs. It is only supporting evidence: pages also load from vendors' buckets.
+
+**Guards:**
+
+- The host must match a provider's bucket host pattern; a provider's own hostname without a bucket name never counts.
+- Never proposes on its own; it needs a strong signal.
+
+**Can still mislead when:**
+
+- Widgets, fonts and embedded tools are often served from their vendors' buckets.

@@ -50,6 +50,7 @@ const (
 type award struct {
 	AwardID       string  `json:"Award ID"`
 	RecipientName string  `json:"Recipient Name"`
+	RecipientUEI  string  `json:"Recipient UEI"`
 	Amount        float64 `json:"Award Amount"`
 	LoanValue     float64 `json:"Loan Value"`
 	Agency        string  `json:"Awarding Agency"`
@@ -119,6 +120,7 @@ func (h *awards) check(e *et.Event) error {
 
 func (h *awards) query(e *et.Event, orgent *dbt.Entity, name string) []*dbt.Entity {
 	var fundents []*dbt.Entity
+	var ueis []string
 	seen := map[string]bool{}
 
 	for _, group := range awardTypeGroups {
@@ -143,6 +145,7 @@ func (h *awards) query(e *et.Event, orgent *dbt.Entity, name string) []*dbt.Enti
 				if !semantics.SameOrgName(name, a.RecipientName) {
 					continue
 				}
+				ueis = append(ueis, a.RecipientUEI)
 				id := a.transferID()
 				if id == "" || seen[id] {
 					continue
@@ -159,6 +162,9 @@ func (h *awards) query(e *et.Event, orgent *dbt.Entity, name string) []*dbt.Enti
 		}
 	}
 
+	// the recipient's Unique Entity ID identifies it for duplicate detection,
+	// when every matched award names the same one
+	org.StoreUnambiguousIdentifier(e.Session, orgent, org.UEIIdentifier, ueis, h.plugin.source)
 	return fundents
 }
 
@@ -169,7 +175,7 @@ func (h *awards) requestPage(e *et.Event, name string, group awardGroup, page in
 		RecipientSearchText []string `json:"recipient_search_text"`
 		AwardTypeCodes      []string `json:"award_type_codes"`
 	}
-	fields := []string{"Award ID", "Recipient Name", group.amount, "Awarding Agency"}
+	fields := []string{"Award ID", "Recipient Name", "Recipient UEI", group.amount, "Awarding Agency"}
 	if group.date != "" {
 		fields = append(fields, group.date)
 	}

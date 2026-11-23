@@ -11,6 +11,7 @@ import (
 	"net/http/httptest"
 	"regexp"
 	"slices"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -32,7 +33,11 @@ func newWayback(t *testing.T, code int, page string) (*wayback, *plugintest.Sess
 
 	var hits atomic.Int32
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		hits.Add(1)
+		// archived homepages are counted apart from the index (see
+		// wayback_analytics_test.go)
+		if !strings.HasPrefix(r.URL.Path, "/web/") {
+			hits.Add(1)
+		}
 		w.WriteHeader(code)
 		_, _ = fmt.Fprint(w, page)
 	}))
@@ -47,6 +52,7 @@ func newWayback(t *testing.T, code int, page string) (*wayback, *plugintest.Sess
 	w.rlimit = rate.NewLimiter(rate.Inf, 1)
 	w.backoff = nil
 	w.URL = srv.URL + "/cdx?url="
+	w.SnapshotURL = srv.URL + "/web/"
 
 	name := sess.Asset(t, &oamdns.FQDN{Name: "example.com"})
 	return w, sess, disp, &et.Event{Name: "example.com", Entity: name, Session: sess, Dispatcher: disp,

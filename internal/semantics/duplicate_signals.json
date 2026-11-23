@@ -10,10 +10,10 @@
       "weight": 0.5,
       "matcher": "shared_identifier",
       "params": {
-        "id_types": ["lei", "ocid", "duns", "ein", "tin", "gln", "spglobal", "sec cik"],
+        "id_types": ["lei", "ocid", "duns", "uei", "ein", "tin", "gln", "spglobal", "sec cik"],
         "names_must_agree": true
       },
-      "finds": "Two organizations that carry the same Legal Entity Identifier, OpenCorporates ID, D-U-N-S number, tax number, SEC Central Index Key or other registry identifier, and that share at least one name.",
+      "finds": "Two organizations that carry the same Legal Entity Identifier, OpenCorporates ID, D-U-N-S number, SAM.gov Unique Entity ID, tax number, SEC Central Index Key or other registry identifier, and that share at least one name.",
       "rationale": "A registry identifier is issued to exactly one legal entity, so two organizations holding the same one are the same entity recorded twice. The names must also agree because enrichment can attach an identifier to the wrong organization; a shared identifier between organizations with unrelated names points to that mistake, not to a duplicate.",
       "guards": [
         "Counts only when the two organizations share a name after legal forms (Inc, LLC, Ltd and the like) are removed.",
@@ -100,6 +100,8 @@
       "finds": "Two organizations that share an address, directly or through their contact records, either as one stored location or as the same street address written differently ('5801 Smith Avenue' and '5801 Smith Ave, Suite 3110B'; see semantics/address_terms.json).",
       "rationale": "Two spellings of a company found in certificates or registrations usually carry the same street address. A shared address supports a name match, but on its own it describes a building, not a company.",
       "guards": [
+        "An address that more than 10 organizations, or more than 30 organizations and contact records together, are tied to (a registered agent, an office tower or an incubator) never counts.",
+        "A street address counts only when its building number and street agree, with the postal code when both carry one; a shared city or region never counts.",
         "Never proposes a merge alone."
       ],
       "counter_indications": [

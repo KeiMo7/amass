@@ -12,9 +12,11 @@
       "finds": "A registration contact the organization does not yet own that carries the same phone, postal address, email address or other identifier as a contact the organization controls.",
       "rationale": "Registrant details are entered by whoever registers the asset. Two registrations with the same phone and address were almost always made by the same party, and registries verify some of these details. One shared value can be a coincidence or a typo; two different shared values rarely are, which is why one shared value needs review and two may propose.",
       "guards": [
+        "A third party's contact record never counts on either side: one named only as a domain's registrar, a network's abuse desk or a certificate's issuer (semantics.ThirdPartyContactLabels).",
         "Redaction and privacy-service placeholders never count (phrases in semantics/placeholder_values.json).",
         "A value carried by more than 50 assets never counts: it belongs to a registrar, provider or privacy service, not an owner.",
-        "Assets another organization is documented as controlling are never candidates."
+        "Assets another organization is documented as controlling are never candidates.",
+        "A phone number that independent sources (registration records, OpenStreetMap, SEC filings) all give for the organization counts twice: it is corroborated as the organization's own."
       ],
       "counter_indications": [
         "Resellers and agencies sometimes register assets for clients with their own details.",
@@ -139,6 +141,7 @@
       "finds": "A certificate whose subject key identifier matches a certificate the organization controls; the candidate is the name that certificate was issued to.",
       "rationale": "The subject key identifier is derived from the certificate's public key. Two certificates with the same identifier were issued for the same key pair, and only the holder of the private key can request them, so the same party operates both.",
       "guards": [
+        "A certificate a CDN or hosting provider manages for many customers (one covering a name in provider_managed_names in certificates.json, such as cloudflaressl.com or incapsula.com) never counts.",
         "A key identifier shared by more than 50 certificates never counts."
       ],
       "counter_indications": [
@@ -158,6 +161,7 @@
       "finds": "A certificate whose public key (the SHA-256 of its SubjectPublicKeyInfo) matches a certificate the organization controls; the candidate is the name that certificate was issued to.",
       "rationale": "The public key hash identifies the key pair itself, whatever the subject key identifier, which some certificates omit or set non-standardly. Two certificates with the same public key were issued for the same key pair, and only the holder of the private key can request them, so the same party operates both.",
       "guards": [
+        "A certificate a CDN or hosting provider manages for many customers (one covering a name in provider_managed_names in certificates.json, such as cloudflaressl.com or incapsula.com) never counts.",
         "A public key shared by more than 50 certificates never counts."
       ],
       "counter_indications": [
@@ -178,6 +182,7 @@
       "finds": "A certificate signed by the same issuing key as a certificate the organization controls, when that issuer is not a public certificate authority; the candidate is the name that certificate was issued to.",
       "rationale": "Organizations run private certificate authorities for internal and partner-facing services, and only they can sign with that CA's key. A certificate from the same private issuing key was issued by the same organization.",
       "guards": [
+        "A certificate a CDN or hosting provider manages for many customers (one covering a name in provider_managed_names in certificates.json, such as cloudflaressl.com or incapsula.com) never counts.",
         "The issuing certificate must be stored, and no certificate up the chain (to four levels) may name a public certificate authority (the authorities in certificates.json). Public intermediates with short names chain to well-known public roots, so the walk finds them; a certificate whose chain is unknown never counts.",
         "An issuing key shared by more than 50 certificates never counts."
       ],
@@ -297,10 +302,12 @@
       "finds": "An asset the organization does not yet own that depends on infrastructure the organization controls, such as a name resolving into its network.",
       "rationale": "Organizations host their own assets, so dependence on their infrastructure is consistent with ownership. It is only supporting evidence: customers, tenants and vendors are hosted on other parties' networks every day.",
       "guards": [
+        "Never counts through shared infrastructure: an address in a cloud or CDN provider's published range, a private or reserved address, or a name that resolves only to such addresses.",
         "Never proposes on its own; it needs a strong signal."
       ],
       "counter_indications": [
-        "Shared hosting, colocation and customers of a network operator."
+        "Shared hosting, colocation and customers of a network operator.",
+        "A provider's own netblocks: its customers depend on them without being owned by it, which is why provider ranges are skipped."
       ]
     },
     {
@@ -313,6 +320,7 @@
       "finds": "A name the organization does not yet own that appears as a subject alternative name on a certificate that also lists a name the organization controls.",
       "rationale": "One certificate covering several names was usually requested by one party for its own services. Certificates listing many names are often a provider's shared certificate, so this counts only for certificates with few names and only as supporting evidence.",
       "guards": [
+        "A certificate a CDN or hosting provider manages for many customers (one covering a name in provider_managed_names in certificates.json, such as cloudflaressl.com or incapsula.com) never counts.",
         "Certificates listing more than 10 names never count.",
         "Never proposes on its own; it needs a strong signal."
       ],
@@ -420,11 +428,13 @@
       "weight": 0.1,
       "matcher": "service_fingerprint",
       "params": {
-        "property": "JARM"
+        "property": "JARM",
+        "skip_shared_infrastructure": true
       },
       "finds": "A name or address the organization does not yet own whose service has the same JARM TLS fingerprint as a service on a name the organization controls.",
       "rationale": "A JARM fingerprint summarizes how a TLS server answers ten crafted handshakes, which reflects its software and configuration. A matching fingerprint is consistent with the same team deploying both servers, but many unrelated servers share common configurations, so it is only a tiebreaker.",
       "guards": [
+        "Never counts from a service on shared infrastructure (a cloud or CDN provider's range, or a private address): behind a CDN the fingerprint is the CDN's, not the site's.",
         "A fingerprint shared by more than 50 services never counts.",
         "A tiebreaker: it never counts as the second signal that lets a strong signal propose, so it can only rank candidates or send one to review."
       ],
@@ -694,6 +704,123 @@
       ],
       "counter_indications": [
         "Vendor appliances and published VM images that share one default key across customers (the 50-service limit catches widely deployed ones)."
+      ]
+    },
+    {
+      "id": "caa_account_binding",
+      "title": "Same certificate account in CAA",
+      "kind": "identity",
+      "strength": "strong",
+      "weight": 0.5,
+      "matcher": "caa_account",
+      "finds": "A domain the organization does not yet own whose CAA record binds certificate issuance to the same ACME account (accounturi, RFC 8657) as a CAA record of a domain the organization controls.",
+      "rationale": "An accounturi parameter lets only one ACME account obtain certificates for the domain. The account belongs to whoever requests the certificates, so two domains bound to the same account have their certificates issued by the same operator.",
+      "guards": [
+        "The account URI must match exactly.",
+        "An account URI published by more than 50 domains never counts: a hosting provider's shared account."
+      ],
+      "counter_indications": [
+        "A managed hosting or certificate service may bind all its customers' domains to its own account."
+      ]
+    },
+    {
+      "id": "shared_private_addresses",
+      "title": "Same internal addresses in public DNS",
+      "kind": "operation",
+      "strength": "strong",
+      "weight": 0.4,
+      "matcher": "private_address",
+      "params": {
+        "min_shared": 2,
+        "ignore_ranges": [
+          "192.168.0.0/23",
+          "10.0.0.0/24",
+          "172.16.0.0/24"
+        ]
+      },
+      "finds": "Names under a domain the organization does not yet own that resolve to at least two of the same private (RFC 1918) or other reserved addresses as names the organization controls.",
+      "rationale": "A private address only means something inside one network. Public names that resolve to the same internal addresses come from the same internal DNS, which one operator runs; two unrelated organizations rarely publish the same two internal addresses.",
+      "guards": [
+        "At least two distinct addresses must be shared with the same registered domain.",
+        "Addresses in the most common default ranges (192.168.0.0/23, 10.0.0.0/24, 172.16.0.0/24) and addresses ending in .0, .1, .254 or .255 never count.",
+        "An address more than 50 names resolve to never counts."
+      ],
+      "counter_indications": [
+        "Two organizations that merged, or that share an outsourced IT provider's internal DNS, can publish the same internal addresses."
+      ]
+    },
+    {
+      "id": "mark_certificate_identifier",
+      "title": "Mark certificate for the organization's LEI",
+      "kind": "identity",
+      "strength": "strong",
+      "weight": 0.5,
+      "matcher": "mark_certificate",
+      "finds": "A domain the organization does not yet own with a BIMI mark certificate whose subject carries the same Legal Entity Identifier as the organization.",
+      "rationale": "A certificate authority verifies the organization behind a mark certificate before issuing it, and the LEI it records identifies exactly one legal entity. A domain with a mark certificate for the organization's LEI was certified as the organization's.",
+      "guards": [
+        "The LEI must match exactly.",
+        "Only mark certificates (extended key usage for BIMI) count; an ordinary certificate's subject is not verified the same way."
+      ],
+      "counter_indications": [
+        "A brand licensed to another company can be certified for the licensee, whose LEI is its own."
+      ]
+    },
+    {
+      "id": "security_txt_shared_key",
+      "title": "security.txt names the organization's encryption key",
+      "kind": "identity",
+      "strength": "strong",
+      "weight": 0.45,
+      "matcher": "security_txt_key",
+      "finds": "A name the organization does not yet own whose security.txt gives the same Encryption key URL as a security.txt of a domain the organization controls.",
+      "rationale": "The Encryption field names the key reports to the security team should be encrypted with. One security team holds that key, so two files naming the same key report to the same team.",
+      "guards": [
+        "The key URL must match exactly.",
+        "A key URL named by more than 50 security.txt files never counts: a managed provider's or platform's key."
+      ],
+      "counter_indications": [
+        "A managed security provider or bug-bounty platform may publish its own key in several clients' files."
+      ]
+    },
+    {
+      "id": "page_names_organization",
+      "title": "Web page names the organization",
+      "kind": "operation",
+      "strength": "supporting",
+      "weight": 0.3,
+      "matcher": "page_organization",
+      "params": {
+        "min_length": 6
+      },
+      "finds": "A name or address the organization does not yet own whose web page carries a copyright notice for the organization, or describes the organization in its schema.org Organization markup.",
+      "rationale": "A site's footer and its structured data name whoever publishes it. A page that declares itself the organization's was usually published for the organization, though a vendor building a site for a client publishes the client's name too.",
+      "guards": [
+        "The organization's name must follow a copyright marker (©, &copy; or Copyright) or be the name of a schema.org Organization; a mention anywhere else on the page never counts.",
+        "Names shorter than six characters never count.",
+        "A name found on more than 50 services never counts.",
+        "Never proposes on its own; it needs a strong signal."
+      ],
+      "counter_indications": [
+        "A news site, directory or partner page can carry markup describing the organization.",
+        "A site copied from a template can keep another organization's copyright line."
+      ]
+    },
+    {
+      "id": "page_references_bucket",
+      "title": "Organization's pages load from the bucket",
+      "kind": "operation",
+      "strength": "supporting",
+      "weight": 0.3,
+      "matcher": "page_bucket",
+      "finds": "An object-storage bucket host (Amazon S3, Google Cloud Storage, Azure Blob and the other providers in bucket_providers.json) the organization does not yet own that a web page on a name the organization controls loads from or links to.",
+      "rationale": "Organizations serve their sites' images, documents and scripts from their own buckets, so a bucket their pages load from is usually theirs. It is only supporting evidence: pages also load from vendors' buckets.",
+      "guards": [
+        "The host must match a provider's bucket host pattern; a provider's own hostname without a bucket name never counts.",
+        "Never proposes on its own; it needs a strong signal."
+      ],
+      "counter_indications": [
+        "Widgets, fonts and embedded tools are often served from their vendors' buckets."
       ]
     }
   ]

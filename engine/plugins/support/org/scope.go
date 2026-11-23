@@ -11,6 +11,7 @@ import (
 	"time"
 
 	et "github.com/owasp-amass/amass/v5/engine/types"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oamcert "github.com/owasp-amass/open-asset-model/certificate"
 	oamcontact "github.com/owasp-amass/open-asset-model/contact"
@@ -69,8 +70,10 @@ var inScopeContacts sync.Map
 // the enumeration: it is one of the session's seeds (a phone or address
 // pivot), or a contact record holding it belongs to an organization in scope
 // (InScope) or is one an in-scope domain registration record, web page or
-// certificate names as its own (see sourceLabels). The address of a network operator, taken from the
-// registration record of a netblock the target's names point into, is not.
+// certificate names as its own (semantics.OwnContactLabels). A domain's
+// registrar and a certificate's issuer are not the enumeration's, and neither
+// is a network operator's address from the registration record of a netblock
+// the target's names point into.
 // Reverse lookups from a phone or address run only for these, so a vendor's
 // contact details are stored but not searched.
 func ContactInScope(sess et.Session, ent *dbt.Entity) bool {
@@ -149,7 +152,7 @@ func heldInScope(sess et.Session, ent *dbt.Entity) bool {
 					return true
 				}
 			}
-			for _, from := range neighbors(ctx, sess, holder, true, sourceLabels...) {
+			for _, from := range neighbors(ctx, sess, holder, true, semantics.OwnContactLabels...) {
 				if inScopeSource(sess, from) {
 					return true
 				}
@@ -159,17 +162,10 @@ func heldInScope(sess et.Session, ent *dbt.Entity) bool {
 	return false
 }
 
-// sourceLabels are the relations by which an in-scope asset names a contact
-// record of its own: a domain's registrant, administrative, technical and
-// billing contacts, a web page's contact details and a certificate's
-// subject. A domain's registrar and a certificate's issuer are left out, and
-// so are netblock and autonomous system records, which name the network's
-// operator, often a provider the target merely uses.
-var sourceLabels = []string{"registrant_contact", "admin_contact", "technical_contact", "billing_contact", "contact",
-	"subject_contact"}
-
 // inScopeSource reports whether a contact record's source is an in-scope
-// domain registration record, web page or certificate.
+// domain registration record, web page or certificate. Netblock and
+// autonomous system records are left out: they name the network's operator,
+// often a provider the target merely uses.
 func inScopeSource(sess et.Session, ent *dbt.Entity) bool {
 	switch ent.Asset.(type) {
 	case *oamreg.DomainRecord, *oamurl.URL, *oamcert.TLSCertificate:

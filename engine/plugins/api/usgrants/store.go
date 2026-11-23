@@ -21,6 +21,8 @@ import (
 type grant struct {
 	id, date, agency, recipient string
 	amount                      float64
+	// uei and duns identify the recipient, when the source gives them.
+	uei, duns string
 }
 
 func (h *source) get(e *et.Event, u string) (string, error) {

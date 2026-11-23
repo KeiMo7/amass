@@ -5,7 +5,9 @@
 package org
 
 import (
+	"context"
 	"testing"
+	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/plugintest"
 	et "github.com/owasp-amass/amass/v5/engine/types"
@@ -129,5 +131,36 @@ func TestFindOrgByJurisdictionAndRegistrationIDClaim(t *testing.T) {
 	}
 	if _, err := FindOrgByJurisdictionAndRegistrationIDClaim(sess, "US-DE", "999"); err == nil {
 		t.Error("an unknown number matched")
+	}
+}
+
+// An identifier is stored only when every matched record agrees on it.
+func TestStoreUnambiguousIdentifier(t *testing.T) {
+	for name, c := range map[string]struct {
+		values []string
+		want   string
+	}{
+		"agreeing":           {[]string{"abc123", "", " ABC123 "}, "ABC123"},
+		"conflicting":        {[]string{"ABC123", "XYZ789"}, ""},
+		"none":               {[]string{"", " "}, ""},
+		"one with the empty": {[]string{"", "DEF456"}, "DEF456"},
+	} {
+		t.Run(name, func(t *testing.T) {
+			sess := plugintest.NewSession(t)
+			orgent := newOrg(t, sess, "acme:1", "acme")
+
+			StoreUnambiguousIdentifier(sess, orgent, UEIIdentifier, c.values, srcA)
+			got, err := findOrgByIDClaim(sess, UEIIdentifier, c.want, srcA)
+			if c.want == "" {
+				edges, _ := sess.DB().OutgoingEdges(context.Background(), orgent, time.Time{}, "id")
+				if len(edges) != 0 {
+					t.Errorf("an identifier was stored from %q", c.values)
+				}
+				return
+			}
+			if err != nil || got.ID != orgent.ID {
+				t.Errorf("the identifier %s was not stored: %v", c.want, err)
+			}
+		})
 	}
 }

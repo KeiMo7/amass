@@ -20,16 +20,20 @@ import (
 	"github.com/owasp-amass/amass/v5/internal/semantics"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
+	"golang.org/x/net/publicsuffix"
 	"golang.org/x/time/rate"
 )
 
 // wayback asks the Wayback Machine's CDX server for the URLs it captured
 // under a domain.
 type wayback struct {
-	name   string
-	URL    string
-	log    *slog.Logger
-	rlimit *rate.Limiter
+	name string
+	URL  string
+	// SnapshotURL is the prefix of an archived page: a timestamp, then id_/
+	// and the page's URL follow.
+	SnapshotURL string
+	log         *slog.Logger
+	rlimit      *rate.Limiter
 	// backoff are the waits before retrying a refused or failed request.
 	backoff []time.Duration
 	source  *et.Source
@@ -42,9 +46,10 @@ func NewWayback() et.Plugin {
 		name: "Wayback",
 		// One row per distinct URL (collapse=urlkey) with the timestamp of its
 		// first capture.
-		URL:     "https://web.archive.org/cdx/search/cdx?matchType=domain&fl=original,timestamp&output=json&collapse=urlkey&url=",
-		rlimit:  rate.NewLimiter(limit, 1),
-		backoff: archiveBackoff,
+		URL:         "https://web.archive.org/cdx/search/cdx?matchType=domain&fl=original,timestamp&output=json&collapse=urlkey&url=",
+		SnapshotURL: "https://web.archive.org/web/",
+		rlimit:      rate.NewLimiter(limit, 1),
+		backoff:     archiveBackoff,
 		source: &et.Source{
 			Name:       "Wayback",
 			Confidence: 80,
@@ -116,6 +121,14 @@ func (w *wayback) check(e *et.Event) error {
 	}
 	if len(urls) > 0 {
 		storeURLs(e, w.source, w.name, urls)
+	}
+	// only the registered domain's homepage is read; a subdomain asked about
+	// because the domain is out of scope may not be the organization's site
+	if reg, err := publicsuffix.EffectiveTLDPlusOne(fqdn.Name); err == nil && reg == fqdn.Name {
+		if n := w.analytics(e, fqdn.Name); n > 0 {
+			e.Session.Log().Info("archived analytics identifiers stored", "domain", fqdn.Name, "count", n,
+				slog.Group("plugin", "name", w.name, "handler", w.name+"-Handler"))
+		}
 	}
 	return nil
 }

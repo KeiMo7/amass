@@ -18,9 +18,11 @@ import (
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
+	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
+	oamgen "github.com/owasp-amass/open-asset-model/general"
 )
 
 // SBIR.gov's award API refuses every request while it is under maintenance,
@@ -148,6 +150,8 @@ func parseSBIRAwards(r io.Reader) (map[string][]grant, error) {
 			date:      date,
 			agency:    field(rec, "Agency"),
 			recipient: company,
+			uei:       field(rec, "UEI"),
+			duns:      field(rec, "Duns"),
 		})
 	}
 	return out, nil
@@ -161,6 +165,7 @@ func querySBIR(h *source, e *et.Event, orgent *dbt.Entity, name string) {
 		return
 	}
 
+	var ueis, duns []string
 	seen := map[string]bool{}
 	for i := range grants {
 		g := &grants[i]
@@ -168,6 +173,11 @@ func querySBIR(h *source, e *et.Event, orgent *dbt.Entity, name string) {
 			continue
 		}
 		seen[g.id] = true
+		ueis, duns = append(ueis, g.uei), append(duns, g.duns)
 		h.store(e, orgent, g)
 	}
+
+	// the recipient's identifiers, when every matched award agrees on them
+	org.StoreUnambiguousIdentifier(e.Session, orgent, org.UEIIdentifier, ueis, h.src)
+	org.StoreUnambiguousIdentifier(e.Session, orgent, oamgen.DUNSNumer, duns, h.src)
 }

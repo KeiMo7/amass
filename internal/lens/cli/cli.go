@@ -79,6 +79,7 @@ var reviewOps = map[string]string{
 	"horizontal-signals":     "horizontal-signals",
 	"infrastructure-signals": "infrastructure-signals",
 	"applied":                "applied",
+	"signal-precision":       "signal-precision",
 	"lead":                   "lead",
 }
 
@@ -283,6 +284,8 @@ func run(group string, _ io.Reader, out, errout io.Writer, args []string) error 
 		return listInfrastructureSignals(format, true, out)
 	case "proposals":
 		return listProposals(journalPath, format, true, out)
+	case "signal-precision":
+		return listSignalPrecision(journalPath, format, out)
 	case "reject":
 		return rejectProposal(journalPath, proposalID, reviewer, out)
 	}

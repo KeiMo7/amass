@@ -5,10 +5,8 @@
 package rdap
 
 import (
-	"context"
-	"log/slog"
+	"cmp"
 	"strings"
-	"time"
 
 	"github.com/openrdap/rdap"
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
@@ -16,7 +14,6 @@ import (
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
-	"github.com/owasp-amass/open-asset-model/general"
 	oamreg "github.com/owasp-amass/open-asset-model/registration"
 	"golang.org/x/net/publicsuffix"
 )
@@ -47,51 +44,11 @@ func (d *domain) check(e *et.Event) error {
 		return nil
 	}
 
-	since, err := support.TTLStartTime(e.Session.Config(),
-		string(oam.FQDN), string(oam.DomainRecord), d.name)
-	if err != nil {
-		return err
-	}
-
-	var asset *dbt.Entity
-	var record *rdap.Domain
-	if support.AssetMonitoredWithinTTL(e.Session, e.Entity, d.plugin.source, since) {
-		asset = d.lookup(e, name, since)
-	} else {
-		asset, record = d.query(e, name, e.Entity)
-		support.MarkAssetMonitored(e.Session, e.Entity, d.plugin.source)
-	}
-
-	if asset != nil {
-		d.process(e, record, asset)
-	}
-	return nil
+	return d.plugin.checkRegistration(e, d.name, oam.DomainRecord, dbt.ContentFilters{"domain": name},
+		func() (*dbt.Entity, any) { return d.query(e, name, e.Entity) })
 }
 
-func (d *domain) lookup(e *et.Event, name string, since time.Time) *dbt.Entity {
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	ents, err := e.Session.DB().FindEntitiesByContent(ctx, oam.DomainRecord, since, 1, dbt.ContentFilters{
-		"domain": name,
-	})
-	if err != nil || len(ents) != 1 {
-		return nil
-	}
-	dr := ents[0]
-
-	if tags, err := e.Session.DB().FindEntityTags(ctx, dr,
-		since, d.plugin.source.Name); err == nil && len(tags) > 0 {
-		for _, tag := range tags {
-			if tag.Property.PropertyType() == oam.SourceProperty {
-				return dr
-			}
-		}
-	}
-	return nil
-}
-
-func (d *domain) query(e *et.Event, name string, asset *dbt.Entity) (*dbt.Entity, *rdap.Domain) {
+func (d *domain) query(e *et.Event, name string, asset *dbt.Entity) (*dbt.Entity, any) {
 	_ = support.WaitLimit(e.Session.Ctx(), d.plugin.rlimit)
 
 	record, err := d.plugin.client.QueryDomain(name)
@@ -129,21 +86,10 @@ func (d *domain) store(e *et.Event, resp *rdap.Domain, asset *dbt.Entity) *dbt.E
 		dr.Extension = ext
 	}
 
-	for _, event := range resp.Events {
-		t, err := time.Parse(time.RFC3339, event.Date)
-		if err != nil {
-			continue
-		}
-
-		switch strings.ToLower(event.Action) {
-		case "registration":
-			dr.CreatedDate = support.TimeToJSONString(&t)
-		case "last changed", "last update of rdap database":
-			dr.UpdatedDate = support.TimeToJSONString(&t)
-		case "expiration":
-			dr.ExpirationDate = support.TimeToJSONString(&t)
-		}
-	}
+	dates := eventDates(resp.Events)
+	dr.CreatedDate = dates.created
+	dr.UpdatedDate = cmp.Or(dates.changed, dates.rdapUpdated)
+	dr.ExpirationDate = dates.expiration
 
 	// A record with neither an identifier nor a registration date carries no
 	// more than the name already known, so it is not stored.
@@ -151,45 +97,7 @@ func (d *domain) store(e *et.Event, resp *rdap.Domain, asset *dbt.Entity) *dbt.E
 		return nil
 	}
 
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	record, err := e.Session.DB().CreateAsset(ctx, dr)
-	if err != nil || record == nil {
-		return nil
-	}
-
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, record, &general.SourceProperty{
-		Source:     d.plugin.source.Name,
-		Confidence: d.plugin.source.Confidence,
-	})
-
-	if edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &general.SimpleRelation{Name: "registration"},
-		FromEntity: asset,
-		ToEntity:   record,
-	}); err == nil && edge != nil {
-		_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-			Source:     d.plugin.source.Name,
-			Confidence: d.plugin.source.Confidence,
-		})
-	}
-	return record
-}
-
-func (d *domain) process(e *et.Event, record *rdap.Domain, asset *dbt.Entity) {
-	dr := asset.Asset.(*oamreg.DomainRecord)
-
-	name := "DomainRecord: " + dr.Domain
-	_ = e.Dispatcher.DispatchEvent(&et.Event{
-		Name:    name,
-		Meta:    record,
-		Entity:  asset,
-		Session: e.Session,
-	})
-
-	e.Session.Log().Info("relationship discovered", "from", dr.Domain, "relation",
-		"registration", "to", name, slog.Group("plugin", "name", d.plugin.name, "handler", d.name))
+	return d.plugin.storeRecord(e, asset, dr)
 }
 
 // secureDNSSigned reports whether the RDAP secure-DNS object says the zone is

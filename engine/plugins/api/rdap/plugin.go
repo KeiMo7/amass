@@ -40,11 +40,11 @@ type rdapPlugin struct {
 	client   *rdap.Client
 	rlimit   *rate.Limiter
 	autsys   *autsys
-	autnum   *autnum
+	autnum   *recordDetail
 	netblock *netblock
-	ipnet    *ipnet
+	ipnet    *recordDetail
 	domain   *domain
-	domrec   *domrec
+	domrec   *recordDetail
 	source   *et.Source
 }
 
@@ -115,20 +115,7 @@ func (rd *rdapPlugin) Start(r et.Registry) error {
 		return err
 	}
 
-	rd.autnum = &autnum{
-		name:   rd.name + "-Autnum-Handler",
-		plugin: rd,
-		transforms: []string{
-			string(oam.FQDN),
-			string(oam.URL),
-			string(oam.ContactRecord),
-			string(oam.Person),
-			string(oam.Organization),
-			string(oam.StreetAddress),
-			string(oam.Identifier),
-			string(oam.Phone),
-		},
-	}
+	rd.autnum = newRecordDetail(rd, oam.AutnumRecord)
 	if err := r.RegisterHandler(&et.Handler{
 		Plugin:       rd,
 		Name:         rd.autnum.name,
@@ -159,20 +146,7 @@ func (rd *rdapPlugin) Start(r et.Registry) error {
 		return err
 	}
 
-	rd.ipnet = &ipnet{
-		name:   rd.name + "-IPNetwork-Handler",
-		plugin: rd,
-		transforms: []string{
-			string(oam.FQDN),
-			string(oam.URL),
-			string(oam.ContactRecord),
-			string(oam.Person),
-			string(oam.Organization),
-			string(oam.StreetAddress),
-			string(oam.Identifier),
-			string(oam.Phone),
-		},
-	}
+	rd.ipnet = newRecordDetail(rd, oam.IPNetRecord)
 	if err := r.RegisterHandler(&et.Handler{
 		Plugin:       rd,
 		Name:         rd.ipnet.name,
@@ -206,20 +180,7 @@ func (rd *rdapPlugin) Start(r et.Registry) error {
 		return err
 	}
 
-	rd.domrec = &domrec{
-		name:   rd.name + "-Domain-Record-Handler",
-		plugin: rd,
-		transforms: []string{
-			string(oam.FQDN),
-			string(oam.URL),
-			string(oam.ContactRecord),
-			string(oam.Person),
-			string(oam.Organization),
-			string(oam.StreetAddress),
-			string(oam.Identifier),
-			string(oam.Phone),
-		},
-	}
+	rd.domrec = newRecordDetail(rd, oam.DomainRecord)
 	if err := r.RegisterHandler(&et.Handler{
 		Plugin:   rd,
 		Name:     rd.domrec.name,
@@ -295,15 +256,7 @@ func (rd *rdapPlugin) storeEntity(e *et.Event, level int, entity *rdap.Entity, a
 		return
 	}
 
-	var name string
-	switch v := asset.Asset.(type) {
-	case *oamreg.AutnumRecord:
-		name = "AutnumRecord: " + v.Handle
-	case *oamreg.IPNetRecord:
-		name = "IPNetRecord: " + v.Handle
-	case *oamreg.DomainRecord:
-		name = "DomainRecord: " + v.Domain
-	}
+	name := recordName(asset)
 
 	if u != nil && m.IsMatch(string(oam.URL)) {
 		if a, err := e.Session.DB().CreateAsset(ctx, u); err == nil && a != nil {

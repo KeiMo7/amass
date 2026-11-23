@@ -109,10 +109,7 @@ func TestDomainRecordDetail(t *testing.T) {
 	sess.Scope().AddDomain("example.com")
 
 	rd := NewRDAP().(*rdapPlugin)
-	r := &domrec{name: "RDAP-Domain-Record-Handler", plugin: rd, transforms: []string{
-		string(oam.FQDN), string(oam.URL), string(oam.ContactRecord), string(oam.Person),
-		string(oam.Organization), string(oam.StreetAddress), string(oam.Identifier), string(oam.Phone),
-	}}
+	r := newRecordDetail(rd, oam.DomainRecord)
 	drEntity := sess.Asset(t, &oamreg.DomainRecord{Domain: "example.com", WhoisServer: "whois.example.com"})
 	e := &et.Event{Session: sess, Entity: drEntity, Dispatcher: &plugintest.Dispatcher{}}
 
@@ -121,7 +118,11 @@ func TestDomainRecordDetail(t *testing.T) {
 		t.Fatal(err)
 	}
 
-	r.store(e, rdapDomain(), drEntity, m)
+	resp, ok := responseOf(rdapDomain())
+	if !ok {
+		t.Fatal("the RDAP domain was not read")
+	}
+	r.store(e, resp, drEntity, m)
 
 	ctx := context.Background()
 	// Both name servers, in scope under example.com, are linked.

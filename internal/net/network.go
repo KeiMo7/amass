@@ -18,12 +18,6 @@ import (
 // Maximum number of connections allowed by each process.
 const MaxNetworkConns = 500
 
-// IPv4RE is a regular expression that will match an IPv4 address.
-const IPv4RE = "((25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)[.]){3}(25[0-5]|2[0-4][0-9]|[01]?[0-9][0-9]?)"
-
-// ReservedCIDRDescription is the description used for reserved address ranges.
-const ReservedCIDRDescription = "Reserved Network Address Blocks"
-
 // LocalAddr is the global option for specifying the network interface.
 var LocalAddr net.Addr
 

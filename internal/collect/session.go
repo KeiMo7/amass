@@ -58,6 +58,10 @@ func configure(cfg *config.Config, plan Plan) ([]oam.Asset, error) {
 	// mode: they run only when the plan requested them.
 	cfg.BruteForcing = plan.BruteForce
 	cfg.Alterations = plan.Alterations
+	// the plan's interface, when it names one, replaces the configuration's
+	if plan.Interface != "" {
+		cfg.Interface = plan.Interface
+	}
 
 	entries := plan.Entries()
 	assets := make([]oam.Asset, 0, len(entries))

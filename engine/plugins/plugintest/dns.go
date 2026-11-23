@@ -6,12 +6,12 @@ package plugintest
 
 import (
 	"net"
-	"net/netip"
 	"strings"
 	"sync"
 	"testing"
 
 	"github.com/miekg/dns"
+	amassnet "github.com/owasp-amass/amass/v5/internal/net"
 	amassdns "github.com/owasp-amass/amass/v5/internal/net/dns"
 )
 
@@ -46,7 +46,7 @@ func (s *Session) DNS(t testing.TB) *DNS {
 		go func() { _ = srv.ActivateAndServe() }()
 		t.Cleanup(func() { _ = srv.Shutdown() })
 
-		r, err := amassdns.NewResolvers([]string{d.Addr}, d.Addr, netip.Addr{})
+		r, err := amassdns.NewResolvers([]string{d.Addr}, d.Addr, amassnet.LocalAddrs{})
 		if err != nil {
 			t.Fatalf("the session's resolvers were not created: %v", err)
 		}

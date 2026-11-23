@@ -10,7 +10,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/netip"
 	"os"
 	"os/signal"
 	"strconv"
@@ -113,12 +112,12 @@ func CLIWorkflow(cmdName string, clArgs []string) {
 	}
 	amassdns.SetResolverQPS(qps)
 
-	laddr, err := engineInterface(args.Options.Interface, os.LookupEnv)
+	local, err := engineInterface(args.Options.Interface, os.LookupEnv)
 	if err != nil {
 		_, _ = afmt.R.Fprintf(color.Error, "%v\n", err)
 		os.Exit(1)
 	}
-	amassnet.SetLocalAddr(laddr)
+	amassnet.SetLocalAddrs(local)
 
 	l, err := selectLogger(args.Filepaths.LogDir)
 	if err != nil {
@@ -157,10 +156,10 @@ func resolverQPS(flagValue int, lookup func(string) (string, bool)) (int, error)
 	return amassdns.DefaultResolverQPS, nil
 }
 
-// engineInterface returns the local address of the engine's network
+// engineInterface returns the local addresses of the engine's network
 // interface: the flag's when given, else the environment variable's, else
-// the zero Addr, which leaves the choice to the system.
-func engineInterface(flagValue string, lookup func(string) (string, bool)) (netip.Addr, error) {
+// the zero LocalAddrs, which leaves the choice to the system.
+func engineInterface(flagValue string, lookup func(string) (string, bool)) (amassnet.LocalAddrs, error) {
 	spec := strings.TrimSpace(flagValue)
 	if spec == "" {
 		if v, ok := lookup(InterfaceEnv); ok {
@@ -168,11 +167,11 @@ func engineInterface(flagValue string, lookup func(string) (string, bool)) (neti
 		}
 	}
 
-	addr, err := amassnet.InterfaceAddr(spec)
+	local, err := amassnet.InterfaceAddrs(spec)
 	if err != nil {
-		return netip.Addr{}, fmt.Errorf("the engine's network interface: %w", err)
+		return amassnet.LocalAddrs{}, fmt.Errorf("the engine's network interface: %w", err)
 	}
-	return addr, nil
+	return local, nil
 }
 
 func selectLogger(dir string) (*slog.Logger, error) {

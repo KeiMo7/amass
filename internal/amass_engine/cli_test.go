@@ -13,6 +13,7 @@ import (
 	"strings"
 	"testing"
 
+	amassnet "github.com/owasp-amass/amass/v5/internal/net"
 	amassdns "github.com/owasp-amass/amass/v5/internal/net/dns"
 )
 
@@ -101,21 +102,21 @@ func TestEngineInterface(t *testing.T) {
 			return v, true
 		}
 	}
-	loopback := netip.MustParseAddr("127.0.0.1")
+	loopback := amassnet.LocalAddrs{V4: netip.MustParseAddr("127.0.0.1")}
 
 	tests := []struct {
 		name  string
 		flag  string
 		env   func(string) (string, bool)
-		want  netip.Addr
+		want  amassnet.LocalAddrs
 		fails bool
 	}{
-		{"neither", "", env(""), netip.Addr{}, false},
+		{"neither", "", env(""), amassnet.LocalAddrs{}, false},
 		{"the variable", "", env("127.0.0.1"), loopback, false},
 		{"the flag over the variable", "127.0.0.1", env("no-such-iface0"), loopback, false},
-		{"a missing interface", "no-such-iface0", env(""), netip.Addr{}, true},
+		{"a missing interface", "no-such-iface0", env(""), amassnet.LocalAddrs{}, true},
 		// 192.0.2.0/24 is reserved for documentation, so no interface has it
-		{"an address on no interface", "", env("192.0.2.1"), netip.Addr{}, true},
+		{"an address on no interface", "", env("192.0.2.1"), amassnet.LocalAddrs{}, true},
 	}
 	for _, tt := range tests {
 		got, err := engineInterface(tt.flag, tt.env)

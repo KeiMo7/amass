@@ -14,6 +14,7 @@ import (
 	"time"
 
 	miekg "github.com/miekg/dns"
+	amassnet "github.com/owasp-amass/amass/v5/internal/net"
 )
 
 // testServer answers every A query with 192.0.2.1 and counts the queries.
@@ -85,10 +86,10 @@ func exchange(t *testing.T, r *Resolvers, name string) *miekg.Msg {
 }
 
 func TestNewResolversRefusesHostNames(t *testing.T) {
-	if _, err := NewResolvers([]string{"dns.example.com"}, "", netip.Addr{}); err == nil {
+	if _, err := NewResolvers([]string{"dns.example.com"}, "", amassnet.LocalAddrs{}); err == nil {
 		t.Error("a pool was built with a host name for a resolver")
 	}
-	if _, err := NewResolvers(nil, "dns.example.com", netip.Addr{}); err == nil {
+	if _, err := NewResolvers(nil, "dns.example.com", amassnet.LocalAddrs{}); err == nil {
 		t.Error("a pool was built with a host name for the wildcard resolver")
 	}
 }
@@ -96,14 +97,14 @@ func TestNewResolversRefusesHostNames(t *testing.T) {
 func TestNewSessionResolversPicksTheQueryAndWildcardResolvers(t *testing.T) {
 	noResolverLimit(t)
 
-	if r, err := NewSessionResolvers(nil, nil, netip.Addr{}); r != nil || err != nil {
+	if r, err := NewSessionResolvers(nil, nil, amassnet.LocalAddrs{}); r != nil || err != nil {
 		t.Fatalf("without settings, NewSessionResolvers = %v, %v; want the default pool", r, err)
 	}
 
 	untrusted, trusted := startTestServer(t), startTestServer(t)
 
 	// The untrusted resolvers take the queries; the trusted one tests for wildcards.
-	r, err := NewSessionResolvers([]string{untrusted.addr}, []string{trusted.addr}, netip.Addr{})
+	r, err := NewSessionResolvers([]string{untrusted.addr}, []string{trusted.addr}, amassnet.LocalAddrs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -121,7 +122,7 @@ func TestNewSessionResolversPicksTheQueryAndWildcardResolvers(t *testing.T) {
 
 	// With only trusted resolvers, they take the queries too.
 	before := trusted.count()
-	r2, err := NewSessionResolvers(nil, []string{trusted.addr}, netip.Addr{})
+	r2, err := NewSessionResolvers(nil, []string{trusted.addr}, amassnet.LocalAddrs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -141,12 +142,12 @@ func TestTheResolverLimitHoldsAcrossPools(t *testing.T) {
 	}
 
 	ts := startTestServer(t)
-	a, err := NewResolvers([]string{ts.addr}, ts.addr, netip.Addr{})
+	a, err := NewResolvers([]string{ts.addr}, ts.addr, amassnet.LocalAddrs{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer a.Stop()
-	b, err := NewResolvers([]string{ts.addr}, ts.addr, netip.Addr{})
+	b, err := NewResolvers([]string{ts.addr}, ts.addr, amassnet.LocalAddrs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -167,11 +168,11 @@ func TestStoppingAPoolLeavesTheSharedResolver(t *testing.T) {
 	noResolverLimit(t)
 
 	ts := startTestServer(t)
-	a, err := NewResolvers([]string{ts.addr}, ts.addr, netip.Addr{})
+	a, err := NewResolvers([]string{ts.addr}, ts.addr, amassnet.LocalAddrs{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := NewResolvers([]string{ts.addr}, ts.addr, netip.Addr{})
+	b, err := NewResolvers([]string{ts.addr}, ts.addr, amassnet.LocalAddrs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -197,7 +198,7 @@ func TestResolversFromTheContext(t *testing.T) {
 
 	noResolverLimit(t)
 	ts := startTestServer(t)
-	r, err := NewResolvers([]string{ts.addr}, ts.addr, netip.Addr{})
+	r, err := NewResolvers([]string{ts.addr}, ts.addr, amassnet.LocalAddrs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -212,7 +213,7 @@ func TestNewSessionResolversLocalAddr(t *testing.T) {
 	noResolverLimit(t)
 
 	ts := startTestServer(t)
-	loopback := netip.MustParseAddr("127.0.0.1")
+	loopback := amassnet.LocalAddrs{V4: netip.MustParseAddr("127.0.0.1")}
 
 	r, err := NewSessionResolvers([]string{ts.addr}, nil, loopback)
 	if err != nil {
@@ -229,7 +230,7 @@ func TestNewSessionResolversLocalAddr(t *testing.T) {
 	}
 
 	// 192.0.2.0/24 is reserved for documentation, so no interface has it
-	if _, err := NewResolvers([]string{ts.addr}, ts.addr, netip.MustParseAddr("192.0.2.1")); err == nil {
+	if _, err := NewResolvers([]string{ts.addr}, ts.addr, amassnet.LocalAddrs{V4: netip.MustParseAddr("192.0.2.1")}); err == nil {
 		t.Error("a pool was built on a local address no interface has")
 	}
 }

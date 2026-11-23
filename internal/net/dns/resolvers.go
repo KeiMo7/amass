@@ -7,7 +7,6 @@ package dns
 import (
 	"context"
 	"fmt"
-	"net/netip"
 	"runtime"
 	"strings"
 	"sync"
@@ -105,19 +104,19 @@ type Resolvers struct {
 
 // NewResolvers builds a pool that sends its queries to the query resolvers
 // and tests for wildcards with the wildcard resolver, from the local
-// address laddr. Without query resolvers it uses DefaultResolvers, without
-// a wildcard resolver DefaultWildcardResolver, and with the zero laddr the
-// engine's local address (see amassnet.LocalAddr). A resolver is an IP
-// address with an optional port; a host name is an error.
-func NewResolvers(query []string, wildcard string, laddr netip.Addr) (*Resolvers, error) {
+// addresses (one per IP version). Without query resolvers it uses
+// DefaultResolvers, without a wildcard resolver DefaultWildcardResolver, and
+// with the zero LocalAddrs the engine's (see amassnet.LocalAddrsFrom). A
+// resolver is an IP address with an optional port; a host name is an error.
+func NewResolvers(query []string, wildcard string, local amassnet.LocalAddrs) (*Resolvers, error) {
 	if len(query) == 0 {
 		query = DefaultResolvers
 	}
 	if strings.TrimSpace(wildcard) == "" {
 		wildcard = DefaultWildcardResolver
 	}
-	if !laddr.IsValid() {
-		laddr = amassnet.LocalAddr(context.Background())
+	if local.IsZero() {
+		local = amassnet.LocalAddrsFrom(context.Background())
 	}
 
 	var servs []types.Nameserver
@@ -135,8 +134,8 @@ func NewResolvers(query []string, wildcard string, laddr netip.Addr) (*Resolvers
 
 	cpus := runtime.NumCPU()
 	sel := selectors.NewSharedRoundRobin(servs...)
-	conns := conn.New(cpus, sel, conn.LocalAddr(laddr))
-	wconns := conn.New(cpus, selectors.NewSharedRoundRobin(ws), conn.LocalAddr(laddr))
+	conns := conn.New(cpus, sel, conn.LocalAddr(local.List()...))
+	wconns := conn.New(cpus, selectors.NewSharedRoundRobin(ws), conn.LocalAddr(local.List()...))
 	if conns == nil || wconns == nil {
 		if conns != nil {
 			conns.Close()
@@ -144,7 +143,7 @@ func NewResolvers(query []string, wildcard string, laddr netip.Addr) (*Resolvers
 		if wconns != nil {
 			wconns.Close()
 		}
-		return nil, fmt.Errorf("the DNS sockets cannot be opened on the local address %s", laddr)
+		return nil, fmt.Errorf("the DNS sockets cannot be opened on %s", local)
 	}
 
 	return &Resolvers{
@@ -156,12 +155,12 @@ func NewResolvers(query []string, wildcard string, laddr netip.Addr) (*Resolvers
 }
 
 // NewSessionResolvers builds the pool for an enumeration's resolver
-// settings and local address: queries go to the untrusted resolvers when
+// settings and local addresses: queries go to the untrusted resolvers when
 // there are any, and otherwise to the trusted ones, and the first trusted
-// resolver tests for wildcards. With no resolvers and the zero laddr, it
-// returns nil, and the session uses Default.
-func NewSessionResolvers(untrusted, trusted []string, laddr netip.Addr) (*Resolvers, error) {
-	if len(untrusted) == 0 && len(trusted) == 0 && !laddr.IsValid() {
+// resolver tests for wildcards. With no resolvers and the zero LocalAddrs,
+// it returns nil, and the session uses Default.
+func NewSessionResolvers(untrusted, trusted []string, local amassnet.LocalAddrs) (*Resolvers, error) {
+	if len(untrusted) == 0 && len(trusted) == 0 && local.IsZero() {
 		return nil, nil
 	}
 
@@ -173,7 +172,7 @@ func NewSessionResolvers(untrusted, trusted []string, laddr netip.Addr) (*Resolv
 	if len(trusted) > 0 {
 		wildcard = trusted[0]
 	}
-	return NewResolvers(query, wildcard, laddr)
+	return NewResolvers(query, wildcard, local)
 }
 
 // Exchange sends the query to a resolver in the pool and returns its answer.
@@ -206,7 +205,7 @@ var (
 // on the engine's local address.
 func Default() *Resolvers {
 	defaultOnce.Do(func() {
-		defaultResolvers, _ = NewResolvers(nil, "", netip.Addr{})
+		defaultResolvers, _ = NewResolvers(nil, "", amassnet.LocalAddrs{})
 	})
 	return defaultResolvers
 }

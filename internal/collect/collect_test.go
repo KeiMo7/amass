@@ -634,3 +634,46 @@ func TestFinishersRunWhenARunEnds(t *testing.T) {
 		t.Fatalf("finished states %v", states)
 	}
 }
+
+func TestPlanInterface(t *testing.T) {
+	sel := graph.AssetSelector{Type: "FQDN", Field: "name", Value: "example.org"}
+
+	plain := NewPlan(sel, Passive)
+	p := NewPlanWith(sel, Passive, Options{Interface: " eth1 "})
+	if !p.Approvable() || p.Interface != "eth1" {
+		t.Fatalf("plan with an interface: %+v", p)
+	}
+	if p.ID == plain.ID {
+		t.Error("the plan_id does not cover the interface")
+	}
+	if !strings.Contains(p.Summary(), "interface eth1") || !strings.Contains(p.Effects, "eth1") {
+		t.Errorf("the approval text does not name the interface: %q / %q", p.Summary(), p.Effects)
+	}
+
+	for _, spec := range []string{"fe80::1%eth0", "192.0.2.10", "en0"} {
+		if q := NewPlanWith(sel, Active, Options{Interface: spec}); !q.Approvable() {
+			t.Errorf("interface %q was refused: %s", spec, q.Reason)
+		}
+	}
+	for _, spec := range []string{"eth0; rm -rf /", "-iface", strings.Repeat("a", 65)} {
+		if q := NewPlanWith(sel, Passive, Options{Interface: spec}); q.Status != StatusUnsupported {
+			t.Errorf("interface %q was accepted", spec)
+		}
+	}
+
+	cfg := config.NewConfig()
+	cfg.Interface = "eth0"
+	if _, err := configure(cfg, p); err != nil || cfg.Interface != "eth1" {
+		t.Errorf("configure: interface %q, %v; want the plan's eth1", cfg.Interface, err)
+	}
+	cfg.Interface = "eth0"
+	if _, err := configure(cfg, plain); err != nil || cfg.Interface != "eth0" {
+		t.Errorf("configure without a plan interface: %q, %v; want the configuration's eth0", cfg.Interface, err)
+	}
+
+	tampered := p
+	tampered.Interface = "eth2"
+	if tampered.Approvable() {
+		t.Error("a plan whose interface changed after it was shown is still approvable")
+	}
+}

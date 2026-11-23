@@ -17,7 +17,7 @@ import (
 // The Bulk client waits minutes for a slow index to start answering, where the
 // General client gives up after seconds; both are paced.
 func TestBulkClientWaitsForSlowIndexes(t *testing.T) {
-	c, err := NewClients(4, netip.Addr{})
+	c, err := NewClients(4, amassnet.LocalAddrs{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -54,15 +54,16 @@ func TestBoundDialUsesTheSessionAddress(t *testing.T) {
 	}()
 
 	// 192.0.2.0/24 is reserved for documentation, so no interface has it
-	other := amassnet.WithLocalAddr(context.Background(), netip.MustParseAddr("192.0.2.1"))
+	nowhere := amassnet.LocalAddrs{V4: netip.MustParseAddr("192.0.2.1")}
+	other := amassnet.WithLocalAddrs(context.Background(), nowhere)
 
-	c, err := boundDial(time.Second, netip.MustParseAddr("127.0.0.1"))(other, "tcp", l.Addr().String())
+	c, err := boundDial(time.Second, amassnet.LocalAddrs{V4: netip.MustParseAddr("127.0.0.1")})(other, "tcp", l.Addr().String())
 	if err != nil {
 		t.Fatalf("the bound dial did not use the session address: %v", err)
 	}
 	_ = c.Close()
 
-	if c, err := boundDial(time.Second, netip.Addr{})(other, "tcp", l.Addr().String()); err == nil {
+	if c, err := boundDial(time.Second, amassnet.LocalAddrs{})(other, "tcp", l.Addr().String()); err == nil {
 		_ = c.Close()
 		t.Error("without a session address, the context's address was not used")
 	}

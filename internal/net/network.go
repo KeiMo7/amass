@@ -7,6 +7,7 @@ package net
 import (
 	"bytes"
 	"context"
+	"errors"
 	"fmt"
 	"math/big"
 	"net"
@@ -78,120 +79,219 @@ func (r Semaphore) Release() {
 
 type DialContext func(ctx context.Context, network, addr string) (net.Conn, error)
 
-// NewDialContext returns a dial function that sends from the local address
-// for its context (see LocalAddr). A destination of the other IP version
-// than the local address cannot be reached.
+// NewDialContext returns a dial function that sends from the local
+// addresses for its context (see LocalAddrsFrom): an IPv4 destination from
+// the IPv4 address and an IPv6 destination from the IPv6 address. When the
+// context's interface lacks an address of a destination's IP version, that
+// destination is not reached at all, rather than through another interface.
 func NewDialContext(timeout time.Duration) DialContext {
 	return func(ctx context.Context, network, address string) (net.Conn, error) {
-		d := &net.Dialer{
+		d := net.Dialer{
 			Timeout:   timeout,
 			KeepAlive: 30 * time.Second,
 		}
 
-		if la := LocalAddr(ctx); la.IsValid() {
-			// port 0 lets the kernel choose an ephemeral source port
-			ap := netip.AddrPortFrom(la, 0)
-			if strings.HasPrefix(network, "tcp") {
-				d.LocalAddr = net.TCPAddrFromAddrPort(ap)
-			} else if strings.HasPrefix(network, "udp") {
-				d.LocalAddr = net.UDPAddrFromAddrPort(ap)
-			}
+		local := LocalAddrsFrom(ctx)
+		if local.IsZero() {
+			return d.DialContext(ctx, network, address)
 		}
-
-		return d.DialContext(ctx, network, address)
+		return dialFrom(ctx, d, local, network, address)
 	}
 }
 
-// engineAddr is the local address the engine's traffic leaves from when a
-// context names none.
-var engineAddr atomic.Pointer[netip.Addr]
+// dialFrom dials address from the local address of each destination's IP
+// version, trying the destination's addresses in the order the resolver
+// returns them.
+func dialFrom(ctx context.Context, d net.Dialer, local LocalAddrs, network, address string) (net.Conn, error) {
+	host, port, err := net.SplitHostPort(address)
+	if err != nil {
+		return nil, err
+	}
 
-// SetLocalAddr sets the local address the engine's traffic leaves from when
-// a context names none. The zero Addr leaves the choice to the system.
-func SetLocalAddr(addr netip.Addr) {
-	engineAddr.Store(&addr)
+	var dsts []netip.Addr
+	if ip, err := netip.ParseAddr(host); err == nil {
+		dsts = []netip.Addr{ip.Unmap()}
+	} else if dsts, err = net.DefaultResolver.LookupNetIP(ctx, "ip", host); err != nil {
+		return nil, err
+	}
+
+	var errs []error
+	for _, dst := range dsts {
+		dst = dst.Unmap()
+		la, ok := local.For(dst)
+		if !ok {
+			errs = append(errs, fmt.Errorf("%s: the local interface has no IPv%d address", dst, ipVersion(dst)))
+			continue
+		}
+
+		ap := netip.AddrPortFrom(la, 0) // port 0 lets the kernel choose the source port
+		if strings.HasPrefix(network, "udp") {
+			d.LocalAddr = net.UDPAddrFromAddrPort(ap)
+		} else {
+			d.LocalAddr = net.TCPAddrFromAddrPort(ap)
+		}
+
+		c, err := d.DialContext(ctx, network, net.JoinHostPort(dst.String(), port))
+		if err == nil {
+			return c, nil
+		}
+		errs = append(errs, err)
+		if ctx.Err() != nil {
+			break
+		}
+	}
+
+	if len(errs) == 0 {
+		return nil, fmt.Errorf("no address found for %s", host)
+	}
+	return nil, errors.Join(errs...)
 }
 
-type localAddrKey struct{}
+func ipVersion(ip netip.Addr) int {
+	if ip.Is4() {
+		return 4
+	}
+	return 6
+}
 
-// WithLocalAddr returns a copy of ctx that names the local address for the
-// traffic made with it. The zero Addr returns ctx itself.
-func WithLocalAddr(ctx context.Context, addr netip.Addr) context.Context {
-	if !addr.IsValid() {
+// LocalAddrs are the local addresses traffic leaves from, one per IP
+// version, both from the same network interface. The zero LocalAddrs leaves
+// the choice to the system; otherwise a destination whose IP version has no
+// address is not reached.
+type LocalAddrs struct {
+	V4 netip.Addr
+	V6 netip.Addr
+}
+
+// IsZero reports whether the addresses leave the choice to the system.
+func (l LocalAddrs) IsZero() bool {
+	return !l.V4.IsValid() && !l.V6.IsValid()
+}
+
+// For returns the local address for a destination's IP version.
+func (l LocalAddrs) For(dst netip.Addr) (netip.Addr, bool) {
+	la := l.V6
+	if dst.Unmap().Is4() {
+		la = l.V4
+	}
+	return la, la.IsValid()
+}
+
+// List returns the valid addresses, IPv4 first.
+func (l LocalAddrs) List() []netip.Addr {
+	var out []netip.Addr
+	for _, a := range []netip.Addr{l.V4, l.V6} {
+		if a.IsValid() {
+			out = append(out, a)
+		}
+	}
+	return out
+}
+
+func (l LocalAddrs) String() string {
+	parts := make([]string, 0, 2)
+	for _, a := range l.List() {
+		parts = append(parts, a.String())
+	}
+	if len(parts) == 0 {
+		return "any local address"
+	}
+	return strings.Join(parts, " and ")
+}
+
+// engineAddrs are the local addresses the engine's traffic leaves from when
+// a context names none.
+var engineAddrs atomic.Pointer[LocalAddrs]
+
+// SetLocalAddrs sets the local addresses the engine's traffic leaves from
+// when a context names none. The zero LocalAddrs leaves the choice to the
+// system.
+func SetLocalAddrs(l LocalAddrs) {
+	engineAddrs.Store(&l)
+}
+
+type localAddrsKey struct{}
+
+// WithLocalAddrs returns a copy of ctx that names the local addresses for
+// the traffic made with it. The zero LocalAddrs returns ctx itself.
+func WithLocalAddrs(ctx context.Context, l LocalAddrs) context.Context {
+	if l.IsZero() {
 		return ctx
 	}
-	return context.WithValue(ctx, localAddrKey{}, addr)
+	return context.WithValue(ctx, localAddrsKey{}, l)
 }
 
-// LocalAddr returns the local address for the traffic made with ctx: the
-// one ctx names, else the engine's, else the zero Addr, which leaves the
-// choice to the system.
-func LocalAddr(ctx context.Context) netip.Addr {
+// LocalAddrsFrom returns the local addresses for the traffic made with ctx:
+// the ones ctx names, else the engine's, else the zero LocalAddrs, which
+// leaves the choice to the system.
+func LocalAddrsFrom(ctx context.Context) LocalAddrs {
 	if ctx != nil {
-		if a, ok := ctx.Value(localAddrKey{}).(netip.Addr); ok && a.IsValid() {
-			return a
+		if l, ok := ctx.Value(localAddrsKey{}).(LocalAddrs); ok && !l.IsZero() {
+			return l
 		}
 	}
-	if a := engineAddr.Load(); a != nil {
-		return *a
+	if l := engineAddrs.Load(); l != nil {
+		return *l
 	}
-	return netip.Addr{}
+	return LocalAddrs{}
 }
 
-// InterfaceAddr returns the local address for the network interface that
+// InterfaceAddrs returns the local addresses for the network interface that
 // spec names: an interface name, such as eth0, or one of the host's own IP
-// addresses. An interface's first global unicast IPv4 address is preferred,
-// then its first global unicast IPv6 address. An empty spec returns the zero
-// Addr, which leaves the choice to the system.
-func InterfaceAddr(spec string) (netip.Addr, error) {
+// addresses. For a name, they are the interface's first global unicast IPv4
+// and IPv6 addresses; for an address, that address alone. An empty spec
+// returns the zero LocalAddrs, which leaves the choice to the system.
+func InterfaceAddrs(spec string) (LocalAddrs, error) {
 	spec = strings.TrimSpace(spec)
 	if spec == "" {
-		return netip.Addr{}, nil
+		return LocalAddrs{}, nil
 	}
 
 	if ip, err := netip.ParseAddr(spec); err == nil {
 		addrs, err := net.InterfaceAddrs()
 		if err != nil {
-			return netip.Addr{}, err
+			return LocalAddrs{}, err
 		}
 
 		ip = ip.Unmap()
 		for _, a := range addrs {
-			if local, ok := interfaceIP(a); ok && local == ip {
-				return ip, nil
+			if local, ok := interfaceIP(a); ok && local == ip.WithZone("") {
+				if ip.Is4() {
+					return LocalAddrs{V4: ip}, nil
+				}
+				return LocalAddrs{V6: ip}, nil
 			}
 		}
-		return netip.Addr{}, fmt.Errorf("the address %s is not on a network interface of this host", spec)
+		return LocalAddrs{}, fmt.Errorf("the address %s is not on a network interface of this host", spec)
 	}
 
 	ifc, err := net.InterfaceByName(spec)
 	if err != nil {
-		return netip.Addr{}, fmt.Errorf("the network interface %q: %w", spec, err)
+		return LocalAddrs{}, fmt.Errorf("the network interface %q: %w", spec, err)
 	}
 
 	addrs, err := ifc.Addrs()
 	if err != nil {
-		return netip.Addr{}, fmt.Errorf("the network interface %q: %w", spec, err)
+		return LocalAddrs{}, fmt.Errorf("the network interface %q: %w", spec, err)
 	}
 
-	var v6 netip.Addr
+	var l LocalAddrs
 	for _, a := range addrs {
 		ip, ok := interfaceIP(a)
 		if !ok || !ip.IsGlobalUnicast() {
 			continue
 		}
-		if ip.Is4() {
-			return ip, nil
-		}
-		if !v6.IsValid() {
-			v6 = ip
+		if ip.Is4() && !l.V4.IsValid() {
+			l.V4 = ip
+		} else if ip.Is6() && !l.V6.IsValid() {
+			l.V6 = ip
 		}
 	}
 
-	if v6.IsValid() {
-		return v6, nil
+	if l.IsZero() {
+		return LocalAddrs{}, fmt.Errorf("the network interface %q has no global unicast address", spec)
 	}
-	return netip.Addr{}, fmt.Errorf("the network interface %q has no global unicast address", spec)
+	return l, nil
 }
 
 // interfaceIP returns the IP address of an interface address.

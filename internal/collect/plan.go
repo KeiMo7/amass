@@ -58,6 +58,7 @@ type Plan struct {
 	Expand           bool                `json:"expand,omitempty"`
 	BruteForce       bool                `json:"brute_force,omitempty"`
 	Alterations      bool                `json:"alterations,omitempty"`
+	Interface        string              `json:"interface,omitempty"`
 	Methods          []string            `json:"methods,omitempty"`
 	Effects          string              `json:"effects,omitempty"`
 	RequiresApproval bool                `json:"requires_approval"`
@@ -114,7 +115,16 @@ type Options struct {
 	// Alterations turns on name alterations (as amass enum does with -alts).
 	// Like brute forcing it is off unless requested.
 	Alterations bool
+	// Interface names the network interface on the engine's host that the
+	// run's traffic leaves through: an interface name or one of the host's IP
+	// addresses (as amass enum does with -iface). The engine checks that it
+	// exists when the run starts; empty uses the engine's own setting.
+	Interface string
 }
+
+// interfaceSpec matches an interface name or an IP address, with an IPv6
+// zone, as an approval may name it.
+var interfaceSpec = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:%-]{0,63}$`)
 
 // MaxAlso is how many targets a plan may add beside its own.
 const MaxAlso = 25
@@ -148,6 +158,11 @@ func NewPlanWith(target graph.AssetSelector, mode Mode, opts Options) Plan {
 		plan.Reason = reason
 		return plan
 	}
+	iface := strings.TrimSpace(opts.Interface)
+	if iface != "" && !interfaceSpec.MatchString(iface) {
+		plan.Reason = "the interface must be an interface name, such as eth0, or an IP address"
+		return plan
+	}
 	if len(opts.Also) > MaxAlso {
 		plan.Reason = fmt.Sprintf("a plan adds at most %d targets", MaxAlso)
 		return plan
@@ -175,6 +190,7 @@ func NewPlanWith(target graph.AssetSelector, mode Mode, opts Options) Plan {
 	plan.Expand = opts.Expand
 	plan.BruteForce = mode == Active && opts.BruteForce
 	plan.Alterations = mode == Active && opts.Alterations
+	plan.Interface = iface
 	plan.Mode = mode
 	plan.Status = StatusApprovalRequired
 	plan.ID = plan.expectedID()
@@ -223,6 +239,10 @@ func NewPlanWith(target graph.AssetSelector, mode Mode, opts Options) Plan {
 		plan.Effects += "."
 		plan.Reason = "Collection of " + what + " and of what the engine attributes to their organization while " +
 			"it runs, so the run may reach domains and networks not listed here."
+	}
+	if plan.Interface != "" {
+		plan.Effects += " Its traffic leaves through the network interface " + plan.Interface +
+			" on the engine's host."
 	}
 
 	return plan
@@ -359,7 +379,7 @@ func PlanID(scopeType, scopeValue string, mode Mode) string {
 // one exact target, as before, and otherwise one that also covers the added
 // targets and scope expansion.
 func (p Plan) expectedID() string {
-	if len(p.Also) == 0 && !p.Expand {
+	if len(p.Also) == 0 && !p.Expand && p.Interface == "" {
 		return PlanID(p.ScopeType, p.ScopeValue, p.Mode)
 	}
 
@@ -370,6 +390,9 @@ func (p Plan) expectedID() string {
 	}
 	if p.Expand {
 		b.WriteString("\x00expand")
+	}
+	if p.Interface != "" {
+		b.WriteString("\x00interface\x00" + p.Interface)
 	}
 
 	sum := sha256.Sum256([]byte(b.String()))
@@ -401,6 +424,9 @@ func (p Plan) Summary() string {
 	}
 	if p.Expand {
 		out += ", allowing scope expansion"
+	}
+	if p.Interface != "" {
+		out += ", through interface " + p.Interface
 	}
 
 	return out

@@ -270,3 +270,51 @@ func TestMatcherIPv4MappedV6(t *testing.T) {
 	require.True(t, ok)
 	assert.Equal(t, "aws", got.ProviderKey)
 }
+
+// GitHub's hosted Actions runners and Codespaces run in Azure, so the
+// catalog's GitHub feed leaves those ranges to Azure.
+func TestParseGitHubExcludesAnotherProvidersServices(t *testing.T) {
+	data := []byte(`{
+		"web": ["140.82.112.0/20"],
+		"actions": ["40.88.0.0/16", "20.232.0.0/16"],
+		"codespaces": ["20.42.0.0/16"]
+	}`)
+
+	var feed Feed
+	for _, p := range Providers() {
+		if p.Key == "github" {
+			feed = p.Feeds[0]
+		}
+	}
+	require.NotEmpty(t, feed.ExcludeServices, "the catalog's GitHub feed excludes no services")
+
+	got, err := ParseFeed(feed, data)
+	require.NoError(t, err)
+	require.Len(t, got, 1)
+	assert.Equal(t, "140.82.112.0/20", got[0].Prefix.String())
+}
+
+func TestFeedLink(t *testing.T) {
+	var feed Feed
+	for _, p := range Providers() {
+		if p.Key == "azure" {
+			feed = p.Feeds[0]
+		}
+	}
+	require.NotEmpty(t, feed.LinkPattern, "the catalog's Azure feed has no link pattern")
+
+	page := []byte(`<html><a href="https://download.microsoft.com/download/7/1/d/71d86715-5596-4529-9b13-da13a5de5b63/` +
+		`ServiceTags_Public_20261116.json" class="mscom-link">Download</a></html>`)
+	link, err := FeedLink(feed, page)
+	require.NoError(t, err)
+	assert.Equal(t, "https://download.microsoft.com/download/7/1/d/71d86715-5596-4529-9b13-da13a5de5b63/"+
+		"ServiceTags_Public_20261116.json", link)
+
+	_, err = FeedLink(feed, []byte("<html>no file here</html>"))
+	assert.Error(t, err)
+
+	// A feed without a pattern is fetched from its own url.
+	link, err = FeedLink(Feed{URL: "https://example.com/ranges.json"}, nil)
+	require.NoError(t, err)
+	assert.Equal(t, "https://example.com/ranges.json", link)
+}

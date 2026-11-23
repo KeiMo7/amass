@@ -24,6 +24,8 @@ import (
 	"fmt"
 	"io"
 	"net/netip"
+	"regexp"
+	"slices"
 	"sort"
 	"strings"
 	"sync"
@@ -57,6 +59,32 @@ type Feed struct {
 	Format     string `json:"format"`
 	HasRegion  bool   `json:"has_region"`
 	HasService bool   `json:"has_service"`
+	// LinkPattern, when set, means URL is a page that links to the feed
+	// file, whose name changes with each release (Microsoft's weekly
+	// service tags file): the first link on the page matching the pattern
+	// is the file to fetch (FeedLink).
+	LinkPattern string `json:"link_pattern,omitempty"`
+	// ExcludeServices are services the feed lists that run on another
+	// provider's network, so their ranges are that provider's, not this
+	// one's (GitHub's hosted Actions runners and Codespaces run in Azure).
+	ExcludeServices []string `json:"exclude_services,omitempty"`
+}
+
+// FeedLink returns the feed file a page links to: the first URL on the page
+// that matches the feed's LinkPattern.
+func FeedLink(f Feed, page []byte) (string, error) {
+	if f.LinkPattern == "" {
+		return f.URL, nil
+	}
+	re, err := regexp.Compile(f.LinkPattern)
+	if err != nil {
+		return "", fmt.Errorf("cloudranges: the link pattern of %s: %w", f.URL, err)
+	}
+	link := re.Find(page)
+	if link == nil {
+		return "", fmt.Errorf("cloudranges: %s links to no feed file", f.URL)
+	}
+	return string(link), nil
 }
 
 // Prefix is one attributed CIDR read from a feed.
@@ -189,15 +217,20 @@ func ParseFeed(f Feed, data []byte) ([]Prefix, error) {
 	if err != nil {
 		return nil, fmt.Errorf("cloudranges: %s feed: %w", f.Format, err)
 	}
-	for i := range out {
+	kept := out[:0]
+	for _, p := range out {
+		if slices.ContainsFunc(f.ExcludeServices, func(s string) bool { return strings.EqualFold(s, p.Service) }) {
+			continue
+		}
 		if !f.HasRegion {
-			out[i].Region = ""
+			p.Region = ""
 		}
 		if !f.HasService {
-			out[i].Service = ""
+			p.Service = ""
 		}
+		kept = append(kept, p)
 	}
-	return out, nil
+	return kept, nil
 }
 
 // Match is the attribution of an address to a provider.

@@ -188,3 +188,33 @@ func TestCheckAttributesAddressesOfInScopeNames(t *testing.T) {
 	require.Len(t, edges, 1, "only the address an in-scope name resolves to should be attributed")
 	assert.Equal(t, hosted.ID, edges[0].ToEntity.ID)
 }
+
+// A name that aliases a provider's name (a CNAME to a CDN host) is hosted at
+// the provider's address, so that address is attributed too.
+func TestCheckAttributesAddressesBehindAnAlias(t *testing.T) {
+	sess := plugintest.NewSession(t)
+	sess.TTL(60)
+	sess.Scope().AddDomain("example.com")
+	p := testPlugin()
+	p.fetch = func(_ context.Context, _ et.Session, url string) ([]byte, error) {
+		if url == "https://ip-ranges.amazonaws.com/ip-ranges.json" {
+			return []byte(awsFeed), nil
+		}
+		return nil, errors.New("unreachable in test")
+	}
+
+	www := sess.Asset(t, &oamdns.FQDN{Name: "www.example.com"})
+	edge := sess.Asset(t, &oamdns.FQDN{Name: "d111.cloudfront.net"})
+	ip := sess.Asset(t, &oamnet.IPAddress{Address: netip.MustParseAddr("13.32.1.2"), Type: "IPv4"})
+	sess.Edge(t, www, &oamdns.BasicDNSRelation{Name: "dns_record", Header: oamdns.RRHeader{RRType: 5, Class: 1}}, edge)
+	sess.Edge(t, edge, &oamdns.BasicDNSRelation{Name: "dns_record", Header: oamdns.RRHeader{RRType: 1, Class: 1}}, ip)
+
+	require.NoError(t, p.check(&et.Event{Entity: ip, Session: sess, Dispatcher: &plugintest.Dispatcher{}}))
+
+	nb, err := sess.DB().CreateAsset(context.Background(), &oamnet.Netblock{Type: "IPv4",
+		CIDR: netip.MustParsePrefix("13.32.0.0/15")})
+	require.NoError(t, err)
+	edges, err := sess.DB().OutgoingEdges(context.Background(), nb, time.Time{}, "provider")
+	require.NoError(t, err)
+	assert.Len(t, edges, 1, "the address behind the alias was not attributed")
+}

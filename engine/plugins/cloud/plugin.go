@@ -158,7 +158,7 @@ func (p *plugin) ensureMatcher(sess et.Session) (*cloudranges.Matcher, error) {
 				return nil, err
 			}
 
-			data, err := p.fetch(sess.Ctx(), sess, feed.URL)
+			data, err := p.fetchFeed(sess, feed)
 			if err != nil {
 				p.log.Warn(fmt.Sprintf("cloud feed %s unreachable: %v", feed.URL, err))
 				continue
@@ -227,6 +227,20 @@ func (p *plugin) record(e *et.Event, match cloudranges.Match) error {
 // httpFetch fetches a feed over the session's shared HTTP client, paced by
 // the plugin's rate limiter and counted by the network semaphore like any
 // other outbound request.
+// fetchFeed returns a feed's bytes, following the link on the feed's page
+// to the file when the feed's url is a page (cloudranges.FeedLink).
+func (p *plugin) fetchFeed(sess et.Session, feed cloudranges.Feed) ([]byte, error) {
+	data, err := p.fetch(sess.Ctx(), sess, feed.URL)
+	if err != nil || feed.LinkPattern == "" {
+		return data, err
+	}
+	link, err := cloudranges.FeedLink(feed, data)
+	if err != nil {
+		return nil, err
+	}
+	return p.fetch(sess.Ctx(), sess, link)
+}
+
 func (p *plugin) httpFetch(ctx context.Context, sess et.Session, url string) ([]byte, error) {
 	_ = support.WaitLimit(ctx, p.rlimit)
 	sess.NetSem().Acquire()

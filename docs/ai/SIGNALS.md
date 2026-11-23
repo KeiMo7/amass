@@ -168,13 +168,13 @@ Amass proposes that an organization owns an asset it has not been attributed to 
 
 **Guards:**
 
-- The issuing certificate must be stored, and no certificate up the chain (to four levels) may name a public certificate authority (this signal's public_issuers). Public intermediates with short names chain to well-known public roots, so the walk finds them; a certificate whose chain is unknown never counts.
+- The issuing certificate must be stored, and no certificate up the chain (to four levels) may name a public certificate authority (the authorities in certificates.json). Public intermediates with short names chain to well-known public roots, so the walk finds them; a certificate whose chain is unknown never counts.
 - An issuing key shared by more than 50 certificates never counts.
 
 **Can still mislead when:**
 
 - A managed PKI provider can operate one private CA for several customers.
-- A public root missing from public_issuers would wrongly count until it is added.
+- A public root missing from the authorities in certificates.json would wrongly count until it is added.
 
 <a id="security_txt_reference"></a>
 ## security.txt points to the organization

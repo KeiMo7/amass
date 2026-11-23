@@ -267,8 +267,7 @@ func TestPublicIssuersAreNotPrivateCAs(t *testing.T) {
 		public bool
 	}{{"R3", true}, {"Let's Encrypt Authority X3", true}, {"Partner3 Root", false}, {"Colgate Internal CA", false},
 		{"DigiCert Global G2 TLS RSA SHA256 2020 CA1", true}} {
-		def, _ := lens.LookupOwnershipSignal("private_ca_issuance")
-		if got := lens.PublicIssuer(tc.issuer, def.Params.PublicIssuers); got != tc.public {
+		if got := lens.PublicIssuer(tc.issuer); got != tc.public {
 			t.Errorf("publicIssuer(%q) = %v", tc.issuer, got)
 		}
 	}

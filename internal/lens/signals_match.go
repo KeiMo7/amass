@@ -385,10 +385,10 @@ func (g *gapSearch) certificateSignals(cert graph.Asset) error {
 		if value == "" || !g.read() {
 			continue
 		}
-		if len(def.Params.PublicIssuers) > 0 {
+		if def.Params.PrivateIssuer {
 			// The issuing key must belong to a private CA: its chain is stored
 			// and names no public certificate authority.
-			private, err := g.privateChain(cert, def.Params.PublicIssuers)
+			private, err := g.privateChain(cert)
 			if err != nil {
 				return err
 			}
@@ -442,12 +442,12 @@ const maxChainDepth = 4
 // authority. Public intermediates go by short codes (R11, WE1) that a list
 // cannot keep up with, but they chain to well-known roots (ISRG Root X1, GTS
 // Root R4), so the walk finds them. An unknown chain is not private.
-func (g *gapSearch) privateChain(cert graph.Asset, public []string) (bool, error) {
+func (g *gapSearch) privateChain(cert graph.Asset) (bool, error) {
 	cur := cert
 	issued := false
 	for depth := 0; depth < maxChainDepth; depth++ {
-		if PublicIssuer(graph.ContentString(cur, "issuer_common_name"), public) ||
-			(cur.ID != cert.ID && PublicIssuer(graph.ContentString(cur, "subject_common_name"), public)) {
+		if PublicIssuer(graph.ContentString(cur, "issuer_common_name")) ||
+			(cur.ID != cert.ID && PublicIssuer(graph.ContentString(cur, "subject_common_name"))) {
 			return false, nil
 		}
 
@@ -472,28 +472,6 @@ func (g *gapSearch) privateChain(cert graph.Asset, public []string) (bool, error
 	}
 
 	return issued, nil
-}
-
-// PublicIssuer reports whether an issuer common name names a public
-// certificate authority. Entries of three characters or fewer (Let's
-// Encrypt's R3, E5) must match the whole name; longer ones match anywhere.
-func PublicIssuer(issuer string, public []string) bool {
-	issuer = strings.ToLower(strings.TrimSpace(issuer))
-	if issuer == "" || len(public) == 0 {
-		return false
-	}
-	for _, p := range public {
-		p = strings.ToLower(p)
-		if len(strings.TrimSpace(p)) <= 3 {
-			if issuer == strings.TrimSpace(p) {
-				return true
-			}
-		} else if strings.Contains(issuer, p) {
-			return true
-		}
-	}
-
-	return false
 }
 
 // HostWithin reports whether host is domain or a name below it.

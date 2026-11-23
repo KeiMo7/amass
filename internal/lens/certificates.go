@@ -120,7 +120,12 @@ type certificateRules struct {
 		from       time.Time
 	} `json:"max_validity"`
 	MaxValiditySource string `json:"max_validity_source"`
-	MarkCertificates  struct {
+	Authorities       []struct {
+		Name    string   `json:"name"`
+		Match   []string `json:"match"`
+		Issuers []string `json:"issuers"`
+	} `json:"authorities"`
+	MarkCertificates struct {
 		Usage             string `json:"usage"`
 		SubjectLabel      string `json:"subject_label"`
 		OrganizationLabel string `json:"organization_label"`
@@ -351,6 +356,31 @@ func parseCAA(s string) (tag, value string, ok bool) {
 	return strings.ToLower(fields[1]), strings.Trim(fields[2], `"`), true
 }
 
+// CertificateAuthority returns the public certificate authority an issuer
+// name is (its organization, or the common name of the issuing certificate,
+// such as Let's Encrypt's R10), from the certificates catalog's authorities,
+// and whether it is one.
+func CertificateAuthority(issuer string) (string, bool) {
+	name := strings.ToLower(strings.TrimSpace(issuer))
+	if name == "" {
+		return "", false
+	}
+	for _, a := range loadCertificateRules().Authorities {
+		if slices.Contains(a.Issuers, name) ||
+			slices.ContainsFunc(a.Match, func(m string) bool { return strings.Contains(name, m) }) {
+			return a.Name, true
+		}
+	}
+	return "", false
+}
+
+// PublicIssuer reports whether an issuer name names a public certificate
+// authority (CertificateAuthority).
+func PublicIssuer(issuer string) bool {
+	_, ok := CertificateAuthority(issuer)
+	return ok
+}
+
 // certificate reads one certificate's names, services and issuer and
 // returns what stands out about it.
 func (s *scope) certificate(cert graph.Asset, rules certificateRules) ([]CertificateFinding, string, error) {
@@ -388,6 +418,9 @@ func (s *scope) certificate(cert graph.Asset, rules certificateRules) ([]Certifi
 	}
 	if issuerParty == "" {
 		issuerParty = issuer
+	}
+	if ca, ok := CertificateAuthority(issuerParty); ok {
+		issuerParty = ca
 	}
 	if issuerParty == "" {
 		issuerParty = "unknown issuer"

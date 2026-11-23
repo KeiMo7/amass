@@ -59,9 +59,12 @@ var signalMatchers = map[string]bool{matchSharedAttribute: true, matchInfrastruc
 
 // SignalParams configures a signal's matcher.
 type SignalParams struct {
-	TXTPrefixes   []string `json:"txt_prefixes,omitempty"`
-	Attribute     string   `json:"attribute,omitempty"`
-	PublicIssuers []string `json:"public_issuers,omitempty"`
+	TXTPrefixes []string `json:"txt_prefixes,omitempty"`
+	Attribute   string   `json:"attribute,omitempty"`
+	// PrivateIssuer requires the issuing certificate to belong to a private
+	// CA: no certificate up its chain names a public certificate authority
+	// (CertificateAuthority).
+	PrivateIssuer bool     `json:"private_issuer,omitempty"`
 	RRTypes       []int    `json:"rr_types,omitempty"`
 	Labels        []string `json:"labels,omitempty"`
 	Headers       []string `json:"headers,omitempty"`

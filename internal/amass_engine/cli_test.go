@@ -11,6 +11,8 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+
+	amassdns "github.com/owasp-amass/amass/v5/internal/net/dns"
 )
 
 func TestNewFlagset(t *testing.T) {
@@ -43,5 +45,48 @@ func TestSelectLoggerWritesToTheLogDir(t *testing.T) {
 	data, err := os.ReadFile(filepath.Join(dir, entries[0].Name()))
 	if err != nil || !strings.Contains(string(data), "engine started") {
 		t.Errorf("log file = %q, %v", data, err)
+	}
+}
+
+func TestResolverQPS(t *testing.T) {
+	env := func(v string, set bool) func(string) (string, bool) {
+		return func(key string) (string, bool) {
+			if key != ResolverQPSEnv {
+				return "", false
+			}
+			return v, set
+		}
+	}
+
+	tests := []struct {
+		name  string
+		flag  int
+		env   func(string) (string, bool)
+		want  int
+		fails bool
+	}{
+		{"the default", -1, env("", false), amassdns.DefaultResolverQPS, false},
+		{"an empty variable", -1, env(" ", true), amassdns.DefaultResolverQPS, false},
+		{"the variable", -1, env("40", true), 40, false},
+		{"the flag over the variable", 8, env("40", true), 8, false},
+		{"no limit", 0, env("40", true), 0, false},
+		{"a bad variable", -1, env("fast", true), 0, true},
+		{"a negative variable", -1, env("-3", true), 0, true},
+	}
+	for _, tt := range tests {
+		got, err := resolverQPS(tt.flag, tt.env)
+		if (err != nil) != tt.fails || (!tt.fails && got != tt.want) {
+			t.Errorf("%s: resolverQPS = %d, %v; want %d", tt.name, got, err, tt.want)
+		}
+	}
+
+	var args Args
+	fs := NewFlagset(&args, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	if err := fs.Parse(nil); err != nil || args.Options.ResolverQPS != -1 {
+		t.Errorf("without the flag, ResolverQPS = %d, %v", args.Options.ResolverQPS, err)
+	}
+	if err := fs.Parse([]string{"-resolver-qps", "25"}); err != nil || args.Options.ResolverQPS != 25 {
+		t.Errorf("-resolver-qps 25 gave %d, %v", args.Options.ResolverQPS, err)
 	}
 }

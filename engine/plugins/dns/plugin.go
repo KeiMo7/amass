@@ -10,7 +10,6 @@ import (
 	"sync"
 	"time"
 
-	"github.com/miekg/dns"
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	amassdb "github.com/owasp-amass/amass/v5/internal/db"
@@ -58,15 +57,7 @@ func (d *dnsPlugin) Name() string {
 func (d *dnsPlugin) Start(r et.Registry) error {
 	d.log = r.Log().WithGroup("plugin").With("name", d.name)
 
-	cname := d.name + "-CNAME"
-	d.cname = &dnsCNAME{
-		name:   cname,
-		plugin: d,
-		source: &et.Source{
-			Name:       cname,
-			Confidence: 100,
-		},
-	}
+	d.cname = newCNAME(d)
 	if err := r.RegisterHandler(&et.Handler{
 		Plugin:       d,
 		Name:         d.cname.name,
@@ -80,16 +71,7 @@ func (d *dnsPlugin) Start(r et.Registry) error {
 		return err
 	}
 
-	ipname := d.name + "-IP"
-	d.ip = &dnsIP{
-		name:    ipname,
-		queries: []uint16{dns.TypeA, dns.TypeAAAA},
-		plugin:  d,
-		source: &et.Source{
-			Name:       ipname,
-			Confidence: 100,
-		},
-	}
+	d.ip = newIP(d)
 	if err := r.RegisterHandler(&et.Handler{
 		Plugin:       d,
 		Name:         d.ip.name,

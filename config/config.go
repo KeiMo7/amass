@@ -81,9 +81,6 @@ type Config struct {
 	// The graph databases used by the system / enumerations
 	GraphDBs []*Database `yaml:"-" json:"database,omitempty"`
 
-	// The maximum number of concurrent DNS queries
-	MaxDNSQueries int `yaml:"-" json:"max_dns_queries,omitempty"`
-
 	// The list of words to use when generating names
 	Wordlist []string `yaml:"-" json:"wordlist,omitempty"`
 
@@ -132,11 +129,12 @@ type Config struct {
 	// Type of DNS records to query for
 	RecordTypes []string `yaml:"-" json:"record_types,omitempty"`
 
-	// Resolver settings
+	// Resolver settings: the queries go to the untrusted resolvers when there
+	// are any, and otherwise to the trusted ones; the first trusted resolver
+	// tests for DNS wildcards. Without either, the engine's default resolvers
+	// are used. The engine sets the rate limit for each resolver.
 	Resolvers        []string `yaml:"-" json:"resolvers"`
-	ResolversQPS     int      `yaml:"-" json:"resolvers_qps,omitempty"`
 	TrustedResolvers []string `yaml:"-" json:"trusted_resolvers,omitempty"`
-	TrustedQPS       int      `yaml:"-" json:"trusted_qps,omitempty"`
 
 	// Option for verbose logging and output
 	Verbose bool `yaml:"-" json:"verbose,omitempty"`
@@ -274,8 +272,6 @@ func NewConfig() *Config {
 		EditDistance:        1,
 		Recursive:           true,
 		MinimumTTL:          1440,
-		ResolversQPS:        DefaultQueriesPerPublicResolver,
-		TrustedQPS:          DefaultQueriesPerBaselineResolver,
 		DataSrcConfigs: &DataSourceConfig{
 			GlobalOptions: make(map[string]int),
 		},

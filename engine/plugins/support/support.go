@@ -44,7 +44,6 @@ var subre, urlre *regexp.Regexp
 
 func init() {
 	done = make(chan struct{})
-	trusted = trustedResolvers()
 
 	urlre = xurls.Relaxed()
 	subre = regexp.MustCompile(dns.AnySubdomainRegexString())

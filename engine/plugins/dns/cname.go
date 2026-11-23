@@ -31,6 +31,11 @@ type relAlias struct {
 	target *dbt.Entity
 }
 
+func newCNAME(p *dnsPlugin) *dnsCNAME {
+	name := p.name + "-CNAME"
+	return &dnsCNAME{name: name, plugin: p, source: &et.Source{Name: name, Confidence: 100}}
+}
+
 func (d *dnsCNAME) check(e *et.Event) error {
 	_, ok := e.Entity.Asset.(*oamdns.FQDN)
 	if !ok {

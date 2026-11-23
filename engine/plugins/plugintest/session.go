@@ -50,6 +50,8 @@ type Session struct {
 	ps      *pubsub.Logger
 	webOnce sync.Once
 	web     *Web
+	dnsOnce sync.Once
+	dns     *DNS
 }
 
 // NewSession returns a session over a new SQLite database, closed when the

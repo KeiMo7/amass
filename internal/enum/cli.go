@@ -56,6 +56,7 @@ type Args struct {
 	Names             *stringset.Set
 	Ports             afmt.ParseInts
 	Resolvers         *stringset.Set
+	TrustedResolvers  *stringset.Set
 	Timeout           int
 	Options           struct {
 		Active       bool
@@ -115,7 +116,7 @@ func defineArgumentFlags(fs *flag.FlagSet, args *Args) {
 	fs.IntVar(&args.MinForRecursive, "min-for-recursive", 1, "Subdomain labels seen before recursive brute forcing (Default: 1)")
 	fs.Var(&args.Ports, "p", "Ports separated by commas (default: the FTP, SSH and mail ports and common web and management API ports)")
 	fs.Var(args.Resolvers, "r", "IP addresses of untrusted DNS resolvers (can be used multiple times)")
-	fs.Var(args.Resolvers, "tr", "IP addresses of trusted DNS resolvers (can be used multiple times)")
+	fs.Var(args.TrustedResolvers, "tr", "IP addresses of trusted DNS resolvers (can be used multiple times)")
 	fs.IntVar(&args.Timeout, "timeout", 30, "Minutes to run without progress before terminating (Default: 30)")
 }
 
@@ -406,6 +407,7 @@ func newArgs() Args {
 		Included:          stringset.New(),
 		Names:             stringset.New(),
 		Resolvers:         stringset.New(),
+		TrustedResolvers:  stringset.New(),
 	}
 }
 
@@ -551,8 +553,16 @@ func (e Args) OverrideConfig(conf *config.Config) error {
 	if e.Options.Verbose {
 		conf.Verbose = true
 	}
+	for _, r := range append(e.Resolvers.Slice(), e.TrustedResolvers.Slice()...) {
+		if !config.IsResolverAddress(r) {
+			return fmt.Errorf("the DNS resolver %q is not an IP address", r)
+		}
+	}
 	if e.Resolvers.Len() > 0 {
 		conf.SetResolvers(e.Resolvers.Slice()...)
+	}
+	if e.TrustedResolvers.Len() > 0 {
+		conf.SetTrustedResolvers(e.TrustedResolvers.Slice()...)
 	}
 	// Attempt to add the provided domains to the configuration
 	conf.AddDomains(e.Domains.Slice()...)

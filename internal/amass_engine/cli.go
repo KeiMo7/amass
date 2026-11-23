@@ -12,6 +12,8 @@ import (
 	"log/slog"
 	"os"
 	"os/signal"
+	"strconv"
+	"strings"
 	"syscall"
 	"time"
 
@@ -19,6 +21,7 @@ import (
 	"github.com/owasp-amass/amass/v5/config"
 	"github.com/owasp-amass/amass/v5/engine"
 	"github.com/owasp-amass/amass/v5/internal/afmt"
+	amassdns "github.com/owasp-amass/amass/v5/internal/net/dns"
 	"github.com/owasp-amass/amass/v5/internal/tools"
 )
 
@@ -27,11 +30,16 @@ const (
 	Description = "Run the Amass collection engine to populate the OAM database"
 )
 
+// ResolverQPSEnv sets the queries per second sent to each DNS resolver when
+// the -resolver-qps flag is not given.
+const ResolverQPSEnv = "AMASS_RESOLVER_QPS"
+
 type Args struct {
 	Help    bool
 	Options struct {
-		NoColor bool
-		Silent  bool
+		NoColor     bool
+		Silent      bool
+		ResolverQPS int
 	}
 	Filepaths struct {
 		LogDir string
@@ -46,6 +54,9 @@ func NewFlagset(args *Args, errorHandling flag.ErrorHandling) *flag.FlagSet {
 	fs.BoolVar(&args.Options.NoColor, "nocolor", false, "Disable colorized output")
 	fs.BoolVar(&args.Options.Silent, "silent", false, "Disable all output during execution")
 	fs.StringVar(&args.Filepaths.LogDir, "log-dir", "", "path to the log directory")
+	fs.IntVar(&args.Options.ResolverQPS, "resolver-qps", -1, fmt.Sprintf("Queries per second sent to each "+
+		"DNS resolver, across all enumerations; 0 for no limit (default %d, or $%s)",
+		amassdns.DefaultResolverQPS, ResolverQPSEnv))
 	return fs
 }
 
@@ -86,6 +97,13 @@ func CLIWorkflow(cmdName string, clArgs []string) {
 		color.Error = io.Discard
 	}
 
+	qps, err := resolverQPS(args.Options.ResolverQPS, os.LookupEnv)
+	if err != nil {
+		_, _ = afmt.R.Fprintf(color.Error, "%v\n", err)
+		os.Exit(1)
+	}
+	amassdns.SetResolverQPS(qps)
+
 	l, err := selectLogger(args.Filepaths.LogDir)
 	if err != nil {
 		_, _ = afmt.R.Fprintf(color.Error, "Failed to create the logger: %v", err)
@@ -104,6 +122,23 @@ func CLIWorkflow(cmdName string, clArgs []string) {
 	defer signal.Stop(quit)
 	<-quit
 	l.Info("Terminating the collection engine")
+}
+
+// resolverQPS returns the engine's limit on queries per second per DNS
+// resolver: the flag when given (zero or more), else the environment
+// variable, else the default.
+func resolverQPS(flagValue int, lookup func(string) (string, bool)) (int, error) {
+	if flagValue >= 0 {
+		return flagValue, nil
+	}
+	if v, ok := lookup(ResolverQPSEnv); ok && strings.TrimSpace(v) != "" {
+		qps, err := strconv.Atoi(strings.TrimSpace(v))
+		if err != nil || qps < 0 {
+			return 0, fmt.Errorf("%s must be a whole number of queries per second, not %q", ResolverQPSEnv, v)
+		}
+		return qps, nil
+	}
+	return amassdns.DefaultResolverQPS, nil
 }
 
 func selectLogger(dir string) (*slog.Logger, error) {

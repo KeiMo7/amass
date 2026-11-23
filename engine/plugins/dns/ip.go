@@ -33,6 +33,12 @@ type relIP struct {
 	ip    *dbt.Entity
 }
 
+func newIP(p *dnsPlugin) *dnsIP {
+	name := p.name + "-IP"
+	return &dnsIP{name: name, queries: []uint16{dns.TypeA, dns.TypeAAAA}, plugin: p,
+		source: &et.Source{Name: name, Confidence: 100}}
+}
+
 func (d *dnsIP) check(e *et.Event) error {
 	fqdn, ok := e.Entity.Asset.(*oamdns.FQDN)
 	if !ok {

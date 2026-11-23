@@ -24,6 +24,7 @@ import (
 	afmt "github.com/owasp-amass/amass/v5/internal/afmt"
 	amassdb "github.com/owasp-amass/amass/v5/internal/db"
 	amassnet "github.com/owasp-amass/amass/v5/internal/net"
+	amassdns "github.com/owasp-amass/amass/v5/internal/net/dns"
 	assetdb "github.com/owasp-amass/asset-db"
 	"github.com/owasp-amass/asset-db/repository"
 	"github.com/owasp-amass/asset-db/repository/neo4j"
@@ -63,6 +64,11 @@ type Session struct {
 	// source capacity; the session's context carries it.
 	netUsage *et.NetUsage
 
+	// resolvers is the session's own DNS resolver pool when its
+	// configuration names resolvers; the session's context carries it.
+	// Without one, the session's queries go to the engine's default pool.
+	resolvers *amassdns.Resolvers
+
 	// runs records the session as a collection run in the database, when
 	// the repository can, and run is that run's ID.
 	runs repository.RunRecorder
@@ -85,15 +91,24 @@ func CreateSession(mgr *manager, reg et.Registry, cfg *config.Config) (et.Sessio
 		return nil, err
 	}
 
+	resolvers, err := amassdns.NewSessionResolvers(cfg.Resolvers, cfg.TrustedResolvers)
+	if err != nil {
+		return nil, fmt.Errorf("the DNS resolvers in the configuration: %w", err)
+	}
+
 	startTime := time.Now()
 	numOfSessions := mgr.NumOfSessions() + 1
 	usage := &et.NetUsage{}
 	ctx := et.WithNetUsage(context.Background(), usage)
+	if resolvers != nil {
+		ctx = amassdns.WithResolvers(ctx, resolvers)
+	}
 	ctx = et.WithProbePacer(ctx, probePacer(cfg))
 	ctx, cancel := context.WithCancel(ctx)
 	// Create a new session object
 	s := &Session{
 		netUsage:     usage,
+		resolvers:    resolvers,
 		id:           uuid.New(),
 		mgr:          mgr,
 		ctx:          ctx,
@@ -237,6 +252,9 @@ func (s *Session) Kill() {
 	s.netUsage.Log(s.engineLog(), netUsageMessage)
 	s.finishRun()
 	s.cancel()
+	if s.resolvers != nil {
+		s.resolvers.Stop()
+	}
 	s.finished = true
 	s.clients.CloseIdleConnections()
 }

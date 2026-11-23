@@ -10,7 +10,7 @@ import (
 	"gopkg.in/yaml.v3"
 )
 
-func TestLoadInterfaceSetting(t *testing.T) {
+func TestLoadNetworkSettings(t *testing.T) {
 	tests := []struct {
 		name    string
 		options string
@@ -30,13 +30,36 @@ func TestLoadInterfaceSetting(t *testing.T) {
 				t.Fatalf("yaml: %v", err)
 			}
 
-			err := c.loadInterfaceSetting(c)
+			err := c.loadNetworkSettings(c)
 			if (err != nil) != tc.wantErr {
-				t.Fatalf("loadInterfaceSetting error = %v, want error %v", err, tc.wantErr)
+				t.Fatalf("loadNetworkSettings error = %v, want error %v", err, tc.wantErr)
 			}
 			if c.Interface != tc.want {
 				t.Errorf("Interface = %q, want %q", c.Interface, tc.want)
 			}
 		})
+	}
+}
+
+func TestLoadActiveRouteSettings(t *testing.T) {
+	c := NewConfig()
+	opts := "active_route: socks5h://tor:9050\nactive_udp_route: eth1\n"
+	if err := yaml.Unmarshal([]byte(opts), &c.Options); err != nil {
+		t.Fatalf("yaml: %v", err)
+	}
+
+	if err := c.loadNetworkSettings(c); err != nil {
+		t.Fatal(err)
+	}
+	if c.ActiveRoute != "socks5h://tor:9050" || c.ActiveUDPRoute != "eth1" {
+		t.Errorf("active routes = %q, %q", c.ActiveRoute, c.ActiveUDPRoute)
+	}
+
+	c = NewConfig()
+	if err := yaml.Unmarshal([]byte("active_route: 9050"), &c.Options); err != nil {
+		t.Fatalf("yaml: %v", err)
+	}
+	if err := c.loadNetworkSettings(c); err == nil {
+		t.Error("a number was accepted as the active route")
 	}
 }

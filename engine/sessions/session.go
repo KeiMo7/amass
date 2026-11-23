@@ -75,6 +75,32 @@ type Session struct {
 	run  string
 }
 
+// sessionActiveRoute returns the route the session's active traffic takes:
+// the configuration's, else the engine's, with the session's ID as the proxy
+// isolation key, so each enumeration gets its own Tor circuits.
+func sessionActiveRoute(cfg *config.Config, local amassnet.LocalAddrs, id uuid.UUID) (amassnet.Route, error) {
+	route := amassnet.ActiveRouteFrom(context.Background())
+	if cfg.ActiveRoute != "" || cfg.ActiveUDPRoute != "" {
+		r, err := amassnet.ParseRoute(cfg.ActiveRoute, cfg.ActiveUDPRoute)
+		if err != nil {
+			return amassnet.Route{}, fmt.Errorf("the active route in the configuration: %w", err)
+		}
+		route = r
+	}
+	if route.IsZero() {
+		return route, nil
+	}
+
+	route.Isolation = id.String()
+	ctx, cancel := context.WithTimeout(amassnet.WithLocalAddrs(context.Background(), local), 15*time.Second)
+	defer cancel()
+
+	if err := route.CheckProxy(ctx, 10*time.Second); err != nil {
+		return amassnet.Route{}, err
+	}
+	return route, nil
+}
+
 // CreateSession initializes a new Session object based on the provided configuration.
 // The session object represents the state of an active engine enumeration.
 func CreateSession(mgr *manager, reg et.Registry, cfg *config.Config) (et.Session, error) {
@@ -93,7 +119,16 @@ func CreateSession(mgr *manager, reg et.Registry, cfg *config.Config) (et.Sessio
 		return nil, fmt.Errorf("the network interface in the configuration: %w", err)
 	}
 
-	clients, err := NewClients(len(cfg.Scope.Ports), local)
+	// the enumeration's own route for active traffic, if it names one;
+	// otherwise the engine's. A proxy that cannot be reached refuses the
+	// session, so active traffic is never silently dropped or sent directly.
+	id := uuid.New()
+	active, err := sessionActiveRoute(cfg, local, id)
+	if err != nil {
+		return nil, err
+	}
+
+	clients, err := NewClients(len(cfg.Scope.Ports), local, active)
 	if err != nil {
 		return nil, err
 	}
@@ -108,6 +143,7 @@ func CreateSession(mgr *manager, reg et.Registry, cfg *config.Config) (et.Sessio
 	usage := &et.NetUsage{}
 	ctx := et.WithNetUsage(context.Background(), usage)
 	ctx = amassnet.WithLocalAddrs(ctx, local)
+	ctx = amassnet.WithActiveRoute(ctx, active)
 	if resolvers != nil {
 		ctx = amassdns.WithResolvers(ctx, resolvers)
 	}
@@ -117,7 +153,7 @@ func CreateSession(mgr *manager, reg et.Registry, cfg *config.Config) (et.Sessio
 	s := &Session{
 		netUsage:     usage,
 		resolvers:    resolvers,
-		id:           uuid.New(),
+		id:           id,
 		mgr:          mgr,
 		ctx:          ctx,
 		cancel:       cancel,

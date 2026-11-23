@@ -14,6 +14,7 @@ import (
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	"github.com/owasp-amass/amass/v5/internal/fingerprint"
+	amassnet "github.com/owasp-amass/amass/v5/internal/net"
 	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
@@ -99,7 +100,7 @@ func (hp *httpProbing) query(e *et.Event, entity *dbt.Entity, target string, por
 	var findings []*support.Finding
 	e.Session.NetSem().Acquire()
 
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 15*time.Second)
+	ctx, cancel := context.WithTimeout(e.Session.Ctx(), amassnet.ActiveTimeout(e.Session.Ctx(), 15*time.Second))
 	defer cancel()
 
 	resp, err := amasshttp.RequestWebPage(ctx, e.Session.Clients().Probe, &amasshttp.Request{URL: target})
@@ -124,7 +125,7 @@ func (hp *httpProbing) faviconHash(e *et.Event, target string) string {
 	e.Session.NetSem().Acquire()
 	defer e.Session.NetSem().Release()
 
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 10*time.Second)
+	ctx, cancel := context.WithTimeout(e.Session.Ctx(), amassnet.ActiveTimeout(e.Session.Ctx(), 10*time.Second))
 	defer cancel()
 
 	resp, err := amasshttp.RequestWebPage(ctx, e.Session.Clients().Probe,

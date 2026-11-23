@@ -677,3 +677,43 @@ func TestPlanInterface(t *testing.T) {
 		t.Error("a plan whose interface changed after it was shown is still approvable")
 	}
 }
+
+func TestPlanActiveRoute(t *testing.T) {
+	sel := graph.AssetSelector{Type: "FQDN", Field: "name", Value: "example.org"}
+
+	plain := NewPlan(sel, Active)
+	p := NewPlanWith(sel, Active, Options{ActiveRoute: "socks5h://tor:9050", ActiveUDPRoute: "eth1"})
+	if !p.Approvable() || p.ActiveRoute != "socks5h://tor:9050" || p.ActiveUDPRoute != "eth1" {
+		t.Fatalf("plan with an active route: %+v", p)
+	}
+	if p.ID == plain.ID {
+		t.Error("the plan_id does not cover the active route")
+	}
+	if !strings.Contains(p.Summary(), "socks5h://tor:9050") || !strings.Contains(p.Effects, "not sent at all") {
+		t.Errorf("the approval text does not describe the route: %q / %q", p.Summary(), p.Effects)
+	}
+
+	for _, opts := range []Options{
+		{ActiveRoute: "gopher://tor:70"},
+		{ActiveRoute: "socks5h://alice:secret@tor:9050"},
+		{ActiveRoute: "eth1", ActiveUDPRoute: "socks5://proxy:1080"},
+	} {
+		if q := NewPlanWith(sel, Active, opts); q.Status != StatusUnsupported {
+			t.Errorf("%+v was accepted", opts)
+		}
+	}
+	if q := NewPlanWith(sel, Passive, Options{ActiveRoute: "eth1"}); q.Status != StatusUnsupported {
+		t.Error("a passive plan took an active route")
+	}
+
+	cfg := config.NewConfig()
+	if _, err := configure(cfg, p); err != nil || cfg.ActiveRoute != "socks5h://tor:9050" || cfg.ActiveUDPRoute != "eth1" {
+		t.Errorf("configure: %q, %q, %v", cfg.ActiveRoute, cfg.ActiveUDPRoute, err)
+	}
+
+	tampered := p
+	tampered.ActiveRoute = "socks5h://elsewhere:9050"
+	if tampered.Approvable() {
+		t.Error("a plan whose active route changed after it was shown is still approvable")
+	}
+}

@@ -15,6 +15,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"net/netip"
+	"net/url"
 	"regexp"
 	"slices"
 	"strconv"
@@ -22,6 +23,7 @@ import (
 
 	"github.com/nyaruka/phonenumbers"
 	"github.com/owasp-amass/amass/v5/internal/graph"
+	amassnet "github.com/owasp-amass/amass/v5/internal/net"
 )
 
 // Mode is how a session collects.
@@ -59,6 +61,8 @@ type Plan struct {
 	BruteForce       bool                `json:"brute_force,omitempty"`
 	Alterations      bool                `json:"alterations,omitempty"`
 	Interface        string              `json:"interface,omitempty"`
+	ActiveRoute      string              `json:"active_route,omitempty"`
+	ActiveUDPRoute   string              `json:"active_udp_route,omitempty"`
 	Methods          []string            `json:"methods,omitempty"`
 	Effects          string              `json:"effects,omitempty"`
 	RequiresApproval bool                `json:"requires_approval"`
@@ -120,11 +124,14 @@ type Options struct {
 	// addresses (as amass enum does with -iface). The engine checks that it
 	// exists when the run starts; empty uses the engine's own setting.
 	Interface string
+	// ActiveRoute names the route an active run's traffic to the targets'
+	// hosts takes (as amass enum does with -active-route): an interface, or a
+	// proxy URL such as socks5h://tor:9050. ActiveUDPRoute names the
+	// interface its active UDP leaves from. A plan never carries a proxy
+	// password; that belongs in options.active_route of the configuration.
+	ActiveRoute    string
+	ActiveUDPRoute string
 }
-
-// interfaceSpec matches an interface name or an IP address, with an IPv6
-// zone, as an approval may name it.
-var interfaceSpec = regexp.MustCompile(`^[A-Za-z0-9][A-Za-z0-9._:%-]{0,63}$`)
 
 // MaxAlso is how many targets a plan may add beside its own.
 const MaxAlso = 25
@@ -158,9 +165,10 @@ func NewPlanWith(target graph.AssetSelector, mode Mode, opts Options) Plan {
 		plan.Reason = reason
 		return plan
 	}
-	iface := strings.TrimSpace(opts.Interface)
-	if iface != "" && !interfaceSpec.MatchString(iface) {
-		plan.Reason = "the interface must be an interface name, such as eth0, or an IP address"
+	iface, route, udp := strings.TrimSpace(opts.Interface), strings.TrimSpace(opts.ActiveRoute),
+		strings.TrimSpace(opts.ActiveUDPRoute)
+	if reason := networkReason(mode, iface, route, udp); reason != "" {
+		plan.Reason = reason
 		return plan
 	}
 	if len(opts.Also) > MaxAlso {
@@ -191,6 +199,7 @@ func NewPlanWith(target graph.AssetSelector, mode Mode, opts Options) Plan {
 	plan.BruteForce = mode == Active && opts.BruteForce
 	plan.Alterations = mode == Active && opts.Alterations
 	plan.Interface = iface
+	plan.ActiveRoute, plan.ActiveUDPRoute = route, udp
 	plan.Mode = mode
 	plan.Status = StatusApprovalRequired
 	plan.ID = plan.expectedID()
@@ -244,8 +253,49 @@ func NewPlanWith(target graph.AssetSelector, mode Mode, opts Options) Plan {
 		plan.Effects += " Its traffic leaves through the network interface " + plan.Interface +
 			" on the engine's host."
 	}
+	if plan.ActiveRoute != "" {
+		plan.Effects += " Its active traffic goes through " + plan.ActiveRoute + ", and is not sent at all " +
+			"when the route refuses it."
+	}
+	if plan.ActiveUDPRoute != "" {
+		plan.Effects += " Active UDP leaves from " + plan.ActiveUDPRoute + "."
+	}
 
 	return plan
+}
+
+// networkReason returns why a plan's interface or active routes cannot be
+// used, or "". They are checked for form only: the engine looks for the
+// interfaces and the proxy on its own host when the run starts.
+func networkReason(mode Mode, iface, route, udp string) string {
+	if iface != "" {
+		if err := amassnet.CheckInterfaceSpec(iface); err != nil {
+			return err.Error()
+		}
+	}
+	if route == "" && udp == "" {
+		return ""
+	}
+	if mode != Active {
+		return "an active route applies to active mode only"
+	}
+
+	if route != "" {
+		if err := amassnet.CheckRouteSpec(route); err != nil {
+			return err.Error()
+		}
+		if u, err := url.Parse(route); err == nil && u.User != nil {
+			if _, set := u.User.Password(); set {
+				return "a plan never carries a proxy password; set it in options.active_route of the configuration"
+			}
+		}
+	}
+	if udp != "" {
+		if err := amassnet.CheckInterfaceSpec(udp); err != nil {
+			return "the active UDP route: " + err.Error()
+		}
+	}
+	return ""
 }
 
 // namesGuessed describes the name-guessing an active plan does, or "" when it
@@ -379,7 +429,7 @@ func PlanID(scopeType, scopeValue string, mode Mode) string {
 // one exact target, as before, and otherwise one that also covers the added
 // targets and scope expansion.
 func (p Plan) expectedID() string {
-	if len(p.Also) == 0 && !p.Expand && p.Interface == "" {
+	if len(p.Also) == 0 && !p.Expand && p.Interface == "" && p.ActiveRoute == "" && p.ActiveUDPRoute == "" {
 		return PlanID(p.ScopeType, p.ScopeValue, p.Mode)
 	}
 
@@ -393,6 +443,12 @@ func (p Plan) expectedID() string {
 	}
 	if p.Interface != "" {
 		b.WriteString("\x00interface\x00" + p.Interface)
+	}
+	if p.ActiveRoute != "" {
+		b.WriteString("\x00active_route\x00" + p.ActiveRoute)
+	}
+	if p.ActiveUDPRoute != "" {
+		b.WriteString("\x00active_udp_route\x00" + p.ActiveUDPRoute)
 	}
 
 	sum := sha256.Sum256([]byte(b.String()))
@@ -427,6 +483,9 @@ func (p Plan) Summary() string {
 	}
 	if p.Interface != "" {
 		out += ", through interface " + p.Interface
+	}
+	if p.ActiveRoute != "" {
+		out += ", active traffic through " + p.ActiveRoute
 	}
 
 	return out

@@ -72,3 +72,31 @@ func TestContainsSecrets(t *testing.T) {
 		t.Error("an empty creds block was flagged")
 	}
 }
+
+func TestProxyPasswordsAreSecrets(t *testing.T) {
+	in := "options:\n  active_route: socks5h://alice:hunter2@tor:9050\n  active_udp_route: eth1\n"
+	if !ContainsSecrets(in) {
+		t.Error("a proxy password was not detected")
+	}
+
+	out, err := RedactSecrets(in)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if strings.Contains(out, "hunter2") {
+		t.Errorf("the proxy password survived redaction:\n%s", out)
+	}
+	for _, keep := range []string{"socks5h://alice:" + redacted + "@tor:9050", "eth1"} {
+		if !strings.Contains(out, keep) {
+			t.Errorf("redaction dropped %q:\n%s", keep, out)
+		}
+	}
+
+	// A proxy without a password, or an interface, is not a secret.
+	for _, plain := range []string{"options:\n  active_route: socks5h://tor:9050\n",
+		"options:\n  active_route: socks5h://alice@tor:9050\n", "options:\n  active_route: eth1\n"} {
+		if ContainsSecrets(plain) {
+			t.Errorf("%q was flagged", plain)
+		}
+	}
+}

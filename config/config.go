@@ -141,6 +141,15 @@ type Config struct {
 	// The engine resolves it, and without it the engine's own setting applies.
 	Interface string `yaml:"-" json:"interface,omitempty"`
 
+	// The route the enumeration's active traffic (probes, banners,
+	// certificates, zone transfers) takes: an interface, or a proxy URL
+	// (socks5h://, socks5:// or http:// for CONNECT), such as Tor's. A proxy
+	// carries TCP only, so active UDP leaves from the UDP route's interface
+	// when one is set and is not sent otherwise. Without them, the engine's
+	// own settings apply.
+	ActiveRoute    string `yaml:"-" json:"active_route,omitempty"`
+	ActiveUDPRoute string `yaml:"-" json:"active_udp_route,omitempty"`
+
 	// Option for verbose logging and output
 	Verbose bool `yaml:"-" json:"verbose,omitempty"`
 
@@ -364,7 +373,7 @@ func (c *Config) LoadSettings(path string) error {
 		c.loadDatabaseSettings,
 		c.loadDataSourceSettings,
 		c.loadResolverSettings,
-		c.loadInterfaceSetting,
+		c.loadNetworkSettings,
 		c.loadTransformSettings,
 		c.loadEngineSettings,
 		c.loadActiveSettings,

@@ -14,6 +14,7 @@ import (
 	"github.com/miekg/dns"
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
+	amassnet "github.com/owasp-amass/amass/v5/internal/net"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
 	"github.com/owasp-amass/open-asset-model/general"
@@ -77,7 +78,7 @@ func (d *dnsSubs) attemptAXFR(e *et.Event, apex *dbt.Entity, zone, server string
 	}
 
 	for _, addr := range addrs {
-		records, ok := transferZone(zone, net.JoinHostPort(addr, axfrPort))
+		records, ok := transferZone(e.Session.Ctx(), zone, net.JoinHostPort(addr, axfrPort))
 		if !ok {
 			continue
 		}
@@ -92,12 +93,20 @@ func (d *dnsSubs) attemptAXFR(e *et.Event, apex *dbt.Entity, zone, server string
 // transferZone performs the AXFR against dialAddr (host:port) and returns the
 // records received. It reports success only for a complete transfer with no
 // error on the wire, so a refusal or a server that sends an error partway is
-// not mistaken for an exposure.
-func transferZone(zone, dialAddr string) ([]dns.RR, bool) {
+// not mistaken for an exposure. The transfer takes the session's active
+// route, with a longer wait through a proxy.
+func transferZone(ctx context.Context, zone, dialAddr string) ([]dns.RR, bool) {
 	m := new(dns.Msg)
 	m.SetAxfr(dns.Fqdn(zone))
 
-	t := &dns.Transfer{DialTimeout: 5 * time.Second, ReadTimeout: 10 * time.Second}
+	c, err := amassnet.NewActiveDialContext(5*time.Second)(ctx, "tcp", dialAddr)
+	if err != nil {
+		return nil, false
+	}
+
+	t := &dns.Transfer{Conn: &dns.Conn{Conn: c}, ReadTimeout: amassnet.ActiveTimeout(ctx, 10*time.Second)}
+	defer func() { _ = t.Close() }()
+
 	ch, err := t.In(m, dialAddr)
 	if err != nil {
 		return nil, false

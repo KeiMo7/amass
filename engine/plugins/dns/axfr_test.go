@@ -5,11 +5,13 @@
 package dns
 
 import (
+	"context"
 	"net"
 	"testing"
 	"time"
 
 	"github.com/miekg/dns"
+	amassnet "github.com/owasp-amass/amass/v5/internal/net"
 )
 
 func TestNameInZone(t *testing.T) {
@@ -78,7 +80,7 @@ func TestTransferZoneAllowed(t *testing.T) {
 	addr, shutdown := axfrServer(t, zone, zoneRecords(zone), true)
 	defer shutdown()
 
-	records, ok := transferZone("example.com", addr)
+	records, ok := transferZone(context.Background(), "example.com", addr)
 	if !ok {
 		t.Fatal("an allowed zone transfer was not reported as successful")
 	}
@@ -101,7 +103,7 @@ func TestTransferZoneRefused(t *testing.T) {
 	addr, shutdown := axfrServer(t, zone, zoneRecords(zone), false)
 	defer shutdown()
 
-	if _, ok := transferZone("example.com", addr); ok {
+	if _, ok := transferZone(context.Background(), "example.com", addr); ok {
 		t.Error("a refused zone transfer was reported as successful")
 	}
 }
@@ -112,7 +114,27 @@ func TestTransferZoneNoServer(t *testing.T) {
 	addr := l.Addr().String()
 	_ = l.Close()
 
-	if _, ok := transferZone("example.com", addr); ok {
+	if _, ok := transferZone(context.Background(), "example.com", addr); ok {
 		t.Error("a failed dial was reported as a successful transfer")
+	}
+}
+
+func TestTransferZoneTakesTheActiveRoute(t *testing.T) {
+	zone := "example.com."
+	addr, shutdown := axfrServer(t, zone, zoneRecords(zone), true)
+	defer shutdown()
+
+	// a proxy that is down: the transfer fails rather than going direct
+	l, _ := net.Listen("tcp", "127.0.0.1:0")
+	down := l.Addr().String()
+	_ = l.Close()
+
+	route, err := amassnet.ParseRoute("socks5h://"+down, "")
+	if err != nil {
+		t.Fatal(err)
+	}
+	ctx := amassnet.WithActiveRoute(context.Background(), route)
+	if _, ok := transferZone(ctx, "example.com", addr); ok {
+		t.Error("the transfer went around a proxy that is down")
 	}
 }

@@ -17,7 +17,7 @@ import (
 // The Bulk client waits minutes for a slow index to start answering, where the
 // General client gives up after seconds; both are paced.
 func TestBulkClientWaitsForSlowIndexes(t *testing.T) {
-	c, err := NewClients(4, amassnet.LocalAddrs{})
+	c, err := NewClients(4, amassnet.LocalAddrs{}, amassnet.Route{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -66,5 +66,31 @@ func TestBoundDialUsesTheSessionAddress(t *testing.T) {
 	if c, err := boundDial(time.Second, amassnet.LocalAddrs{})(other, "tcp", l.Addr().String()); err == nil {
 		_ = c.Close()
 		t.Error("without a session address, the context's address was not used")
+	}
+}
+
+// Through a proxy route the Probe client's waits are longer, and it does not
+// use a proxy from the environment besides the route.
+func TestProbeClientTakesTheActiveRoute(t *testing.T) {
+	route, err := amassnet.ParseRoute("socks5h://127.0.0.1:9050", "")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	c, err := NewClients(4, amassnet.LocalAddrs{}, route)
+	if err != nil {
+		t.Fatal(err)
+	}
+	defer c.CloseIdleConnections()
+
+	if c.probTr.Proxy != nil {
+		t.Error("the Probe client uses an environment proxy besides the active route")
+	}
+	if c.probTr.ResponseHeaderTimeout != 24*time.Second || c.Probe.Timeout != 90*time.Second {
+		t.Errorf("Probe timeouts = %v, %v; want them three times as long", c.probTr.ResponseHeaderTimeout,
+			c.Probe.Timeout)
+	}
+	if c.genTr.Proxy == nil {
+		t.Error("the General client lost the environment proxy")
 	}
 }

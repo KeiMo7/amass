@@ -55,10 +55,12 @@ const (
 
 // NewClients returns four tuned clients: API, Probe, Crawl and Bulk. They
 // send from the local addresses whatever context a request carries; with the
-// zero LocalAddrs, from the engine's (see amassnet.LocalAddrsFrom).
-func NewClients(perHost int, local amassnet.LocalAddrs) (*Clients, error) {
+// zero LocalAddrs, from the engine's (see amassnet.LocalAddrsFrom). The Probe
+// client reaches the target's hosts, so it takes the active route, with its
+// timeouts lengthened through a proxy; the zero Route sends it like the rest.
+func NewClients(perHost int, local amassnet.LocalAddrs, active amassnet.Route) (*Clients, error) {
 	genTr := newGeneralTransport(local)
-	probTr := newProbeTransport(perHost, local)
+	probTr := newProbeTransport(perHost, local, active)
 	crwlTr := newCrawlTransport(local)
 	bulkTr := newGeneralTransport(local)
 	bulkTr.ResponseHeaderTimeout = bulkHeaderTimeout
@@ -84,7 +86,7 @@ func NewClients(perHost int, local amassnet.LocalAddrs) (*Clients, error) {
 		},
 		Probe: &http.Client{
 			Transport: probTr,
-			Timeout:   30 * time.Second,
+			Timeout:   activeTimeout(active, 30*time.Second),
 		},
 		Crawl: &http.Client{
 			Transport: pacer.Default.Transport(crwlTr),
@@ -136,17 +138,33 @@ func newGeneralTransport(local amassnet.LocalAddrs) *http.Transport {
 	}
 }
 
-func newProbeTransport(perHost int, local amassnet.LocalAddrs) *http.Transport {
+// activeTimeout lengthens d for the active route (see amassnet.ActiveTimeout).
+func activeTimeout(active amassnet.Route, d time.Duration) time.Duration {
+	return amassnet.ActiveTimeout(amassnet.WithActiveRoute(context.Background(), active), d)
+}
+
+func newProbeTransport(perHost int, local amassnet.LocalAddrs, active amassnet.Route) *http.Transport {
+	proxy, dial := http.ProxyFromEnvironment, boundDial(5*time.Second, local)
+	if !active.IsZero() {
+		// the active route replaces any proxy from the environment, and its
+		// own proxy is reached from the session's addresses
+		proxy = nil
+		routed := active.DialContext(5 * time.Second)
+		dial = func(ctx context.Context, network, addr string) (net.Conn, error) {
+			return routed(amassnet.WithLocalAddrs(ctx, local), network, addr)
+		}
+	}
+
 	return &http.Transport{
-		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           boundDial(5*time.Second, local),
+		Proxy:                 proxy,
+		DialContext:           dial,
 		ForceAttemptHTTP2:     false,
 		MaxIdleConns:          64,
 		MaxIdleConnsPerHost:   perHost,
 		IdleConnTimeout:       15 * time.Second,
-		TLSHandshakeTimeout:   6 * time.Second,
+		TLSHandshakeTimeout:   activeTimeout(active, 6*time.Second),
 		ExpectContinueTimeout: 0,
-		ResponseHeaderTimeout: 8 * time.Second,
+		ResponseHeaderTimeout: activeTimeout(active, 8*time.Second),
 		TLSClientConfig:       &tls.Config{InsecureSkipVerify: true},
 		DisableCompression:    true,
 	}

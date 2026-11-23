@@ -145,7 +145,11 @@ attempts and certificate and service probes on the configured ports, and
 covers at most a /16 IPv4 or /48 IPv6 range; brute forcing and name
 alterations run only when the plan asks for them. A plan's interface
 replaces `options.interface` for that run, and the engine refuses to start
-a run whose interface its host does not have. Two runs may run
+a run whose interface its host does not have. An active plan's
+`active_route` (an interface or a proxy URL such as `socks5h://tor:9050`)
+and `active_udp_route` replace `options.active_route` and
+`options.active_udp_route`; a plan never carries a proxy password, and the
+engine refuses to start a run whose proxy it cannot reach. Two runs may run
 at once; a run ends when its work settles, after 30 minutes without
 progress, or after 24 hours. Runs are recorded in
 `AMASS_MCP_RUN_JOURNAL` and resumed after a restart while the engine

@@ -132,6 +132,14 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 	iface := map[string]any{"type": "string", "maxLength": 64,
 		"description": "Network interface on the engine's host for the run's traffic: an interface name such as " +
 			"eth0, or one of the host's IP addresses (default: the engine's own setting). Only when the user asks."}
+	activeRoute := map[string]any{"type": "string", "maxLength": 256,
+		"description": "Route for the run's active traffic (active mode only): an interface on the engine's host, " +
+			"or a proxy URL such as socks5h://tor:9050 (socks5h, socks5 or http CONNECT). Active traffic never " +
+			"falls back to a direct connection. Never include a password; that belongs in the configuration. " +
+			"Only when the user asks."}
+	activeUDPRoute := map[string]any{"type": "string", "maxLength": 64,
+		"description": "Interface for active UDP when active_route is a proxy, which carries TCP only. Only when " +
+			"the user asks."}
 	phone := map[string]any{"type": "string",
 		"description": "Pivot from a phone number instead of a target: resolve the organizations tied to it and " +
 			"enumerate their registered domains. Give one of target, phone or address."}
@@ -191,20 +199,17 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 			"Instead of a target you may give a phone or address to pivot from: the plan then lists the "+
 			"organizations the seed resolved to and enumerates their registered domains.",
 		obj(nil, map[string]any{"target": target, "mode": mode, "also": also, "expand": expand,
-			"brute_force": bruteForce, "alterations": alterations, "interface": iface, "phone": phone,
-			"address": address}),
+			"brute_force": bruteForce, "alterations": alterations, "interface": iface, "active_route": activeRoute,
+			"active_udp_route": activeUDPRoute, "phone": phone, "address": address}),
 		readOnly(),
 		func(ctx context.Context, _ *mcp.CallToolRequest, raw json.RawMessage) (*mcp.CallToolResult, error) {
 			var a struct {
-				Target      string
-				Mode        string
-				Also        []string
-				Expand      bool
-				BruteForce  bool `json:"brute_force"`
-				Alterations bool
-				Interface   string
-				Phone       string
-				Address     string
+				Target string
+				Mode   string
+				Also   []string
+				planArgs
+				Phone   string
+				Address string
 			}
 			if err := json.Unmarshal(raw, &a); err != nil {
 				return nil, err
@@ -214,7 +219,7 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 			}
 
 			plan, err := enumerationPlan(ctx, runner, a.Target, a.Phone, a.Address, a.Mode, a.Also,
-				planOptions(a.Expand, a.BruteForce, a.Alterations, a.Interface))
+				a.options())
 			if err != nil {
 				return nil, err
 			}
@@ -230,12 +235,12 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 			}
 
 			next := "Show the user the scope and effects, then call start_enumeration with the same target, " +
-				"mode, also, expand, brute_force, alterations and interface, and this plan_id. The user is asked to " +
-				"approve it."
+				"mode, also, expand, brute_force, alterations, interface and active routes, and this plan_id. The user " +
+				"is asked to approve it."
 			if plan.Pivot != nil {
 				next = "Show the user the phone/address, the organizations it resolved to and the domains to be " +
 					"enumerated, then call start_enumeration with the same phone or address, mode, expand, " +
-					"brute_force, alterations and interface, and this plan_id. The user is asked to approve it."
+					"brute_force, alterations, interface and active routes, and this plan_id. The user is asked to approve it."
 			}
 			return jsonResult(map[string]any{"plan": plan, "next": next}), nil
 		})
@@ -245,7 +250,8 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 			"target and stores it in the Asset Database; the user is asked to approve it first.",
 		obj([]string{"plan_id"}, map[string]any{"target": target, "mode": mode, "also": also,
 			"expand": expand, "brute_force": bruteForce, "alterations": alterations, "interface": iface,
-			"phone": phone, "address": address, "plan_id": map[string]any{
+			"active_route": activeRoute, "active_udp_route": activeUDPRoute, "phone": phone, "address": address,
+			"plan_id": map[string]any{
 				"type":        "string",
 				"description": "The plan_id plan_enumeration returned",
 			}}),
@@ -253,16 +259,13 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 		func(ctx context.Context, req *mcp.CallToolRequest, raw json.RawMessage) (string,
 			func(via string) (*mcp.CallToolResult, error), error) {
 			var a struct {
-				Target      string
-				Mode        string
-				Also        []string
-				Expand      bool
-				BruteForce  bool `json:"brute_force"`
-				Alterations bool
-				Interface   string
-				Phone       string
-				Address     string
-				PlanID      string `json:"plan_id"`
+				Target string
+				Mode   string
+				Also   []string
+				planArgs
+				Phone   string
+				Address string
+				PlanID  string `json:"plan_id"`
 			}
 			if err := json.Unmarshal(raw, &a); err != nil {
 				return "", nil, err
@@ -275,7 +278,7 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 			}
 
 			plan, err := enumerationPlan(ctx, runner, a.Target, a.Phone, a.Address, a.Mode, a.Also,
-				planOptions(a.Expand, a.BruteForce, a.Alterations, a.Interface))
+				a.options())
 			if err != nil {
 				return "", nil, err
 			}
@@ -383,7 +386,8 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 			"collected without asking each time. The user approves the watch once; it runs until stop_watch.",
 		obj([]string{"target", "plan_id", "every_hours"}, map[string]any{"target": target, "mode": mode,
 			"also": also, "expand": expand, "brute_force": bruteForce, "alterations": alterations,
-			"interface": iface, "plan_id": map[string]any{
+			"interface": iface, "active_route": activeRoute, "active_udp_route": activeUDPRoute,
+			"plan_id": map[string]any{
 				"type":        "string",
 				"description": "The plan_id plan_enumeration returned",
 			},
@@ -393,15 +397,12 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 		func(_ context.Context, req *mcp.CallToolRequest, raw json.RawMessage) (string,
 			func(via string) (*mcp.CallToolResult, error), error) {
 			var a struct {
-				Target      string
-				Mode        string
-				Also        []string
-				Expand      bool
-				BruteForce  bool `json:"brute_force"`
-				Alterations bool
-				Interface   string
-				PlanID      string `json:"plan_id"`
-				EveryHours  int    `json:"every_hours"`
+				Target string
+				Mode   string
+				Also   []string
+				planArgs
+				PlanID     string `json:"plan_id"`
+				EveryHours int    `json:"every_hours"`
 			}
 			if err := json.Unmarshal(raw, &a); err != nil {
 				return "", nil, err
@@ -410,13 +411,13 @@ func operatorCapabilities(op *Operator, runner ai.ToolRunner) []capability {
 				return "", nil, errors.New("this server cannot keep watches")
 			}
 
-			plan := planFor(a.Target, a.Mode, a.Also, planOptions(a.Expand, a.BruteForce, a.Alterations, a.Interface))
+			plan := planFor(a.Target, a.Mode, a.Also, a.options())
 			if plan.Status != collect.StatusApprovalRequired {
 				return "", nil, errors.New("cannot enumerate this target: " + plan.Reason)
 			}
 			if a.PlanID != plan.ID {
 				return "", nil, errors.New("plan_id does not match this target, mode, also, expand, brute_force, " +
-					"alterations and interface; call plan_enumeration again")
+					"alterations, interface and active routes; call plan_enumeration again")
 			}
 
 			every := time.Duration(a.EveryHours) * time.Hour
@@ -843,10 +844,20 @@ func approver(req *mcp.CallToolRequest, via string) string {
 
 var asNumber = regexp.MustCompile(`^(?i:as)?(\d{1,10})$`)
 
-// planOptions returns the plan options a tool call asks for, apart from the
-// targets it adds.
-func planOptions(expand, bruteForce, alterations bool, iface string) collect.Options {
-	return collect.Options{Expand: expand, BruteForce: bruteForce, Alterations: alterations, Interface: iface}
+// planArgs are the plan options the planning, starting and watching tools
+// share, apart from the targets a call adds.
+type planArgs struct {
+	Expand         bool
+	BruteForce     bool `json:"brute_force"`
+	Alterations    bool
+	Interface      string
+	ActiveRoute    string `json:"active_route"`
+	ActiveUDPRoute string `json:"active_udp_route"`
+}
+
+func (a planArgs) options() collect.Options {
+	return collect.Options{Expand: a.Expand, BruteForce: a.BruteForce, Alterations: a.Alterations,
+		Interface: a.Interface, ActiveRoute: a.ActiveRoute, ActiveUDPRoute: a.ActiveUDPRoute}
 }
 
 // planMode reads a mode as a user writes it; passive when none is given.

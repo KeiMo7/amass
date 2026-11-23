@@ -42,8 +42,11 @@ type dialFunc func(ctx context.Context, network, address string) (net.Conn, erro
 // before the next; a probe that fails to connect or to get a Server Hello
 // is recorded as failed, as the reference implementation does, so one
 // failure does not void the fingerprint. Probes stop when the session ends.
+// They take the session's active route; a probe the route refuses (a Tor exit
+// policy, for one) stops the fingerprint, since its result would describe the
+// route rather than the service.
 func JARMFingerprint(sess et.Session, target oam.Asset, portrel *general.PortRelation) (string, error) {
-	dial := amassnet.NewDialContext(jarmIOTimeout)
+	dial := amassnet.NewActiveDialContext(jarmIOTimeout)
 	return jarmFingerprint(sess.Ctx(), func(ctx context.Context, network, address string) (net.Conn, error) {
 		sess.NetSem().Acquire()
 		defer sess.NetSem().Release()
@@ -74,7 +77,11 @@ func jarmFingerprint(ctx context.Context, dial dialFunc, target oam.Asset, portr
 			return "", err
 		}
 
-		results = append(results, jarmProbe(ctx, dial, addr, probe))
+		ans, err := jarmProbe(ctx, dial, addr, probe)
+		if err != nil {
+			return "", err
+		}
+		results = append(results, ans)
 	}
 
 	hash := jarm.RawHashToFuzzyHash(strings.Join(results, ","))
@@ -85,35 +92,40 @@ func jarmFingerprint(ctx context.Context, dial dialFunc, target oam.Asset, portr
 	return hash, nil
 }
 
-// jarmProbe sends one probe and returns its result, or jarmFailedProbe.
-func jarmProbe(ctx context.Context, dial dialFunc, addr string, probe jarm.JarmProbeOptions) string {
-	pctx, cancel := context.WithTimeout(ctx, jarmProbeTimeout)
+// jarmProbe sends one probe and returns its result, or jarmFailedProbe. The
+// error is the active route's refusal, the one failure that is not the
+// service's answer.
+func jarmProbe(ctx context.Context, dial dialFunc, addr string, probe jarm.JarmProbeOptions) (string, error) {
+	pctx, cancel := context.WithTimeout(ctx, amassnet.ActiveTimeout(ctx, jarmProbeTimeout))
 	defer cancel()
 
 	c, err := dial(pctx, "tcp", addr)
-	if err != nil {
-		return jarmFailedProbe
+	if errors.Is(err, amassnet.ErrRouteRefused) {
+		return "", err
+	} else if err != nil {
+		return jarmFailedProbe, nil
 	}
 	defer func() { _ = c.Close() }()
 
-	_ = c.SetWriteDeadline(time.Now().Add(jarmIOTimeout))
+	ioTimeout := amassnet.ActiveTimeout(ctx, jarmIOTimeout)
+	_ = c.SetWriteDeadline(time.Now().Add(ioTimeout))
 	if _, err := c.Write(jarm.BuildProbe(probe)); err != nil {
-		return jarmFailedProbe
+		return jarmFailedProbe, nil
 	}
 
-	_ = c.SetReadDeadline(time.Now().Add(jarmIOTimeout))
+	_ = c.SetReadDeadline(time.Now().Add(ioTimeout))
 	buf := make([]byte, jarmReadSize)
 	// A Server Hello read before the server closed the connection is still
 	// usable, so only an empty read fails the probe.
 	n, _ := c.Read(buf)
 	if n == 0 {
-		return jarmFailedProbe
+		return jarmFailedProbe, nil
 	}
 
 	ans, err := jarm.ParseServerHello(buf[:n], probe)
 	if err != nil {
-		return jarmFailedProbe
+		return jarmFailedProbe, nil
 	}
 
-	return ans
+	return ans, nil
 }

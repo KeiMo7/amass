@@ -7,6 +7,7 @@ package support
 import (
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"log"
 	"net"
@@ -18,6 +19,7 @@ import (
 	"testing"
 
 	jarm "github.com/caffix/jarm-go"
+	amassnet "github.com/owasp-amass/amass/v5/internal/net"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
 	"github.com/owasp-amass/open-asset-model/general"
 	"github.com/owasp-amass/open-asset-model/network"
@@ -88,6 +90,28 @@ func TestJARMFailsWhenNoProbeConnects(t *testing.T) {
 	cancel()
 	if _, err := jarmFingerprint(ctx, plainDial, ip, port); !errors.Is(err, context.Canceled) {
 		t.Errorf("a canceled session probed anyway: %v", err)
+	}
+}
+
+// A probe the active route refuses would describe the route, not the
+// service, so it stops the fingerprint instead of counting as a failed probe.
+func TestJARMStopsWhenTheRouteRefuses(t *testing.T) {
+	ip, port := tlsTarget(t)
+	var calls atomic.Int32
+	exitPolicy := func(ctx context.Context, network, address string) (net.Conn, error) {
+		if calls.Add(1) == 3 {
+			return nil, fmt.Errorf("%w: not allowed by the proxy's rules", amassnet.ErrRouteRefused)
+		}
+
+		return plainDial(ctx, network, address)
+	}
+
+	hash, err := jarmFingerprint(context.Background(), exitPolicy, ip, port)
+	if !errors.Is(err, amassnet.ErrRouteRefused) {
+		t.Errorf("a route refusal gave %q, %v; want ErrRouteRefused", hash, err)
+	}
+	if calls.Load() != 3 {
+		t.Errorf("probing went on after the route refused: %d dials", calls.Load())
 	}
 }
 

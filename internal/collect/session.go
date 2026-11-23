@@ -62,6 +62,12 @@ func configure(cfg *config.Config, plan Plan) ([]oam.Asset, error) {
 	if plan.Interface != "" {
 		cfg.Interface = plan.Interface
 	}
+	if plan.ActiveRoute != "" {
+		cfg.ActiveRoute = plan.ActiveRoute
+	}
+	if plan.ActiveUDPRoute != "" {
+		cfg.ActiveUDPRoute = plan.ActiveUDPRoute
+	}
 
 	entries := plan.Entries()
 	assets := make([]oam.Asset, 0, len(entries))

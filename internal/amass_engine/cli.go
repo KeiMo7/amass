@@ -39,13 +39,23 @@ const ResolverQPSEnv = "AMASS_RESOLVER_QPS"
 // through when the -iface flag is not given.
 const InterfaceEnv = "AMASS_IFACE"
 
+// ActiveRouteEnv and ActiveUDPRouteEnv name the route the engine's active
+// traffic takes, and the interface its active UDP leaves from, when the
+// -active-route and -active-udp-route flags are not given.
+const (
+	ActiveRouteEnv    = "AMASS_ACTIVE_ROUTE"
+	ActiveUDPRouteEnv = "AMASS_ACTIVE_UDP_ROUTE"
+)
+
 type Args struct {
 	Help    bool
 	Options struct {
-		NoColor     bool
-		Silent      bool
-		ResolverQPS int
-		Interface   string
+		NoColor        bool
+		Silent         bool
+		ResolverQPS    int
+		Interface      string
+		ActiveRoute    string
+		ActiveUDPRoute string
 	}
 	Filepaths struct {
 		LogDir string
@@ -65,6 +75,11 @@ func NewFlagset(args *Args, errorHandling flag.ErrorHandling) *flag.FlagSet {
 		amassdns.DefaultResolverQPS, ResolverQPSEnv))
 	fs.StringVar(&args.Options.Interface, "iface", "", fmt.Sprintf("Network interface (name or IP address) "+
 		"the engine's traffic leaves through, unless an enumeration names its own (default $%s)", InterfaceEnv))
+	fs.StringVar(&args.Options.ActiveRoute, "active-route", "", fmt.Sprintf("Route for active traffic: an "+
+		"interface, or a proxy URL (socks5h://, socks5://, http://), unless an enumeration names its own "+
+		"(default $%s)", ActiveRouteEnv))
+	fs.StringVar(&args.Options.ActiveUDPRoute, "active-udp-route", "", fmt.Sprintf("Interface for active UDP "+
+		"when the active route is a proxy (default $%s)", ActiveUDPRouteEnv))
 	return fs
 }
 
@@ -119,6 +134,13 @@ func CLIWorkflow(cmdName string, clArgs []string) {
 	}
 	amassnet.SetLocalAddrs(local)
 
+	route, err := engineActiveRoute(args.Options.ActiveRoute, args.Options.ActiveUDPRoute, os.LookupEnv)
+	if err != nil {
+		_, _ = afmt.R.Fprintf(color.Error, "%v\n", err)
+		os.Exit(1)
+	}
+	amassnet.SetActiveRoute(route)
+
 	l, err := selectLogger(args.Filepaths.LogDir)
 	if err != nil {
 		_, _ = afmt.R.Fprintf(color.Error, "Failed to create the logger: %v", err)
@@ -160,18 +182,36 @@ func resolverQPS(flagValue int, lookup func(string) (string, bool)) (int, error)
 // interface: the flag's when given, else the environment variable's, else
 // the zero LocalAddrs, which leaves the choice to the system.
 func engineInterface(flagValue string, lookup func(string) (string, bool)) (amassnet.LocalAddrs, error) {
-	spec := strings.TrimSpace(flagValue)
-	if spec == "" {
-		if v, ok := lookup(InterfaceEnv); ok {
-			spec = strings.TrimSpace(v)
-		}
-	}
-
-	local, err := amassnet.InterfaceAddrs(spec)
+	local, err := amassnet.InterfaceAddrs(setting(flagValue, InterfaceEnv, lookup))
 	if err != nil {
 		return amassnet.LocalAddrs{}, fmt.Errorf("the engine's network interface: %w", err)
 	}
 	return local, nil
+}
+
+// engineActiveRoute returns the route of the engine's active traffic, from
+// the flags when given, else the environment variables. Its proxy is not
+// contacted here: it may start after the engine, and each enumeration checks
+// it when it starts.
+func engineActiveRoute(flagValue, udpFlagValue string, lookup func(string) (string, bool)) (amassnet.Route, error) {
+	route, err := amassnet.ParseRoute(setting(flagValue, ActiveRouteEnv, lookup),
+		setting(udpFlagValue, ActiveUDPRouteEnv, lookup))
+	if err != nil {
+		return amassnet.Route{}, fmt.Errorf("the engine's active route: %w", err)
+	}
+	return route, nil
+}
+
+// setting returns the flag's value when given, else the environment
+// variable's.
+func setting(flagValue, env string, lookup func(string) (string, bool)) string {
+	if v := strings.TrimSpace(flagValue); v != "" {
+		return v
+	}
+	if v, ok := lookup(env); ok {
+		return strings.TrimSpace(v)
+	}
+	return ""
 }
 
 func selectLogger(dir string) (*slog.Logger, error) {

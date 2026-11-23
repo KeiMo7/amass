@@ -132,3 +132,25 @@ func TestEngineInterface(t *testing.T) {
 		t.Errorf("-iface eth0 gave %q, %v", args.Options.Interface, err)
 	}
 }
+
+func TestEngineActiveRoute(t *testing.T) {
+	env := map[string]string{ActiveRouteEnv: "socks5h://127.0.0.1:9050", ActiveUDPRouteEnv: "127.0.0.1"}
+	lookup := func(key string) (string, bool) {
+		v, ok := env[key]
+		return v, ok
+	}
+
+	r, err := engineActiveRoute("", "", lookup)
+	if err != nil || r.Proxy == nil || r.Proxy.Host != "127.0.0.1:9050" || r.UDP.IsZero() {
+		t.Errorf("from the environment: %+v, %v", r, err)
+	}
+	if r, err := engineActiveRoute("127.0.0.1", "", lookup); err != nil || r.Proxy != nil || r.Local.IsZero() {
+		t.Errorf("the flag over the variable: %+v, %v", r, err)
+	}
+	if _, err := engineActiveRoute("gopher://127.0.0.1:70", "", lookup); err == nil {
+		t.Error("an unsupported proxy scheme was accepted")
+	}
+	if r, err := engineActiveRoute("", "", func(string) (string, bool) { return "", false }); err != nil || !r.IsZero() {
+		t.Errorf("neither: %+v, %v", r, err)
+	}
+}

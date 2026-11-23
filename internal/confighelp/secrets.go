@@ -5,15 +5,18 @@
 package confighelp
 
 import (
+	"net/url"
+	"strings"
+
 	"gopkg.in/yaml.v3"
 )
 
 // redacted replaces a masked credential value.
 const redacted = "***"
 
-// RedactSecrets returns content with every data source credential value
-// masked, so a configuration can be shown to a language model without its
-// secrets. Keys, comments and the rest of the document are preserved. An
+// RedactSecrets returns content with every data source credential value and
+// the password of a proxy URL masked, so a configuration can be shown to a
+// language model without its secrets. Keys, comments and the rest of the document are preserved. An
 // empty or comment-only document comes back unchanged.
 func RedactSecrets(content string) (string, error) {
 	var doc yaml.Node
@@ -25,6 +28,10 @@ func RedactSecrets(content string) (string, error) {
 	}
 
 	walkCreds(root(&doc), maskScalars)
+	walkProxyPasswords(root(&doc), func(n *yaml.Node, u *url.URL) {
+		u.User = url.UserPassword(u.User.Username(), redacted)
+		n.Value = strings.Replace(u.String(), url.QueryEscape(redacted), redacted, 1)
+	})
 	out, err := yaml.Marshal(&doc)
 	if err != nil {
 		return "", err
@@ -33,7 +40,8 @@ func RedactSecrets(content string) (string, error) {
 	return string(out), nil
 }
 
-// ContainsSecrets reports whether content sets any data source credential.
+// ContainsSecrets reports whether content sets any data source credential or
+// a proxy URL with a password.
 // apply_config refuses such content: a model never supplies credentials; the
 // operator enters them at a one-time local link.
 func ContainsSecrets(content string) bool {
@@ -50,6 +58,9 @@ func ContainsSecrets(content string) bool {
 		if hasNonEmptyScalar(n) {
 			found = true
 		}
+	})
+	walkProxyPasswords(root(&doc), func(*yaml.Node, *url.URL) {
+		found = true
 	})
 
 	return found
@@ -113,6 +124,29 @@ func walkCreds(rootMap *yaml.Node, fn func(*yaml.Node)) {
 		}
 		if creds := mapValue(item, "creds"); creds != nil {
 			fn(creds)
+		}
+	}
+}
+
+// proxyOptions are the options that may hold a proxy URL.
+var proxyOptions = []string{"active_route"}
+
+// walkProxyPasswords applies fn to each proxy URL under options that carries
+// a password, with the URL parsed.
+func walkProxyPasswords(rootMap *yaml.Node, fn func(*yaml.Node, *url.URL)) {
+	opts := mapValue(rootMap, "options")
+	for _, key := range proxyOptions {
+		n := mapValue(opts, key)
+		if n == nil || n.Kind != yaml.ScalarNode || !strings.Contains(n.Value, "://") {
+			continue
+		}
+
+		u, err := url.Parse(strings.TrimSpace(n.Value))
+		if err != nil || u.User == nil {
+			continue
+		}
+		if _, set := u.User.Password(); set {
+			fn(n, u)
 		}
 	}
 }

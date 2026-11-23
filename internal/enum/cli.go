@@ -50,6 +50,8 @@ type Args struct {
 	Excluded          *stringset.Set
 	Included          *stringset.Set
 	Interface         string
+	ActiveRoute       string
+	ActiveUDPRoute    string
 	Phone             string
 	Address           string
 	MaxDepth          int
@@ -107,6 +109,10 @@ func defineArgumentFlags(fs *flag.FlagSet, args *Args) {
 	fs.Var(args.Excluded, "exclude", "Data source names separated by commas to be excluded")
 	fs.Var(args.Included, "include", "Data source names separated by commas to be included")
 	fs.StringVar(&args.Interface, "iface", "", "Network interface (name or IP address) on the engine host to send traffic through")
+	fs.StringVar(&args.ActiveRoute, "active-route", "", "Route for active traffic: an interface on the engine host, "+
+		"or a proxy URL (socks5h://, socks5://, http://)")
+	fs.StringVar(&args.ActiveUDPRoute, "active-udp-route", "", "Interface on the engine host for active UDP when "+
+		"the active route is a proxy")
 	fs.StringVar(&args.Phone, "phone", "", "Pivot from a phone number: enumerate the registered domains of the "+
 		"organizations tied to it")
 	fs.StringVar(&args.Address, "address", "", "Pivot from a street address: enumerate the registered domains of "+
@@ -553,6 +559,12 @@ func (e Args) OverrideConfig(conf *config.Config) error {
 	}
 	if e.Interface != "" {
 		conf.Interface = strings.TrimSpace(e.Interface)
+	}
+	if e.ActiveRoute != "" {
+		conf.ActiveRoute = strings.TrimSpace(e.ActiveRoute)
+	}
+	if e.ActiveUDPRoute != "" {
+		conf.ActiveUDPRoute = strings.TrimSpace(e.ActiveUDPRoute)
 	}
 	for _, r := range append(e.Resolvers.Slice(), e.TrustedResolvers.Slice()...) {
 		if !config.IsResolverAddress(r) {

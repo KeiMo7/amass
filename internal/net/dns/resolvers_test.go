@@ -7,6 +7,7 @@ package dns
 import (
 	"context"
 	"net"
+	"net/netip"
 	"strings"
 	"sync"
 	"testing"
@@ -83,26 +84,11 @@ func exchange(t *testing.T, r *Resolvers, name string) *miekg.Msg {
 	return nil
 }
 
-func TestResolverAddr(t *testing.T) {
-	for in, want := range map[string]string{
-		"192.0.2.53":         "192.0.2.53:53",
-		" 192.0.2.53:5353 ":  "192.0.2.53:5353",
-		"2001:db8::53":       "[2001:db8::53]:53",
-		"[2001:db8::53]:853": "[2001:db8::53]:853",
-	} {
-		if got, err := resolverAddr(in); err != nil || got != want {
-			t.Errorf("resolverAddr(%q) = %q, %v; want %q", in, got, err, want)
-		}
-	}
-	for _, bad := range []string{"", "dns.example.com", "dns.example.com:53", "192.0.2.300"} {
-		if _, err := resolverAddr(bad); err == nil {
-			t.Errorf("resolverAddr(%q) was accepted", bad)
-		}
-	}
-	if _, err := NewResolvers([]string{"dns.example.com"}, ""); err == nil {
+func TestNewResolversRefusesHostNames(t *testing.T) {
+	if _, err := NewResolvers([]string{"dns.example.com"}, "", netip.Addr{}); err == nil {
 		t.Error("a pool was built with a host name for a resolver")
 	}
-	if _, err := NewResolvers(nil, "dns.example.com"); err == nil {
+	if _, err := NewResolvers(nil, "dns.example.com", netip.Addr{}); err == nil {
 		t.Error("a pool was built with a host name for the wildcard resolver")
 	}
 }
@@ -110,14 +96,14 @@ func TestResolverAddr(t *testing.T) {
 func TestNewSessionResolversPicksTheQueryAndWildcardResolvers(t *testing.T) {
 	noResolverLimit(t)
 
-	if r, err := NewSessionResolvers(nil, nil); r != nil || err != nil {
+	if r, err := NewSessionResolvers(nil, nil, netip.Addr{}); r != nil || err != nil {
 		t.Fatalf("without settings, NewSessionResolvers = %v, %v; want the default pool", r, err)
 	}
 
 	untrusted, trusted := startTestServer(t), startTestServer(t)
 
 	// The untrusted resolvers take the queries; the trusted one tests for wildcards.
-	r, err := NewSessionResolvers([]string{untrusted.addr}, []string{trusted.addr})
+	r, err := NewSessionResolvers([]string{untrusted.addr}, []string{trusted.addr}, netip.Addr{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -135,7 +121,7 @@ func TestNewSessionResolversPicksTheQueryAndWildcardResolvers(t *testing.T) {
 
 	// With only trusted resolvers, they take the queries too.
 	before := trusted.count()
-	r2, err := NewSessionResolvers(nil, []string{trusted.addr})
+	r2, err := NewSessionResolvers(nil, []string{trusted.addr}, netip.Addr{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -155,12 +141,12 @@ func TestTheResolverLimitHoldsAcrossPools(t *testing.T) {
 	}
 
 	ts := startTestServer(t)
-	a, err := NewResolvers([]string{ts.addr}, ts.addr)
+	a, err := NewResolvers([]string{ts.addr}, ts.addr, netip.Addr{})
 	if err != nil {
 		t.Fatal(err)
 	}
 	defer a.Stop()
-	b, err := NewResolvers([]string{ts.addr}, ts.addr)
+	b, err := NewResolvers([]string{ts.addr}, ts.addr, netip.Addr{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -181,11 +167,11 @@ func TestStoppingAPoolLeavesTheSharedResolver(t *testing.T) {
 	noResolverLimit(t)
 
 	ts := startTestServer(t)
-	a, err := NewResolvers([]string{ts.addr}, ts.addr)
+	a, err := NewResolvers([]string{ts.addr}, ts.addr, netip.Addr{})
 	if err != nil {
 		t.Fatal(err)
 	}
-	b, err := NewResolvers([]string{ts.addr}, ts.addr)
+	b, err := NewResolvers([]string{ts.addr}, ts.addr, netip.Addr{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -211,7 +197,7 @@ func TestResolversFromTheContext(t *testing.T) {
 
 	noResolverLimit(t)
 	ts := startTestServer(t)
-	r, err := NewResolvers([]string{ts.addr}, ts.addr)
+	r, err := NewResolvers([]string{ts.addr}, ts.addr, netip.Addr{})
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -219,5 +205,31 @@ func TestResolversFromTheContext(t *testing.T) {
 
 	if got := ResolversFrom(WithResolvers(context.Background(), r)); got != r {
 		t.Error("the context's pool was not returned")
+	}
+}
+
+func TestNewSessionResolversLocalAddr(t *testing.T) {
+	noResolverLimit(t)
+
+	ts := startTestServer(t)
+	loopback := netip.MustParseAddr("127.0.0.1")
+
+	r, err := NewSessionResolvers([]string{ts.addr}, nil, loopback)
+	if err != nil {
+		t.Fatalf("NewSessionResolvers on 127.0.0.1: %v", err)
+	}
+	defer r.Stop()
+	exchange(t, r, "www.example.com")
+
+	// a session with only a local address gets its own pool of the defaults
+	if r, err := NewSessionResolvers(nil, nil, loopback); err != nil || r == nil {
+		t.Errorf("with only a local address, NewSessionResolvers = %v, %v; want a pool", r, err)
+	} else {
+		r.Stop()
+	}
+
+	// 192.0.2.0/24 is reserved for documentation, so no interface has it
+	if _, err := NewResolvers([]string{ts.addr}, ts.addr, netip.MustParseAddr("192.0.2.1")); err == nil {
+		t.Error("a pool was built on a local address no interface has")
 	}
 }

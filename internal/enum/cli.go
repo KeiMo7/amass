@@ -12,6 +12,7 @@ import (
 	"io"
 	"os"
 	"os/signal"
+	"strings"
 	"time"
 
 	"github.com/caffix/stringset"
@@ -105,7 +106,7 @@ func defineArgumentFlags(fs *flag.FlagSet, args *Args) {
 	fs.StringVar(&args.Engine, "engine", "", "URL for the collection engine (Default: http://127.0.0.1:4000)")
 	fs.Var(args.Excluded, "exclude", "Data source names separated by commas to be excluded")
 	fs.Var(args.Included, "include", "Data source names separated by commas to be included")
-	fs.StringVar(&args.Interface, "iface", "", "Provide the network interface to send traffic through")
+	fs.StringVar(&args.Interface, "iface", "", "Network interface (name or IP address) on the engine host to send traffic through")
 	fs.StringVar(&args.Phone, "phone", "", "Pivot from a phone number: enumerate the registered domains of the "+
 		"organizations tied to it")
 	fs.StringVar(&args.Address, "address", "", "Pivot from a street address: enumerate the registered domains of "+
@@ -549,6 +550,9 @@ func (e Args) OverrideConfig(conf *config.Config) error {
 	}
 	if e.Options.Verbose {
 		conf.Verbose = true
+	}
+	if e.Interface != "" {
+		conf.Interface = strings.TrimSpace(e.Interface)
 	}
 	for _, r := range append(e.Resolvers.Slice(), e.TrustedResolvers.Slice()...) {
 		if !config.IsResolverAddress(r) {

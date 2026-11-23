@@ -7,6 +7,7 @@ package amass_engine
 import (
 	"flag"
 	"io"
+	"net/netip"
 	"os"
 	"path/filepath"
 	"strings"
@@ -88,5 +89,45 @@ func TestResolverQPS(t *testing.T) {
 	}
 	if err := fs.Parse([]string{"-resolver-qps", "25"}); err != nil || args.Options.ResolverQPS != 25 {
 		t.Errorf("-resolver-qps 25 gave %d, %v", args.Options.ResolverQPS, err)
+	}
+}
+
+func TestEngineInterface(t *testing.T) {
+	env := func(v string) func(string) (string, bool) {
+		return func(key string) (string, bool) {
+			if key != InterfaceEnv || v == "" {
+				return "", false
+			}
+			return v, true
+		}
+	}
+	loopback := netip.MustParseAddr("127.0.0.1")
+
+	tests := []struct {
+		name  string
+		flag  string
+		env   func(string) (string, bool)
+		want  netip.Addr
+		fails bool
+	}{
+		{"neither", "", env(""), netip.Addr{}, false},
+		{"the variable", "", env("127.0.0.1"), loopback, false},
+		{"the flag over the variable", "127.0.0.1", env("no-such-iface0"), loopback, false},
+		{"a missing interface", "no-such-iface0", env(""), netip.Addr{}, true},
+		// 192.0.2.0/24 is reserved for documentation, so no interface has it
+		{"an address on no interface", "", env("192.0.2.1"), netip.Addr{}, true},
+	}
+	for _, tt := range tests {
+		got, err := engineInterface(tt.flag, tt.env)
+		if (err != nil) != tt.fails || (!tt.fails && got != tt.want) {
+			t.Errorf("%s: engineInterface = %v, %v; want %v", tt.name, got, err, tt.want)
+		}
+	}
+
+	var args Args
+	fs := NewFlagset(&args, flag.ContinueOnError)
+	fs.SetOutput(io.Discard)
+	if err := fs.Parse([]string{"-iface", "eth0"}); err != nil || args.Options.Interface != "eth0" {
+		t.Errorf("-iface eth0 gave %q, %v", args.Options.Interface, err)
 	}
 }

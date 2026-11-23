@@ -136,6 +136,11 @@ type Config struct {
 	Resolvers        []string `yaml:"-" json:"resolvers"`
 	TrustedResolvers []string `yaml:"-" json:"trusted_resolvers,omitempty"`
 
+	// The network interface the enumeration's traffic leaves through: an
+	// interface name, such as eth0, or one of the engine host's IP addresses.
+	// The engine resolves it, and without it the engine's own setting applies.
+	Interface string `yaml:"-" json:"interface,omitempty"`
+
 	// Option for verbose logging and output
 	Verbose bool `yaml:"-" json:"verbose,omitempty"`
 
@@ -359,6 +364,7 @@ func (c *Config) LoadSettings(path string) error {
 		c.loadDatabaseSettings,
 		c.loadDataSourceSettings,
 		c.loadResolverSettings,
+		c.loadInterfaceSetting,
 		c.loadTransformSettings,
 		c.loadEngineSettings,
 		c.loadActiveSettings,

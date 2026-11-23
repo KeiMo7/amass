@@ -10,6 +10,7 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
+	"net/netip"
 	"os"
 	"os/signal"
 	"strconv"
@@ -21,6 +22,7 @@ import (
 	"github.com/owasp-amass/amass/v5/config"
 	"github.com/owasp-amass/amass/v5/engine"
 	"github.com/owasp-amass/amass/v5/internal/afmt"
+	amassnet "github.com/owasp-amass/amass/v5/internal/net"
 	amassdns "github.com/owasp-amass/amass/v5/internal/net/dns"
 	"github.com/owasp-amass/amass/v5/internal/tools"
 )
@@ -34,12 +36,17 @@ const (
 // the -resolver-qps flag is not given.
 const ResolverQPSEnv = "AMASS_RESOLVER_QPS"
 
+// InterfaceEnv names the network interface the engine's traffic leaves
+// through when the -iface flag is not given.
+const InterfaceEnv = "AMASS_IFACE"
+
 type Args struct {
 	Help    bool
 	Options struct {
 		NoColor     bool
 		Silent      bool
 		ResolverQPS int
+		Interface   string
 	}
 	Filepaths struct {
 		LogDir string
@@ -57,6 +64,8 @@ func NewFlagset(args *Args, errorHandling flag.ErrorHandling) *flag.FlagSet {
 	fs.IntVar(&args.Options.ResolverQPS, "resolver-qps", -1, fmt.Sprintf("Queries per second sent to each "+
 		"DNS resolver, across all enumerations; 0 for no limit (default %d, or $%s)",
 		amassdns.DefaultResolverQPS, ResolverQPSEnv))
+	fs.StringVar(&args.Options.Interface, "iface", "", fmt.Sprintf("Network interface (name or IP address) "+
+		"the engine's traffic leaves through, unless an enumeration names its own (default $%s)", InterfaceEnv))
 	return fs
 }
 
@@ -104,6 +113,13 @@ func CLIWorkflow(cmdName string, clArgs []string) {
 	}
 	amassdns.SetResolverQPS(qps)
 
+	laddr, err := engineInterface(args.Options.Interface, os.LookupEnv)
+	if err != nil {
+		_, _ = afmt.R.Fprintf(color.Error, "%v\n", err)
+		os.Exit(1)
+	}
+	amassnet.SetLocalAddr(laddr)
+
 	l, err := selectLogger(args.Filepaths.LogDir)
 	if err != nil {
 		_, _ = afmt.R.Fprintf(color.Error, "Failed to create the logger: %v", err)
@@ -139,6 +155,24 @@ func resolverQPS(flagValue int, lookup func(string) (string, bool)) (int, error)
 		return qps, nil
 	}
 	return amassdns.DefaultResolverQPS, nil
+}
+
+// engineInterface returns the local address of the engine's network
+// interface: the flag's when given, else the environment variable's, else
+// the zero Addr, which leaves the choice to the system.
+func engineInterface(flagValue string, lookup func(string) (string, bool)) (netip.Addr, error) {
+	spec := strings.TrimSpace(flagValue)
+	if spec == "" {
+		if v, ok := lookup(InterfaceEnv); ok {
+			spec = strings.TrimSpace(v)
+		}
+	}
+
+	addr, err := amassnet.InterfaceAddr(spec)
+	if err != nil {
+		return netip.Addr{}, fmt.Errorf("the engine's network interface: %w", err)
+	}
+	return addr, nil
 }
 
 func selectLogger(dir string) (*slog.Logger, error) {

@@ -86,12 +86,19 @@ func CreateSession(mgr *manager, reg et.Registry, cfg *config.Config) (et.Sessio
 		return nil, errors.New("the configuration has no scope")
 	}
 
-	clients, err := NewClients(len(cfg.Scope.Ports))
+	// the enumeration's own network interface, if it names one; otherwise
+	// its traffic leaves from the engine's
+	laddr, err := amassnet.InterfaceAddr(cfg.Interface)
+	if err != nil {
+		return nil, fmt.Errorf("the network interface in the configuration: %w", err)
+	}
+
+	clients, err := NewClients(len(cfg.Scope.Ports), laddr)
 	if err != nil {
 		return nil, err
 	}
 
-	resolvers, err := amassdns.NewSessionResolvers(cfg.Resolvers, cfg.TrustedResolvers)
+	resolvers, err := amassdns.NewSessionResolvers(cfg.Resolvers, cfg.TrustedResolvers, laddr)
 	if err != nil {
 		return nil, fmt.Errorf("the DNS resolvers in the configuration: %w", err)
 	}
@@ -100,6 +107,7 @@ func CreateSession(mgr *manager, reg et.Registry, cfg *config.Config) (et.Sessio
 	numOfSessions := mgr.NumOfSessions() + 1
 	usage := &et.NetUsage{}
 	ctx := et.WithNetUsage(context.Background(), usage)
+	ctx = amassnet.WithLocalAddr(ctx, laddr)
 	if resolvers != nil {
 		ctx = amassdns.WithResolvers(ctx, resolvers)
 	}

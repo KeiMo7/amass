@@ -5,9 +5,12 @@
 package sessions
 
 import (
+	"context"
 	"crypto/tls"
+	"net"
 	"net/http"
 	"net/http/cookiejar"
+	"net/netip"
 	"time"
 
 	amassnet "github.com/owasp-amass/amass/v5/internal/net"
@@ -51,12 +54,14 @@ const (
 	bulkTimeout       = 4 * time.Minute
 )
 
-// NewClients returns four tuned clients: API, Probe, Crawl and Bulk.
-func NewClients(perHost int) (*Clients, error) {
-	genTr := newGeneralTransport()
-	probTr := newProbeTransport(perHost)
-	crwlTr := newCrawlTransport()
-	bulkTr := newGeneralTransport()
+// NewClients returns four tuned clients: API, Probe, Crawl and Bulk. They
+// send from the local address laddr whatever context a request carries; with
+// the zero laddr, from the engine's (see amassnet.LocalAddr).
+func NewClients(perHost int, laddr netip.Addr) (*Clients, error) {
+	genTr := newGeneralTransport(laddr)
+	probTr := newProbeTransport(perHost, laddr)
+	crwlTr := newCrawlTransport(laddr)
+	bulkTr := newGeneralTransport(laddr)
 	bulkTr.ResponseHeaderTimeout = bulkHeaderTimeout
 
 	gjar, err := cookiejar.New(nil)
@@ -99,10 +104,23 @@ func NewClients(perHost int) (*Clients, error) {
 	}, nil
 }
 
-func newGeneralTransport() *http.Transport {
+// boundDial returns a dial function for the timeout that sends from laddr,
+// whatever context it is given; with the zero laddr, the context decides.
+func boundDial(timeout time.Duration, laddr netip.Addr) amassnet.DialContext {
+	dial := amassnet.NewDialContext(timeout)
+	if !laddr.IsValid() {
+		return dial
+	}
+
+	return func(ctx context.Context, network, addr string) (net.Conn, error) {
+		return dial(amassnet.WithLocalAddr(ctx, laddr), network, addr)
+	}
+}
+
+func newGeneralTransport(laddr netip.Addr) *http.Transport {
 	return &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           amassnet.NewDialContext(8 * time.Second),
+		DialContext:           boundDial(8*time.Second, laddr),
 		ForceAttemptHTTP2:     false,
 		MaxIdleConns:          200,
 		MaxIdleConnsPerHost:   20,
@@ -118,10 +136,10 @@ func newGeneralTransport() *http.Transport {
 	}
 }
 
-func newProbeTransport(perHost int) *http.Transport {
+func newProbeTransport(perHost int, laddr netip.Addr) *http.Transport {
 	return &http.Transport{
 		Proxy:                 http.ProxyFromEnvironment,
-		DialContext:           amassnet.NewDialContext(5 * time.Second),
+		DialContext:           boundDial(5*time.Second, laddr),
 		ForceAttemptHTTP2:     false,
 		MaxIdleConns:          64,
 		MaxIdleConnsPerHost:   perHost,
@@ -134,10 +152,10 @@ func newProbeTransport(perHost int) *http.Transport {
 	}
 }
 
-func newCrawlTransport() *http.Transport {
+func newCrawlTransport(laddr netip.Addr) *http.Transport {
 	return &http.Transport{
 		Proxy:             http.ProxyFromEnvironment,
-		DialContext:       amassnet.NewDialContext(8 * time.Second),
+		DialContext:       boundDial(8*time.Second, laddr),
 		ForceAttemptHTTP2: true,
 		// crawling usually hits same hosts repeatedly; keep-alives pay off
 		MaxIdleConns:          256,

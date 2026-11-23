@@ -62,8 +62,8 @@ func TestCatalogCoversTheConfig(t *testing.T) {
 
 	// Options are parsed from a map, not struct fields, so the documented
 	// keys are checked explicitly.
-	for _, key := range []string{"datasources", "database", "engine", "resolvers", "bruteforce", "alterations",
-		"default_transform_values", "minimum_ttl", "probe_pace_ms", "probe_jitter_ms"} {
+	for _, key := range []string{"datasources", "database", "engine", "resolvers", "trusted_resolvers", "interface",
+		"bruteforce", "alterations", "default_transform_values", "minimum_ttl", "probe_pace_ms", "probe_jitter_ms"} {
 		has("options." + key)
 	}
 

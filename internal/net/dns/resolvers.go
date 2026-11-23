@@ -6,21 +6,21 @@ package dns
 
 import (
 	"context"
-	"errors"
 	"fmt"
-	"net"
+	"net/netip"
 	"runtime"
 	"strings"
 	"sync"
 	"time"
 
 	miekg "github.com/miekg/dns"
+	amassnet "github.com/owasp-amass/amass/v5/internal/net"
 	"github.com/owasp-amass/resolve/conn"
 	"github.com/owasp-amass/resolve/pool"
+	"github.com/owasp-amass/resolve/selectors"
 	"github.com/owasp-amass/resolve/servers"
 	"github.com/owasp-amass/resolve/types"
 	"github.com/owasp-amass/resolve/wildcards"
-	"golang.org/x/time/rate"
 )
 
 // DefaultResolvers are the public DNS resolvers an enumeration queries when
@@ -104,35 +104,49 @@ type Resolvers struct {
 }
 
 // NewResolvers builds a pool that sends its queries to the query resolvers
-// and tests for wildcards with the wildcard resolver. Without query
-// resolvers it uses DefaultResolvers, and without a wildcard resolver
-// DefaultWildcardResolver. A resolver is an IP address with an optional
-// port; a host name is an error.
-func NewResolvers(query []string, wildcard string) (*Resolvers, error) {
+// and tests for wildcards with the wildcard resolver, from the local
+// address laddr. Without query resolvers it uses DefaultResolvers, without
+// a wildcard resolver DefaultWildcardResolver, and with the zero laddr the
+// engine's local address (see amassnet.LocalAddr). A resolver is an IP
+// address with an optional port; a host name is an error.
+func NewResolvers(query []string, wildcard string, laddr netip.Addr) (*Resolvers, error) {
 	if len(query) == 0 {
 		query = DefaultResolvers
 	}
 	if strings.TrimSpace(wildcard) == "" {
 		wildcard = DefaultWildcardResolver
 	}
+	if !laddr.IsValid() {
+		laddr = amassnet.LocalAddr(context.Background())
+	}
 
 	var servs []types.Nameserver
 	for _, addr := range query {
-		s, err := shared.get(addr)
+		s, err := shared.Get(addr)
 		if err != nil {
 			return nil, err
 		}
 		servs = append(servs, s)
 	}
-	ws, err := shared.get(wildcard)
+	ws, err := shared.Get(wildcard)
 	if err != nil {
 		return nil, err
 	}
 
 	cpus := runtime.NumCPU()
-	sel := newRotation(servs...)
-	conns := conn.New(cpus, sel)
-	wconns := conn.New(cpus, newRotation(ws))
+	sel := selectors.NewSharedRoundRobin(servs...)
+	conns := conn.New(cpus, sel, conn.LocalAddr(laddr))
+	wconns := conn.New(cpus, selectors.NewSharedRoundRobin(ws), conn.LocalAddr(laddr))
+	if conns == nil || wconns == nil {
+		if conns != nil {
+			conns.Close()
+		}
+		if wconns != nil {
+			wconns.Close()
+		}
+		return nil, fmt.Errorf("the DNS sockets cannot be opened on the local address %s", laddr)
+	}
+
 	return &Resolvers{
 		pool:     pool.New(0, sel, conns, nil),
 		conns:    conns,
@@ -142,11 +156,12 @@ func NewResolvers(query []string, wildcard string) (*Resolvers, error) {
 }
 
 // NewSessionResolvers builds the pool for an enumeration's resolver
-// settings: queries go to the untrusted resolvers when there are any, and
-// otherwise to the trusted ones, and the first trusted resolver tests for
-// wildcards. With neither, it returns nil, and the session uses Default.
-func NewSessionResolvers(untrusted, trusted []string) (*Resolvers, error) {
-	if len(untrusted) == 0 && len(trusted) == 0 {
+// settings and local address: queries go to the untrusted resolvers when
+// there are any, and otherwise to the trusted ones, and the first trusted
+// resolver tests for wildcards. With no resolvers and the zero laddr, it
+// returns nil, and the session uses Default.
+func NewSessionResolvers(untrusted, trusted []string, laddr netip.Addr) (*Resolvers, error) {
+	if len(untrusted) == 0 && len(trusted) == 0 && !laddr.IsValid() {
 		return nil, nil
 	}
 
@@ -158,7 +173,7 @@ func NewSessionResolvers(untrusted, trusted []string) (*Resolvers, error) {
 	if len(trusted) > 0 {
 		wildcard = trusted[0]
 	}
-	return NewResolvers(query, wildcard)
+	return NewResolvers(query, wildcard, laddr)
 }
 
 // Exchange sends the query to a resolver in the pool and returns its answer.
@@ -187,10 +202,11 @@ var (
 	defaultResolvers *Resolvers
 )
 
-// Default returns the engine's pool of DefaultResolvers, built on first use.
+// Default returns the engine's pool of DefaultResolvers, built on first use
+// on the engine's local address.
 func Default() *Resolvers {
 	defaultOnce.Do(func() {
-		defaultResolvers, _ = NewResolvers(nil, "")
+		defaultResolvers, _ = NewResolvers(nil, "", netip.Addr{})
 	})
 	return defaultResolvers
 }
@@ -213,174 +229,19 @@ func ResolversFrom(ctx context.Context) *Resolvers {
 	return Default()
 }
 
+// shared holds the engine's resolvers, one per address, for the life of the
+// engine, so the per-resolver limit holds across sessions. It expires their
+// unanswered queries.
+var shared = servers.NewRegistry(queryTimeout, DefaultResolverQPS)
+
 // SetResolverQPS sets how many queries per second the engine sends to any one
 // resolver, across all its sessions. Zero or less removes the limit.
 func SetResolverQPS(qps int) {
-	shared.setQPS(qps)
+	shared.SetMaxQPS(qps)
 }
 
 // ResolverQPS returns the engine's limit on queries per second per resolver,
-// zero when there is none.
+// zero or less when there is none.
 func ResolverQPS() int {
-	shared.Lock()
-	defer shared.Unlock()
-
-	return shared.qps
+	return shared.MaxQPS()
 }
-
-// limitedServer is a shared resolver that waits for the engine's rate limit
-// before each query.
-type limitedServer struct {
-	types.Nameserver
-	limiter *rate.Limiter
-}
-
-func (s *limitedServer) SendRequest(ctx context.Context, req types.Request, conns types.Conn) error {
-	if err := s.limiter.Wait(ctx); err != nil {
-		return err
-	}
-	return s.Nameserver.SendRequest(ctx, req, conns)
-}
-
-// Close keeps the shared resolver open; it outlives any one pool.
-func (s *limitedServer) Close() {}
-
-// registry holds one limitedServer per resolver address for the life of the
-// engine, and expires their queries that go unanswered.
-type registry struct {
-	sync.Mutex
-	qps     int
-	servers map[string]*limitedServer
-	expiry  sync.Once
-}
-
-var shared = &registry{qps: DefaultResolverQPS, servers: make(map[string]*limitedServer)}
-
-func qpsLimit(qps int) rate.Limit {
-	if qps <= 0 {
-		return rate.Inf
-	}
-	return rate.Limit(qps)
-}
-
-func (r *registry) setQPS(qps int) {
-	r.Lock()
-	defer r.Unlock()
-
-	r.qps = qps
-	for _, s := range r.servers {
-		s.limiter.SetLimit(qpsLimit(qps))
-	}
-}
-
-func (r *registry) get(addr string) (*limitedServer, error) {
-	key, err := resolverAddr(addr)
-	if err != nil {
-		return nil, err
-	}
-
-	r.Lock()
-	defer r.Unlock()
-
-	if s, found := r.servers[key]; found {
-		return s, nil
-	}
-
-	ns := servers.NewNameserver(key)
-	if ns == nil {
-		return nil, fmt.Errorf("the resolver %q cannot be used", addr)
-	}
-	s := &limitedServer{Nameserver: ns, limiter: rate.NewLimiter(qpsLimit(r.qps), 1)}
-	r.servers[key] = s
-
-	r.expiry.Do(func() { go r.expire() })
-	return s, nil
-}
-
-// expire answers each query that has waited longer than queryTimeout with
-// no response, so its sender stops waiting.
-func (r *registry) expire() {
-	t := time.NewTicker(queryTimeout)
-	defer t.Stop()
-
-	for range t.C {
-		r.Lock()
-		servs := make([]*limitedServer, 0, len(r.servers))
-		for _, s := range r.servers {
-			servs = append(servs, s)
-		}
-		r.Unlock()
-
-		for _, s := range servs {
-			for _, req := range s.XchgManager().RemoveExpired(queryTimeout) {
-				req.NoResponse()
-				req.Release()
-			}
-		}
-	}
-}
-
-// resolverAddr returns the resolver's address as host:port, with port 53
-// when none is given. The host must be an IP address.
-func resolverAddr(addr string) (string, error) {
-	addr = strings.TrimSpace(addr)
-	host, port := addr, "53"
-	if h, p, err := net.SplitHostPort(addr); err == nil {
-		host, port = h, p
-	}
-	if net.ParseIP(host) == nil {
-		return "", fmt.Errorf("the resolver %q is not an IP address", addr)
-	}
-	return net.JoinHostPort(host, port), nil
-}
-
-// rotation hands out its resolvers in turn. Responses are matched to a
-// resolver by IP address, so a pool should not hold two resolvers on the
-// same address with different ports.
-type rotation struct {
-	sync.Mutex
-	list   []types.Nameserver
-	next   int
-	lookup map[string]types.Nameserver
-}
-
-func newRotation(servs ...types.Nameserver) *rotation {
-	r := &rotation{lookup: make(map[string]types.Nameserver)}
-	for _, s := range servs {
-		r.list = append(r.list, s)
-		r.lookup[s.Address().IP.String()] = s
-	}
-	return r
-}
-
-func (r *rotation) Get(string) (types.Nameserver, error) {
-	r.Lock()
-	defer r.Unlock()
-
-	if len(r.list) == 0 {
-		return nil, errors.New("the pool has no resolvers")
-	}
-	s := r.list[r.next%len(r.list)]
-	r.next = (r.next + 1) % len(r.list)
-	return s, nil
-}
-
-func (r *rotation) Lookup(addr string) (types.Nameserver, error) {
-	r.Lock()
-	defer r.Unlock()
-
-	if s, found := r.lookup[addr]; found {
-		return s, nil
-	}
-	return nil, errors.New("the pool does not have the resolver")
-}
-
-func (r *rotation) All() []types.Nameserver {
-	r.Lock()
-	defer r.Unlock()
-
-	return append([]types.Nameserver(nil), r.list...)
-}
-
-// Close leaves the shared resolvers open.
-func (r *rotation) Close() {}

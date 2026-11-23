@@ -12,11 +12,11 @@ import (
 
 	"github.com/biter777/countries"
 	"github.com/google/uuid"
+	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	oamgen "github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 )
 
@@ -103,16 +103,13 @@ func createOrgAssetLocked(sess et.Session, obj *dbt.Entity, rel oam.Relation, o 
 		defer cancel()
 
 		// identify this caller as a source of the Organization asset
-		_, _ = sess.DB().CreateEntityProperty(ctx, orgent, &oamgen.SourceProperty{
-			Source:     src.Name,
-			Confidence: src.Confidence,
-		})
+		support.AddSource(ctx, sess, orgent, src)
 
 		if obj != nil && rel != nil && obj.ID != orgent.ID {
 			ctx, cancel := context.WithTimeout(sess.Ctx(), 10*time.Second)
 			defer cancel()
 
-			if err := createRelation(ctx, sess, obj, rel, orgent, src); err != nil {
+			if _, err := support.Relate(ctx, sess, obj, rel, orgent, src); err != nil {
 				return nil, err
 			}
 		}
@@ -136,23 +133,4 @@ func genNormName(o *oamorg.Organization) string {
 func genStableOrgID(o *oamorg.Organization) string {
 	id := uuid.New().String()
 	return fmt.Sprintf("%s:%s", o.Name, id)
-}
-
-func createRelation(ctx context.Context, sess et.Session, obj *dbt.Entity, rel oam.Relation, subject *dbt.Entity, src *et.Source) error {
-	edge, err := sess.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   rel,
-		FromEntity: obj,
-		ToEntity:   subject,
-	})
-	if err != nil {
-		return err
-	} else if edge == nil {
-		return errors.New("failed to create the edge")
-	}
-
-	_, err = sess.DB().CreateEdgeProperty(ctx, edge, &oamgen.SourceProperty{
-		Source:     src.Name,
-		Confidence: src.Confidence,
-	})
-	return err
 }

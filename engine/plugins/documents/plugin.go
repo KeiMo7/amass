@@ -329,18 +329,9 @@ func (d *documents) store(e *et.Event, urlent *dbt.Entity, u *oamurl.URL, dt sem
 	if err != nil || fent == nil {
 		return
 	}
-	d.sourced(ctx, e, fent)
+	support.AddSource(ctx, e.Session, fent, d.source)
 
-	if edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &oamgen.SimpleRelation{Name: "file"},
-		FromEntity: urlent,
-		ToEntity:   fent,
-	}); err == nil && edge != nil {
-		_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &oamgen.SourceProperty{
-			Source:     d.source.Name,
-			Confidence: d.source.Confidence,
-		})
-	}
+	_, _ = support.Relate(ctx, e.Session, urlent, &oamgen.SimpleRelation{Name: "file"}, fent, d.source)
 
 	sum := sha256.Sum256(data)
 	_ = support.StoreFingerprint(e, fent, d.source, FingerprintType, hex.EncodeToString(sum[:]))
@@ -381,13 +372,6 @@ func (d *documents) store(e *et.Event, urlent *dbt.Entity, u *oamurl.URL, dt sem
 	d.accountLeads(e, fent, u, append(meta.Usernames, usernames...), authors, &n)
 	d.imageLeads(e, fent, dt, data, &n)
 	d.logLeads(e, u, n)
-}
-
-func (d *documents) sourced(ctx context.Context, e *et.Event, ent *dbt.Entity) {
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, ent, &oamgen.SourceProperty{
-		Source:     d.source.Name,
-		Confidence: d.source.Confidence,
-	})
 }
 
 func (d *documents) property(ctx context.Context, e *et.Event, ent *dbt.Entity, name, value string) {

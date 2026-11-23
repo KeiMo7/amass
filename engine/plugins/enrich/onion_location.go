@@ -96,10 +96,7 @@ func (ol *onionLocation) check(e *et.Event) error {
 		if err != nil || ent == nil {
 			continue
 		}
-		_, _ = e.Session.DB().CreateEntityProperty(ctx, ent, &general.SourceProperty{
-			Source:     ol.source.Name,
-			Confidence: ol.source.Confidence,
-		})
+		support.AddSource(ctx, e.Session, ent, ol.source)
 		ol.link(ctx, e, ent)
 		e.Session.Log().Info("onion service advertised", "service", serv.ID, "url", u.Raw,
 			slog.Group("plugin", "name", ol.name, "handler", ol.name+"-Handler"))
@@ -109,18 +106,7 @@ func (ol *onionLocation) check(e *et.Event) error {
 
 // link records the Service --onion_location--> URL relationship.
 func (ol *onionLocation) link(ctx context.Context, e *et.Event, u *dbt.Entity) {
-	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &general.SimpleRelation{Name: "onion_location"},
-		FromEntity: e.Entity,
-		ToEntity:   u,
-	})
-	if err != nil || edge == nil {
-		return
-	}
-	_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-		Source:     ol.source.Name,
-		Confidence: ol.source.Confidence,
-	})
+	_, _ = support.Relate(ctx, e.Session, e.Entity, &general.SimpleRelation{Name: "onion_location"}, u, ol.source)
 }
 
 // onionURLs returns the onion service URLs a response's Onion-Location

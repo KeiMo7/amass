@@ -14,6 +14,7 @@ import (
 	"errors"
 	"time"
 
+	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	dbt "github.com/owasp-amass/asset-db/types"
@@ -93,7 +94,7 @@ func createLocked(sess et.Session, sw Software, src *et.Source) (*Result, error)
 	if err != nil || pent == nil {
 		return nil, errors.New("failed to create the Product asset")
 	}
-	sourced(ctx, sess, pent, src)
+	support.AddSource(ctx, sess, pent, src)
 
 	res := &Result{Target: pent, Product: pent}
 	if sw.Version == "" {
@@ -104,7 +105,7 @@ func createLocked(sess et.Session, sw Software, src *et.Source) (*Result, error)
 	if err != nil || rent == nil {
 		return res, nil
 	}
-	sourced(ctx, sess, rent, src)
+	support.AddSource(ctx, sess, rent, src)
 	if err := link(sess, pent, &oamgen.SimpleRelation{Name: "release"}, rent, src); err != nil {
 		return res, nil
 	}
@@ -125,22 +126,6 @@ func link(sess et.Session, from *dbt.Entity, rel oam.Relation, to *dbt.Entity, s
 	ctx, cancel := context.WithTimeout(sess.Ctx(), 10*time.Second)
 	defer cancel()
 
-	edge, err := sess.DB().CreateEdge(ctx, &dbt.Edge{Relation: rel, FromEntity: from, ToEntity: to})
-	if err != nil {
-		return err
-	} else if edge == nil {
-		return errors.New("failed to create the edge")
-	}
-	_, _ = sess.DB().CreateEdgeProperty(ctx, edge, &oamgen.SourceProperty{
-		Source:     src.Name,
-		Confidence: src.Confidence,
-	})
-	return nil
-}
-
-func sourced(ctx context.Context, sess et.Session, ent *dbt.Entity, src *et.Source) {
-	_, _ = sess.DB().CreateEntityProperty(ctx, ent, &oamgen.SourceProperty{
-		Source:     src.Name,
-		Confidence: src.Confidence,
-	})
+	_, err := support.Relate(ctx, sess, from, rel, to, src)
+	return err
 }

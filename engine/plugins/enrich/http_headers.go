@@ -107,7 +107,7 @@ func (hr *headerRefs) check(e *et.Event) error {
 	}
 	for _, u := range refs.reportEndpoints {
 		if ent, err := e.Session.DB().CreateAsset(ctx, u); err == nil && ent != nil {
-			hr.sourced(ctx, e, ent)
+			support.AddSource(ctx, e.Session, ent, hr.source)
 			hr.link(ctx, e, "report_endpoint", ent)
 		}
 	}
@@ -117,7 +117,7 @@ func (hr *headerRefs) check(e *et.Event) error {
 			continue
 		}
 		if ent, err := e.Session.DB().CreateAsset(ctx, fqdn); err == nil && ent != nil {
-			hr.sourced(ctx, e, ent)
+			support.AddSource(ctx, e.Session, ent, hr.source)
 			hr.dispatch(e, ent, h)
 		}
 	}
@@ -132,33 +132,15 @@ func (hr *headerRefs) linkHost(ctx context.Context, e *et.Event, label, host str
 	if err != nil || ent == nil {
 		return
 	}
-	hr.sourced(ctx, e, ent)
+	support.AddSource(ctx, e.Session, ent, hr.source)
 	hr.link(ctx, e, label, ent)
 	if _, conf := e.Session.Scope().IsAssetInScope(fqdn, 0); conf > 0 {
 		hr.dispatch(e, ent, host)
 	}
 }
 
-func (hr *headerRefs) sourced(ctx context.Context, e *et.Event, ent *dbt.Entity) {
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, ent, &general.SourceProperty{
-		Source:     hr.source.Name,
-		Confidence: hr.source.Confidence,
-	})
-}
-
 func (hr *headerRefs) link(ctx context.Context, e *et.Event, label string, to *dbt.Entity) {
-	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &general.SimpleRelation{Name: label},
-		FromEntity: e.Entity,
-		ToEntity:   to,
-	})
-	if err != nil || edge == nil {
-		return
-	}
-	_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-		Source:     hr.source.Name,
-		Confidence: hr.source.Confidence,
-	})
+	_, _ = support.Relate(ctx, e.Session, e.Entity, &general.SimpleRelation{Name: label}, to, hr.source)
 }
 
 func (hr *headerRefs) dispatch(e *et.Event, ent *dbt.Entity, name string) {

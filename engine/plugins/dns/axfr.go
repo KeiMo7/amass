@@ -162,10 +162,7 @@ func (d *dnsSubs) ingestZone(e *et.Event, apex *dbt.Entity, zone string, records
 		if err != nil || entity == nil {
 			continue
 		}
-		_, _ = e.Session.DB().CreateEntityProperty(ctx, entity, &general.SourceProperty{
-			Source:     d.plugin.source.Name,
-			Confidence: d.plugin.source.Confidence,
-		})
+		support.AddSource(ctx, e.Session, entity, d.plugin.source)
 		d.linkBelow(e, apex, entity)
 		_ = e.Dispatcher.DispatchEvent(&et.Event{
 			Name:    name,

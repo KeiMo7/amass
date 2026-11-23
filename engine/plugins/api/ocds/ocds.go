@@ -550,17 +550,15 @@ func (h *handler) store(e *et.Event, orgent *dbt.Entity, a *award, id string) {
 	if err != nil || fundent == nil {
 		return
 	}
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, fundent, &general.SourceProperty{
-		Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
-	})
-	if err := h.plugin.createRelation(ctx, e.Session, fundent,
-		&general.SimpleRelation{Name: "recipient"}, orgacc, h.plugin.source.Confidence); err != nil {
+	support.AddSource(ctx, e.Session, fundent, h.plugin.source)
+	if _, err := support.Relate(ctx, e.Session, fundent,
+		&general.SimpleRelation{Name: "recipient"}, orgacc, h.plugin.source); err != nil {
 		return
 	}
 	if buyer, err := org.CreateOrgAsset(e.Session, nil, nil,
 		&oamorg.Organization{Name: strings.TrimSpace(a.buyer)}, h.plugin.source); err == nil {
-		_ = h.plugin.createRelation(ctx, e.Session, fundent,
-			&general.SimpleRelation{Name: "third_party"}, buyer, h.plugin.source.Confidence)
+		_, _ = support.Relate(ctx, e.Session, fundent,
+			&general.SimpleRelation{Name: "third_party"}, buyer, h.plugin.source)
 	}
 
 	_ = e.Dispatcher.DispatchEvent(&et.Event{Name: fmt.Sprintf("%f:%s", a.amount, id), Entity: fundent, Session: e.Session})

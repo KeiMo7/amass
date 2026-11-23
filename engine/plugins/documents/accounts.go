@@ -10,6 +10,7 @@ import (
 	"time"
 	"unicode"
 
+	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
@@ -126,12 +127,5 @@ func (d *documents) edge(e *et.Event, from *dbt.Entity, label string, to *dbt.En
 	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 10*time.Second)
 	defer cancel()
 
-	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{Relation: rel(label), FromEntity: from, ToEntity: to})
-	if err != nil || edge == nil {
-		return
-	}
-	_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &oamgen.SourceProperty{
-		Source:     d.source.Name,
-		Confidence: d.source.Confidence,
-	})
+	_, _ = support.Relate(ctx, e.Session, from, rel(label), to, d.source)
 }

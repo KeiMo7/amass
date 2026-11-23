@@ -187,36 +187,23 @@ func (c *crtshOrg) store(e *et.Event, orgent *dbt.Entity, certs []crtOrgEntry) {
 		if err != nil || certent == nil {
 			continue
 		}
-		c.tag(ctx, e, certent)
+		support.AddSource(ctx, e.Session, certent, c.source)
 
 		crent, err := e.Session.DB().CreateAsset(ctx,
 			&oamcontact.ContactRecord{DiscoveredAt: "crt.sh O= " + ce.SerialNumber})
 		if err == nil && crent != nil {
-			c.tag(ctx, e, crent)
+			support.AddSource(ctx, e.Session, crent, c.source)
 			c.link(ctx, e, certent, crent, "subject_contact")
 			c.link(ctx, e, crent, orgent, "organization")
 		}
 
 		if fqdn, err := e.Session.DB().CreateAsset(ctx, &oamdns.FQDN{Name: ce.CommonName}); err == nil && fqdn != nil {
-			c.tag(ctx, e, fqdn)
+			support.AddSource(ctx, e.Session, fqdn, c.source)
 			c.link(ctx, e, certent, fqdn, "common_name")
 		}
 	}
 }
 
-func (c *crtshOrg) tag(ctx context.Context, e *et.Event, ent *dbt.Entity) {
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, ent,
-		&oamgen.SourceProperty{Source: c.source.Name, Confidence: c.source.Confidence})
-}
-
 func (c *crtshOrg) link(ctx context.Context, e *et.Event, from, to *dbt.Entity, label string) {
-	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &oamgen.SimpleRelation{Name: label},
-		FromEntity: from,
-		ToEntity:   to,
-	})
-	if err == nil && edge != nil {
-		_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge,
-			&oamgen.SourceProperty{Source: c.source.Name, Confidence: c.source.Confidence})
-	}
+	_, _ = support.Relate(ctx, e.Session, from, &oamgen.SimpleRelation{Name: label}, to, c.source)
 }

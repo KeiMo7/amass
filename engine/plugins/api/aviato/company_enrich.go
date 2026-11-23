@@ -15,6 +15,7 @@ import (
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
+	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
 	dbt "github.com/owasp-amass/asset-db/types"
@@ -179,18 +180,9 @@ func (ce *companyEnrich) store(e *et.Event, orgent *dbt.Entity, data *companyEnr
 			return
 		}
 
-		_, err = e.Session.DB().CreateEntityProperty(ctx, ident, &oamgen.SourceProperty{
-			Source:     ce.name,
-			Confidence: ce.plugin.source.Confidence,
-		})
-		if err != nil {
-			msg := fmt.Sprintf("failed to create the SourceProperty for %s: %s", o.LegalName, err)
-			e.Session.Log().Error(msg, slog.Group("plugin", "name", ce.plugin.name, "handler", ce.name))
-			_ = e.Session.DB().DeleteEntity(ctx, ident.ID)
-			return
-		}
+		support.AddSource(ctx, e.Session, ident, ce.plugin.source)
 
-		err = ce.plugin.createRelation(ctx, e.Session, orgent, oamgen.SimpleRelation{Name: "id"}, ident, ce.plugin.source.Confidence)
+		_, err = support.Relate(ctx, e.Session, orgent, oamgen.SimpleRelation{Name: "id"}, ident, ce.plugin.source)
 		if err != nil {
 			msg := fmt.Sprintf("failed to create the relation for %s: %s", o.LegalName, err)
 			e.Session.Log().Error(msg, slog.Group("plugin", "name", ce.plugin.name, "handler", ce.name))
@@ -209,12 +201,7 @@ func (ce *companyEnrich) store(e *et.Event, orgent *dbt.Entity, data *companyEnr
 
 func (ce *companyEnrich) process(e *et.Event, ident, orgent *dbt.Entity) {
 	o := orgent.Asset.(*oamorg.Organization)
-
-	_ = e.Dispatcher.DispatchEvent(&et.Event{
-		Name:    fmt.Sprintf("%s:%s", o.Name, o.ID),
-		Entity:  orgent,
-		Session: e.Session,
-	})
+	org.DispatchOrg(e, orgent)
 
 	id := ident.Asset.(*oamgen.Identifier)
 	e.Session.Log().Info("relationship discovered", "from", id.UniqueID, "relation", "id",

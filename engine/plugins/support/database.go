@@ -37,10 +37,7 @@ func StoreFQDNsWithSource(session et.Session, names []string, src *et.Source, pl
 	for _, name := range names {
 		if a, err := session.DB().CreateAsset(ctx, &oamdns.FQDN{Name: name}); err == nil && a != nil {
 			results = append(results, a)
-			_, _ = session.DB().CreateEntityProperty(ctx, a, &oamgen.SourceProperty{
-				Source:     src.Name,
-				Confidence: src.Confidence,
-			})
+			AddSource(ctx, session, a, src)
 		} else {
 			session.Log().Error(err.Error(), slog.Group("plugin", "name", plugin, "handler", handler))
 		}
@@ -68,10 +65,7 @@ func StoreEmailsWithSource(session et.Session, emails []string, src *et.Source, 
 			Type:     oamgen.EmailAddress,
 		}); err == nil && a != nil {
 			results = append(results, a)
-			_, _ = session.DB().CreateEntityProperty(ctx, a, &oamgen.SourceProperty{
-				Source:     src.Name,
-				Confidence: src.Confidence,
-			})
+			AddSource(ctx, session, a, src)
 		} else {
 			session.Log().Error(err.Error(), slog.Group("plugin", "name", plugin, "handler", handler))
 		}

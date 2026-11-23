@@ -13,7 +13,6 @@ import (
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	oamgen "github.com/owasp-amass/open-asset-model/general"
 	oampeop "github.com/owasp-amass/open-asset-model/people"
 )
 
@@ -54,27 +53,12 @@ func createPersonAssetLocked(sess et.Session, obj *dbt.Entity, rel oam.Relation,
 	}
 
 	// record this caller as a source of the Person
-	_, _ = sess.DB().CreateEntityProperty(ctx, personent, &oamgen.SourceProperty{
-		Source:     src.Name,
-		Confidence: src.Confidence,
-	})
+	AddSource(ctx, sess, personent, src)
 
 	if obj != nil && rel != nil && obj.ID != personent.ID {
-		edge, err := sess.DB().CreateEdge(ctx, &dbt.Edge{
-			Relation:   rel,
-			FromEntity: obj,
-			ToEntity:   personent,
-		})
-		if err != nil {
+		if _, err := Relate(ctx, sess, obj, rel, personent, src); err != nil {
 			return nil, err
-		} else if edge == nil {
-			return nil, errors.New("failed to create the person relationship edge")
 		}
-
-		_, _ = sess.DB().CreateEdgeProperty(ctx, edge, &oamgen.SourceProperty{
-			Source:     src.Name,
-			Confidence: src.Confidence,
-		})
 	}
 
 	return personent, nil

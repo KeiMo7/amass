@@ -206,48 +206,30 @@ func (d *ipNetblock) storeNetblock(ctx context.Context, e *et.Event,
 		netblock.Type = "IPv6"
 	}
 
-	src := &general.SourceProperty{Source: entry.Src.Name, Confidence: entry.Src.Confidence}
 	nb, err := e.Session.DB().CreateAsset(ctx, netblock)
 	if err != nil || nb == nil {
 		return nil, nil
 	}
 
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, nb, src)
+	support.AddSource(ctx, e.Session, nb, entry.Src)
 	as, err := e.Session.DB().CreateAsset(ctx, &oamnet.AutonomousSystem{Number: entry.ASN})
 	if err != nil || as == nil {
 		return nil, nil
 	}
 
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, as, src)
-	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &general.SimpleRelation{Name: "announces"},
-		FromEntity: as,
-		ToEntity:   nb,
-	})
-	if err != nil || edge == nil {
+	support.AddSource(ctx, e.Session, as, entry.Src)
+	if _, err := support.Relate(ctx, e.Session, as, &general.SimpleRelation{Name: "announces"}, nb, entry.Src); err != nil {
 		return nil, nil
 	}
-
-	_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, src)
 	return nb, as
 }
 
 // storeContains stores that the netblock contains the event's address.
 func (d *ipNetblock) storeContains(ctx context.Context, e *et.Event, entry *sessions.CIDRangerEntry,
 	nb *dbt.Entity) bool {
-	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &general.SimpleRelation{Name: "contains"},
-		FromEntity: nb,
-		ToEntity:   e.Entity,
-	})
-	if err != nil || edge == nil {
+	if _, err := support.Relate(ctx, e.Session, nb, &general.SimpleRelation{Name: "contains"}, e.Entity, entry.Src); err != nil {
 		return false
 	}
-
-	_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-		Source:     entry.Src.Name,
-		Confidence: entry.Src.Confidence,
-	})
 	return true
 }
 
@@ -290,32 +272,14 @@ func (d *ipNetblock) reservedAS(e *et.Event, netblock *oamnet.Netblock) {
 		return
 	}
 
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, nb, &general.SourceProperty{
-		Source:     d.source.Name,
-		Confidence: d.source.Confidence,
-	})
+	support.AddSource(ctx, e.Session, nb, d.source)
 
 	asn, err := e.Session.DB().CreateAsset(ctx, &oamnet.AutonomousSystem{Number: 0})
 	if err != nil || asn == nil {
 		return
 	}
 
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, asn, &general.SourceProperty{
-		Source:     d.source.Name,
-		Confidence: d.source.Confidence,
-	})
+	support.AddSource(ctx, e.Session, asn, d.source)
 
-	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &general.SimpleRelation{Name: "announces"},
-		FromEntity: asn,
-		ToEntity:   nb,
-	})
-	if err != nil || edge == nil {
-		return
-	}
-
-	_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-		Source:     d.source.Name,
-		Confidence: d.source.Confidence,
-	})
+	_, _ = support.Relate(ctx, e.Session, asn, &general.SimpleRelation{Name: "announces"}, nb, d.source)
 }

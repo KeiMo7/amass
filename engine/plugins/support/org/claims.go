@@ -100,14 +100,9 @@ func createIDClaim(sess et.Session, orgent *dbt.Entity, idType, value string, sr
 		return nil, err
 	}
 
-	if _, err := sess.DB().CreateEntityProperty(ctx, ident, &oamgen.SourceProperty{
-		Source:     src.Name,
-		Confidence: src.Confidence,
-	}); err != nil {
-		return nil, err
-	}
+	support.AddSource(ctx, sess, ident, src)
 
-	if err := createRelation(ctx, sess, orgent, &oamgen.SimpleRelation{Name: "id"}, ident, src); err != nil {
+	if _, err := support.Relate(ctx, sess, orgent, &oamgen.SimpleRelation{Name: "id"}, ident, src); err != nil {
 		return nil, err
 	}
 

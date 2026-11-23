@@ -7,7 +7,6 @@ package gleif
 import (
 	"context"
 	"errors"
-	"fmt"
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
@@ -142,8 +141,8 @@ func (ro *relatedOrgs) store(e *et.Event, ident *dbt.Entity, parent *LEIRecord, 
 			orgs = append(orgs, parentent)
 			ro.plugin.updateOrgFromLEIRecord(e, parentent, parent, ro.plugin.source.Confidence)
 			support.MarkAssetMonitored(e.Session, parentent, ro.plugin.source)
-			_ = ro.plugin.createRelation(e.Session.Ctx(), e.Session, parentent,
-				&oamgen.SimpleRelation{Name: "subsidiary"}, orgent, ro.plugin.source.Confidence)
+			_, _ = support.Relate(e.Session.Ctx(), e.Session, parentent,
+				&oamgen.SimpleRelation{Name: "subsidiary"}, orgent, ro.plugin.source)
 		}
 	}
 
@@ -177,12 +176,6 @@ func (ro *relatedOrgs) getOrganization(sess et.Session, ent *dbt.Entity, rel oam
 
 func (ro *relatedOrgs) process(e *et.Event, assets []*dbt.Entity) {
 	for _, orgent := range assets {
-		if o, valid := orgent.Asset.(*oamorg.Organization); valid {
-			_ = e.Dispatcher.DispatchEvent(&et.Event{
-				Name:    fmt.Sprintf("%s:%s", o.Name, o.ID),
-				Entity:  orgent,
-				Session: e.Session,
-			})
-		}
+		org.DispatchOrg(e, orgent)
 	}
 }

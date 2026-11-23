@@ -19,7 +19,6 @@ import (
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
-	"github.com/owasp-amass/open-asset-model/general"
 	"github.com/owasp-amass/resolve/utils"
 	"golang.org/x/net/publicsuffix"
 )
@@ -287,67 +286,51 @@ func (d *dnsSubs) store(e *et.Event, name string, rr []dns.RR) []*relSubs {
 
 			a, err = e.Session.DB().CreateAsset(ctx, &oamdns.FQDN{Name: data})
 			if err == nil && a != nil {
-				edge, err = e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-					Relation: &oamdns.BasicDNSRelation{
-						Name: "dns_record",
-						Header: oamdns.RRHeader{
-							RRType: int(record.Header().Rrtype),
-							Class:  int(record.Header().Class),
-							TTL:    int(record.Header().Ttl),
-						},
+				edge, err = support.Relate(ctx, e.Session, fqdn, &oamdns.BasicDNSRelation{
+					Name: "dns_record",
+					Header: oamdns.RRHeader{
+						RRType: int(record.Header().Rrtype),
+						Class:  int(record.Header().Class),
+						TTL:    int(record.Header().Ttl),
 					},
-					FromEntity: fqdn,
-					ToEntity:   a,
-				})
+				}, a, d.plugin.source)
 			}
 		} else if record.Header().Rrtype == dns.TypeMX {
 			data := utils.RemoveLastDot((record.(*dns.MX)).Mx)
 
 			a, err = e.Session.DB().CreateAsset(ctx, &oamdns.FQDN{Name: data})
 			if err == nil && a != nil {
-				edge, err = e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-					Relation: &oamdns.PrefDNSRelation{
-						Name: "dns_record",
-						Header: oamdns.RRHeader{
-							RRType: int(record.Header().Rrtype),
-							Class:  int(record.Header().Class),
-							TTL:    int(record.Header().Ttl),
-						},
-						Preference: int((record.(*dns.MX)).Preference),
+				edge, err = support.Relate(ctx, e.Session, fqdn, &oamdns.PrefDNSRelation{
+					Name: "dns_record",
+					Header: oamdns.RRHeader{
+						RRType: int(record.Header().Rrtype),
+						Class:  int(record.Header().Class),
+						TTL:    int(record.Header().Ttl),
 					},
-					FromEntity: fqdn,
-					ToEntity:   a,
-				})
+					Preference: int((record.(*dns.MX)).Preference),
+				}, a, d.plugin.source)
 			}
 		} else if srv, ok := record.(*dns.SRV); ok {
 			data := utils.RemoveLastDot(srv.Target)
 
 			a, err = e.Session.DB().CreateAsset(ctx, &oamdns.FQDN{Name: data})
 			if err == nil && a != nil {
-				edge, err = e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-					Relation: &oamdns.SRVDNSRelation{
-						Name: "dns_record",
-						Header: oamdns.RRHeader{
-							RRType: int(record.Header().Rrtype),
-							Class:  int(record.Header().Class),
-							TTL:    int(record.Header().Ttl),
-						},
-						Priority: int(srv.Priority),
-						Weight:   int(srv.Weight),
-						Port:     int(srv.Port),
+				edge, err = support.Relate(ctx, e.Session, fqdn, &oamdns.SRVDNSRelation{
+					Name: "dns_record",
+					Header: oamdns.RRHeader{
+						RRType: int(record.Header().Rrtype),
+						Class:  int(record.Header().Class),
+						TTL:    int(record.Header().Ttl),
 					},
-					FromEntity: fqdn,
-					ToEntity:   a,
-				})
+					Priority: int(srv.Priority),
+					Weight:   int(srv.Weight),
+					Port:     int(srv.Port),
+				}, a, d.plugin.source)
 			}
 		}
 
 		if err == nil && edge != nil {
 			alias = append(alias, &relSubs{rtype: "dns_record", alias: fqdn, target: a})
-			_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-				Source:     d.plugin.source.Name,
-				Confidence: d.plugin.source.Confidence,
-			})
 		} else if err != nil {
 			e.Session.Log().Error(err.Error(), slog.Group("plugin", "name", d.plugin.name, "handler", d.name))
 		}

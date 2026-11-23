@@ -180,10 +180,7 @@ func storeURLs(e *et.Event, src *et.Source, pname string, urls []archivedURL) {
 			continue
 		}
 
-		_, _ = e.Session.DB().CreateEntityProperty(ctx, ent, &oamgen.SourceProperty{
-			Source:     src.Name,
-			Confidence: src.Confidence,
-		})
+		support.AddSource(ctx, e.Session, ent, src)
 		if au.firstSeen != "" {
 			_, _ = e.Session.DB().CreateEntityProperty(ctx, ent, &oamgen.SimpleProperty{
 				PropertyName:  PropArchiveFirstSeen,

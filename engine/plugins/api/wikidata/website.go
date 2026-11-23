@@ -12,12 +12,11 @@ import (
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
+	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	oamdns "github.com/owasp-amass/open-asset-model/dns"
-	oamgen "github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 )
 
@@ -147,27 +146,8 @@ func parseOfficialWebsites(body, qid string) []string {
 // storeWebsites records the organization's official websites as
 // Organization --website--> URL --domain--> FQDN, tagged Wikidata.
 func (w *wikidata) storeWebsites(e *et.Event, orgent *dbt.Entity, sites []string) {
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), time.Minute)
-	defer cancel()
-
 	for _, site := range sites {
-		u := support.RawURLToOAM(site)
-		if u == nil {
-			continue
-		}
-		urlent, err := e.Session.DB().CreateAsset(ctx, u)
-		if err != nil || urlent == nil {
-			continue
-		}
-		w.sourceProp(ctx, e, urlent)
-		_ = w.createRelation(ctx, e.Session, orgent, &oamgen.SimpleRelation{Name: "website"}, urlent)
-
-		if host := urlHost(site); host != "" {
-			if fq, err := e.Session.DB().CreateAsset(ctx, &oamdns.FQDN{Name: host}); err == nil && fq != nil {
-				w.sourceProp(ctx, e, fq)
-				_ = w.createRelation(ctx, e.Session, urlent, &oamgen.SimpleRelation{Name: "domain"}, fq)
-			}
-		}
+		org.LinkWebsite(e.Session, orgent, site, urlHost(site), w.source)
 	}
 }
 

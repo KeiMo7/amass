@@ -6,12 +6,14 @@ package support
 
 import (
 	"context"
+	"errors"
 	"time"
 
 	"github.com/owasp-amass/amass/v5/config"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	amassdb "github.com/owasp-amass/amass/v5/internal/db"
 	dbt "github.com/owasp-amass/asset-db/types"
+	oam "github.com/owasp-amass/open-asset-model"
 	"github.com/owasp-amass/open-asset-model/general"
 )
 
@@ -45,27 +47,41 @@ func AddEdgeProperty(ctx context.Context, sess et.Session, edge *dbt.Edge, name,
 		PropertyValue: value})
 }
 
+// Relate creates the relation from one entity to another with src as its
+// source, and returns the edge. An edge that already exists is returned with
+// src added as one of its sources.
+func Relate(ctx context.Context, sess et.Session, from *dbt.Entity, rel oam.Relation, to *dbt.Entity,
+	src *et.Source) (*dbt.Edge, error) {
+	if from == nil || to == nil || rel == nil {
+		return nil, errors.New("the relation is missing an entity")
+	}
+
+	edge, err := sess.DB().CreateEdge(ctx, &dbt.Edge{Relation: rel, FromEntity: from, ToEntity: to})
+	if err != nil {
+		return nil, err
+	} else if edge == nil {
+		return nil, errors.New("failed to create the edge")
+	}
+
+	if src != nil {
+		if _, err := sess.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
+			Source:     src.Name,
+			Confidence: src.Confidence,
+		}); err != nil {
+			return edge, err
+		}
+	}
+	return edge, nil
+}
+
 // Link creates a simple relation labeled label from one entity to another
 // with src as its source, and returns the edge, or nil when it was not
 // created.
 func Link(ctx context.Context, sess et.Session, from *dbt.Entity, label string, to *dbt.Entity,
 	src *et.Source) *dbt.Edge {
-	if from == nil || to == nil {
+	edge, err := Relate(ctx, sess, from, &general.SimpleRelation{Name: label}, to, src)
+	if err != nil && edge == nil {
 		return nil
-	}
-	edge, err := sess.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &general.SimpleRelation{Name: label},
-		FromEntity: from,
-		ToEntity:   to,
-	})
-	if err != nil || edge == nil {
-		return nil
-	}
-	if src != nil {
-		_, _ = sess.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-			Source:     src.Name,
-			Confidence: src.Confidence,
-		})
 	}
 	return edge
 }

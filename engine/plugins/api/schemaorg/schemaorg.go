@@ -12,24 +12,13 @@ import (
 	"strings"
 	"time"
 
+	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
 )
 
-// company is the organization identity a homepage asserts about itself in
-// schema.org JSON-LD.
-type company struct {
-	Name      string
-	LegalName string
-	Country   string // as published (ISO alpha-2 or a country name)
-	LEI       string // schema.org leiCode, the exact key that bootstraps GLEIF
-}
-
-func (c company) bestName() string {
-	if n := strings.TrimSpace(c.LegalName); n != "" {
-		return n
-	}
-	return strings.TrimSpace(c.Name)
-}
+// company is the organization a homepage's schema.org markup names: its name,
+// legalName, address country (ISO alpha-2 or a country name) and leiCode.
+type company = org.DomainIdentity
 
 // ldJSONBlock matches a <script type="application/ld+json"> ... </script> block.
 var ldJSONBlock = regexp.MustCompile(`(?is)<script[^>]*type\s*=\s*["']application/ld\+json["'][^>]*>(.*?)</script>`)
@@ -72,7 +61,7 @@ func parseSchemaOrg(html []byte) (company, bool) {
 			}
 		}
 	}
-	return out, out.bestName() != ""
+	return out, out.BestName() != ""
 }
 
 // orgNodes flattens a JSON-LD document (an object, an array, or a @graph) into

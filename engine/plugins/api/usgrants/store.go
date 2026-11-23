@@ -93,16 +93,14 @@ func (h *source) store(e *et.Event, orgent *dbt.Entity, g *grant) *dbt.Entity {
 		e.Session.Log().Error(msg, slog.Group("plugin", "name", h.name))
 		return nil
 	}
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, fundent, &general.SourceProperty{
-		Source: h.src.Name, Confidence: h.src.Confidence,
-	})
-	if err := h.createRelation(ctx, e.Session, fundent,
+	support.AddSource(ctx, e.Session, fundent, h.src)
+	if _, err := support.Relate(ctx, e.Session, fundent,
 		&general.SimpleRelation{Name: "recipient"}, orgacc, h.src); err != nil {
 		return nil
 	}
 	if agency, err := org.CreateOrgAsset(e.Session, nil, nil,
 		&oamorg.Organization{Name: strings.TrimSpace(g.agency)}, h.src); err == nil {
-		_ = h.createRelation(ctx, e.Session, fundent,
+		_, _ = support.Relate(ctx, e.Session, fundent,
 			&general.SimpleRelation{Name: "third_party"}, agency, h.src)
 	}
 

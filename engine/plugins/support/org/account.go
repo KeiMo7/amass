@@ -47,14 +47,9 @@ func OrgCheckingAccount(sess et.Session, orgent *dbt.Entity, src *et.Source) *db
 		accountent = ent
 	}
 
-	if _, err := sess.DB().CreateEntityProperty(ctx, accountent, &oamgen.SourceProperty{
-		Source:     src.Name,
-		Confidence: src.Confidence,
-	}); err != nil {
-		return nil
-	}
+	support.AddSource(ctx, sess, accountent, src)
 
-	if err := createRelation(ctx, sess, orgent, &oamgen.SimpleRelation{Name: "account"}, accountent, src); err != nil {
+	if _, err := support.Relate(ctx, sess, orgent, &oamgen.SimpleRelation{Name: "account"}, accountent, src); err != nil {
 		return nil
 	}
 	return accountent

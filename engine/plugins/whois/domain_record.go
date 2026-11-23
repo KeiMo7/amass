@@ -22,7 +22,6 @@ import (
 	"github.com/owasp-amass/open-asset-model/contact"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
 	"github.com/owasp-amass/open-asset-model/general"
-	oamorg "github.com/owasp-amass/open-asset-model/org"
 	oamreg "github.com/owasp-amass/open-asset-model/registration"
 )
 
@@ -172,96 +171,37 @@ func (r *domrec) storeContact(e *et.Event, c *domrecContact, dr *dbt.Entity, m *
 
 	wc := c.WhoisContact
 	orgName, addr, found := contactOrganization(wc, support.ParseStreetAddress)
-	wc.Organization = orgName
+	if found && m.IsMatch(string(oam.Person)) {
+		support.LinkContactPerson(e, cr, wc.Name, r.plugin.source)
+	}
+	support.StoreContact(ctx, e.Session, cr, support.Contact{
+		Address:  addr,
+		Email:    wc.Email,
+		Phone:    wc.Phone,
+		PhoneExt: wc.PhoneExt,
+		Fax:      wc.Fax,
+		FaxExt:   wc.FaxExt,
+		Country:  wc.Country,
+		URL:      wc.ReferralURL,
+	}, r.plugin.source, m)
 
-	if found {
-		if p := support.FullNameToPerson(wc.Name); p != nil && m.IsMatch(string(oam.Person)) {
-			_, _ = support.CreatePersonAsset(e.Session, cr, &general.SimpleRelation{Name: "person"}, p, r.plugin.source)
-		}
-	}
-
-	if loc := support.ParseStreetAddress(addr); loc != nil {
-		if a, err := e.Session.DB().CreateAsset(ctx, loc); err == nil && a != nil {
-			r.createSimpleEdge(e.Session, &general.SimpleRelation{Name: "street_address"}, cr, a)
-		}
-	}
-	if email := strings.ToLower(wc.Email); m.IsMatch(string(oam.Identifier)) && email != "" {
-		if a, err := e.Session.DB().CreateAsset(ctx, &general.Identifier{
-			UniqueID: fmt.Sprintf("%s:%s", general.EmailAddress, email),
-			ID:       email,
-			Type:     general.EmailAddress,
-		}); err == nil && a != nil {
-			r.createSimpleEdge(e.Session, &general.SimpleRelation{Name: "id"}, cr, a)
-		}
-	}
-	if m.IsMatch(string(oam.Phone)) {
-		if phone := support.PhoneToOAMPhone(wc.Phone, wc.PhoneExt, wc.Country); phone != nil {
-			phone.Type = contact.PhoneTypeRegular
-			if a, err := e.Session.DB().CreateAsset(ctx, phone); err == nil && a != nil {
-				r.createSimpleEdge(e.Session, &general.SimpleRelation{Name: "phone"}, cr, a)
-			}
-		}
-		if fax := support.PhoneToOAMPhone(wc.Fax, wc.FaxExt, wc.Country); fax != nil {
-			fax.Type = contact.PhoneTypeFax
-			if a, err := e.Session.DB().CreateAsset(ctx, fax); err == nil && a != nil {
-				r.createSimpleEdge(e.Session, &general.SimpleRelation{Name: "phone"}, cr, a)
-			}
-		}
-	}
-	if u := support.RawURLToOAM(wc.ReferralURL); u != nil && m.IsMatch(string(oam.URL)) {
-		if a, err := e.Session.DB().CreateAsset(ctx, u); err == nil && a != nil {
-			r.createSimpleEdge(e.Session, &general.SimpleRelation{Name: "url"}, cr, a)
-		}
-	}
-
-	var findings []*support.Finding
 	record := dr.Asset.(*oamreg.DomainRecord)
-	findings = append(findings, &support.Finding{
+	// process the contact record relation immediately
+	support.ProcessAssetsWithSource(e, []*support.Finding{{
 		From:     dr,
 		FromName: "DomainRecord: " + record.Domain,
 		To:       cr,
 		ToName:   "ContactRecord: " + c.DiscoveredAt,
 		Rel:      &general.SimpleRelation{Name: c.RelationName},
-	})
-	// process the contact record relation immediately
-	support.ProcessAssetsWithSource(e, findings, r.plugin.source, r.plugin.name, r.name)
+	}}, r.plugin.source, r.plugin.name, r.name)
 
-	// the organization must come last due to a potential chicken-and-egg problem
-	if m.IsMatch(string(oam.Organization)) && wc.Organization != "" {
-		orgent, err := org.CreateOrgAsset(e.Session, cr,
-			&general.SimpleRelation{Name: "organization"},
-			&oamorg.Organization{Name: wc.Organization}, r.plugin.source)
-
-		if err == nil && orgent != nil {
-			o := orgent.Asset.(*oamorg.Organization)
-
-			_ = e.Dispatcher.DispatchEvent(&et.Event{
-				Name:    fmt.Sprintf("%s:%s", o.Name, o.ID),
-				Entity:  orgent,
-				Session: e.Session,
-			})
-		}
+	if m.IsMatch(string(oam.Organization)) {
+		org.LinkContactOrg(e, cr, orgName, r.plugin.source)
 	}
 }
 
 func (r *domrec) process(e *et.Event, findings []*support.Finding, src *et.Source) {
 	support.ProcessAssetsWithSource(e, findings, src, r.plugin.name, r.name)
-}
-
-func (r *domrec) createSimpleEdge(sess et.Session, rel oam.Relation, from, to *dbt.Entity) {
-	ctx, cancel := context.WithTimeout(sess.Ctx(), 10*time.Second)
-	defer cancel()
-
-	if edge, err := sess.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   rel,
-		FromEntity: from,
-		ToEntity:   to,
-	}); err == nil && edge != nil {
-		_, _ = sess.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-			Source:     r.plugin.source.Name,
-			Confidence: r.plugin.source.Confidence,
-		})
-	}
 }
 
 func (r *domrec) hasPlaceholders(contact *whoisparser.Contact) bool {

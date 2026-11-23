@@ -173,18 +173,15 @@ func (h *reverse) link(e *et.Event, el *element, label string, seedent *dbt.Enti
 		h.logError(e, fmt.Sprintf("failed to create the ContactRecord for %s: %s", el.url(), err))
 		return
 	}
-	if _, err := e.Session.DB().CreateEntityProperty(ctx, cr, &general.SourceProperty{
-		Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence}); err != nil {
-		h.logError(e, fmt.Sprintf("failed to create the ContactRecord source property: %s", err))
-	}
+	support.AddSource(ctx, e.Session, cr, h.plugin.source)
 
-	if err := h.plugin.createRelation(ctx, e.Session, cr, &general.SimpleRelation{Name: "organization"},
-		orgent, h.plugin.source.Confidence); err != nil {
+	if _, err := support.Relate(ctx, e.Session, cr,
+		&general.SimpleRelation{Name: "organization"}, orgent, h.plugin.source); err != nil {
 		h.logError(e, fmt.Sprintf("failed to link the ContactRecord to the organization: %s", err))
 		return
 	}
-	if err := h.plugin.createRelation(ctx, e.Session, cr, &general.SimpleRelation{Name: label},
-		seedent, h.plugin.source.Confidence); err != nil {
+	if _, err := support.Relate(ctx, e.Session, cr,
+		&general.SimpleRelation{Name: label}, seedent, h.plugin.source); err != nil {
 		h.logError(e, fmt.Sprintf("failed to link the ContactRecord to the %s: %s", label, err))
 		return
 	}

@@ -177,18 +177,10 @@ func (cs *companySearch) store(e *et.Event, orgent *dbt.Entity, companyID string
 		return nil
 	}
 
-	_, err = e.Session.DB().CreateEntityProperty(ctx, ident, &oamgen.SourceProperty{
-		Source:     cs.name,
-		Confidence: cs.plugin.source.Confidence,
-	})
-	if err != nil {
-		msg := fmt.Sprintf("failed to create the identifier source property for %s: %s", companyID, err)
-		e.Session.Log().Error(msg, slog.Group("plugin", "name", cs.plugin.name, "handler", cs.name))
-		return nil
-	}
+	support.AddSource(ctx, e.Session, ident, cs.plugin.source)
 
-	if err := cs.plugin.createRelation(ctx, e.Session, orgent,
-		oamgen.SimpleRelation{Name: "id"}, ident, cs.plugin.source.Confidence); err != nil {
+	if _, err := support.Relate(ctx, e.Session, orgent,
+		oamgen.SimpleRelation{Name: "id"}, ident, cs.plugin.source); err != nil {
 		msg := fmt.Sprintf("failed to create the identifier relation for %s: %s", companyID, err)
 		e.Session.Log().Error(msg, slog.Group("plugin", "name", cs.plugin.name, "handler", cs.name))
 		_ = e.Session.DB().DeleteEntity(ctx, ident.ID)

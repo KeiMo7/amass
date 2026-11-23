@@ -24,7 +24,6 @@ import (
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamcon "github.com/owasp-amass/open-asset-model/contact"
-	oamgen "github.com/owasp-amass/open-asset-model/general"
 	oamnet "github.com/owasp-amass/open-asset-model/network"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 	oamreg "github.com/owasp-amass/open-asset-model/registration"
@@ -227,10 +226,7 @@ func (h *horizPlugin) submitIPAddress(e *et.Event, asset *oamnet.IPAddress, src 
 
 	addr, err := e.Session.DB().CreateAsset(ctx, asset)
 	if err == nil && addr != nil {
-		_, _ = e.Session.DB().CreateEntityProperty(ctx, addr, &oamgen.SourceProperty{
-			Source:     src.Name,
-			Confidence: src.Confidence,
-		})
+		support.AddSource(ctx, e.Session, addr, src)
 		_ = e.Dispatcher.DispatchEvent(&et.Event{
 			Name:    addr.Asset.Key(),
 			Entity:  addr,

@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
 )
 
@@ -22,12 +23,11 @@ const endpoint = "https://query.wikidata.org/sparql"
 // company is one organization Wikidata identifies as the entity whose official
 // website (P856) is the queried domain.
 type company struct {
-	QID       string // Wikidata entity id, e.g. Q1396863
-	Name      string // the English label (P373/rdfs:label)
-	LegalName string // official name (P1448)
-	Country   string // ISO 3166-1 alpha-2 of the country (P17 -> P297)
-	LEI       string // Legal Entity Identifier (P1278)
-	Website   string // the matched official website (P856)
+	QID string // Wikidata entity id, e.g. Q1396863
+	// Name is the English label (rdfs:label), LegalName the official name
+	// (P1448), Country the ISO 3166-1 alpha-2 of P17 (via P297), LEI P1278 and
+	// Website the matched official website (P856).
+	org.DomainIdentity
 }
 
 // sparqlResponse is the Wikidata SPARQL JSON result envelope. Each binding maps
@@ -156,13 +156,4 @@ func parseSPARQL(body []byte) ([]company, error) {
 		out = append(out, *c)
 	}
 	return out, nil
-}
-
-// bestName returns the name to store for the organization: the official name
-// when present, else the label.
-func (c company) bestName() string {
-	if n := strings.TrimSpace(c.LegalName); n != "" {
-		return n
-	}
-	return strings.TrimSpace(c.Name)
 }

@@ -26,7 +26,6 @@ import (
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
 	"github.com/owasp-amass/open-asset-model/general"
 	"github.com/owasp-amass/open-asset-model/network"
-	oamorg "github.com/owasp-amass/open-asset-model/org"
 )
 
 type tlsexpand struct {
@@ -263,18 +262,17 @@ type tlsContact struct {
 
 func (te *tlsexpand) storeContact(e *et.Event, c *tlsContact, asset *dbt.Entity, src *et.Source, m *config.Matches) {
 	ct := c.contact
-
-	var foundaddr bool
-	if len(ct.Province) > 0 && len(ct.Country) > 0 {
-		foundaddr = true
+	first := func(field []string) string {
+		if len(field) > 0 {
+			return strings.TrimSpace(field[0])
+		}
+		return ""
 	}
 
-	var foundorgs bool
-	if len(ct.Organization) > 0 {
-		foundorgs = true
-	}
+	foundaddr := first(ct.Province) != "" && first(ct.Country) != ""
+	orgName := first(ct.Organization)
 	// only continue with the database operations if there's a contact record to create
-	if !foundaddr && !foundorgs {
+	if !foundaddr && orgName == "" {
 		return
 	}
 
@@ -286,86 +284,36 @@ func (te *tlsexpand) storeContact(e *et.Event, c *tlsContact, asset *dbt.Entity,
 		return
 	}
 
-	if foundaddr && m.IsMatch(string(oam.StreetAddress)) {
-		var addr string
-		fields := [][]string{
-			ct.Organization,
-			ct.StreetAddress,
-			ct.Locality,
-			ct.Province,
-			ct.PostalCode,
-			ct.Country,
-		}
-		for _, field := range fields {
-			if len(field) > 0 && field[0] != "" {
-				addr += " " + field[0]
+	var info support.Contact
+	if foundaddr {
+		var parts []string
+		for _, field := range [][]string{ct.Organization, ct.StreetAddress, ct.Locality, ct.Province,
+			ct.PostalCode, ct.Country} {
+			if v := first(field); v != "" {
+				parts = append(parts, v)
 			}
 		}
-
-		if loc := support.ParseStreetAddress(strings.TrimSpace(addr)); loc != nil {
-			if a, err := e.Session.DB().CreateAsset(ctx, loc); err == nil && a != nil {
-				if edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-					Relation:   &general.SimpleRelation{Name: "street_address"},
-					FromEntity: cr,
-					ToEntity:   a,
-				}); err == nil && edge != nil {
-					_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-						Source:     src.Name,
-						Confidence: src.Confidence,
-					})
-				}
-				_ = e.Dispatcher.DispatchEvent(&et.Event{
-					Name:    loc.Address,
-					Entity:  a,
-					Session: e.Session,
-				})
-			}
-		}
+		info.Address = strings.Join(parts, " ")
 	}
-	if len(ct.OrganizationalUnit) > 0 && ct.OrganizationalUnit[0] != "" && m.IsMatch(string(oam.URL)) {
-		if u := support.ExtractURLFromString(ct.OrganizationalUnit[0]); u != nil {
-			if a, err := e.Session.DB().CreateAsset(ctx, u); err == nil && a != nil {
-				if edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-					Relation:   &general.SimpleRelation{Name: "url"},
-					FromEntity: cr,
-					ToEntity:   a,
-				}); err == nil && edge != nil {
-					_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-						Source:     src.Name,
-						Confidence: src.Confidence,
-					})
-				}
-			}
-		}
+	if u := support.ExtractURLFromString(first(ct.OrganizationalUnit)); u != nil {
+		info.URL = u.Raw
+	}
+	if addr := support.StoreContact(ctx, e.Session, cr, info, src, m); addr != nil {
+		_ = e.Dispatcher.DispatchEvent(&et.Event{Name: addr.Asset.Key(), Entity: addr, Session: e.Session})
 	}
 
-	var findings []*support.Finding
 	t := asset.Asset.(*oamcert.TLSCertificate)
-	findings = append(findings, &support.Finding{
+	// process the relation immediately
+	support.ProcessAssetsWithSource(e, []*support.Finding{{
 		From:     asset,
 		FromName: "TLSCertificate: " + t.SerialNumber,
 		To:       cr,
-		ToName:   "ContactRecord" + c.DiscoveredAt,
+		ToName:   "ContactRecord: " + c.DiscoveredAt,
 		Rel:      &general.SimpleRelation{Name: c.RelationName},
-	})
-	// process the relation immediately
-	support.ProcessAssetsWithSource(e, findings, te.source, te.name, te.name+"-Handler")
+	}}, te.source, te.name, te.name+"-Handler")
 
-	// the organization must come last due to a potential chicken-and-egg problem
-	if m.IsMatch(string(oam.Organization)) && len(ct.Organization) > 0 && ct.Organization[0] != "" {
-		orgent, err := org.CreateOrgAsset(e.Session, cr,
-			&general.SimpleRelation{Name: "organization"},
-			&oamorg.Organization{Name: ct.Organization[0]}, src)
-
-		if err == nil && orgent != nil {
-			o := orgent.Asset.(*oamorg.Organization)
-
-			_ = e.Dispatcher.DispatchEvent(&et.Event{
-				Name:    fmt.Sprintf("%s:%s", o.Name, o.ID),
-				Entity:  orgent,
-				Session: e.Session,
-			})
-		}
+	if m.IsMatch(string(oam.Organization)) {
+		org.LinkContactOrg(e, cr, orgName, src)
 	}
 }
 

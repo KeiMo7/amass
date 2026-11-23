@@ -210,8 +210,7 @@ func (p *plugin) record(e *et.Event, records []graph.BreachInfo) error {
 			return err
 		}
 	}
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, e.Entity, &oamgen.SourceProperty{
-		Source: p.source.Name, Confidence: p.source.Confidence})
+	support.AddSource(ctx, e.Session, e.Entity, p.source)
 
 	p.log.Info("breach exposure recorded", "identifier", e.Entity.Asset.Key(),
 		"breaches", len(records), slog.Group("plugin", "name", p.name, "handler", p.name+"-Handler"))

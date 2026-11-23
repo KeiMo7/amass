@@ -25,8 +25,8 @@ func TestParseSchemaOrgGraph(t *testing.T) {
 	if !ok {
 		t.Fatal("expected an organization")
 	}
-	if c.Name != "FEMSA" || c.bestName() != "Fomento Económico Mexicano, S.A.B. de C.V." {
-		t.Errorf("name=%q best=%q", c.Name, c.bestName())
+	if c.Name != "FEMSA" || c.BestName() != "Fomento Económico Mexicano, S.A.B. de C.V." {
+		t.Errorf("name=%q best=%q", c.Name, c.BestName())
 	}
 	if c.Country != "MX" || c.LEI != "549300A8MDWDJNMLV153" {
 		t.Errorf("country=%q lei=%q", c.Country, c.LEI)
@@ -56,7 +56,7 @@ func TestParseSchemaOrgNone(t *testing.T) {
 		`<script type="application/ld+json">{"@type":"WebSite","name":"x"}</script>`,
 		`<script type="application/ld+json">not json</script>`,
 	} {
-		if c, ok := parseSchemaOrg([]byte(html)); ok || c.bestName() != "" {
+		if c, ok := parseSchemaOrg([]byte(html)); ok || c.BestName() != "" {
 			t.Errorf("expected none for %q, got %+v", html, c)
 		}
 	}

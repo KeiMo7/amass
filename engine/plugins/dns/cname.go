@@ -17,7 +17,6 @@ import (
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
-	"github.com/owasp-amass/open-asset-model/general"
 	"github.com/owasp-amass/resolve/utils"
 )
 
@@ -108,23 +107,15 @@ func (d *dnsCNAME) store(e *et.Event, fqdn *dbt.Entity, rr []dns.RR) []*relAlias
 		data := strings.ToLower(strings.TrimSpace((record.(*dns.CNAME)).Target))
 		name := utils.RemoveLastDot(data)
 		if cname, err := e.Session.DB().CreateAsset(ctx, &oamdns.FQDN{Name: name}); err == nil && cname != nil {
-			if edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-				Relation: &oamdns.BasicDNSRelation{
-					Name: "dns_record",
-					Header: oamdns.RRHeader{
-						RRType: int(record.Header().Rrtype),
-						Class:  int(record.Header().Class),
-						TTL:    int(record.Header().Ttl),
-					},
+			if _, err := support.Relate(ctx, e.Session, fqdn, &oamdns.BasicDNSRelation{
+				Name: "dns_record",
+				Header: oamdns.RRHeader{
+					RRType: int(record.Header().Rrtype),
+					Class:  int(record.Header().Class),
+					TTL:    int(record.Header().Ttl),
 				},
-				FromEntity: fqdn,
-				ToEntity:   cname,
-			}); err == nil && edge != nil {
+			}, cname, d.source); err == nil {
 				alias = append(alias, &relAlias{alias: fqdn, target: cname})
-				_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-					Source:     d.source.Name,
-					Confidence: d.source.Confidence,
-				})
 			}
 		}
 	}

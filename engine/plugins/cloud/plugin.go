@@ -27,7 +27,6 @@ import (
 	"github.com/owasp-amass/amass/v5/internal/graph"
 	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
 	"github.com/owasp-amass/amass/v5/internal/semantics/cloudranges"
-	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamgen "github.com/owasp-amass/open-asset-model/general"
 	oamnet "github.com/owasp-amass/open-asset-model/network"
@@ -190,22 +189,10 @@ func (p *plugin) record(e *et.Event, match cloudranges.Match) error {
 	if err != nil || nbEnt == nil {
 		return fmt.Errorf("failed to create the provider netblock %s: %w", match.Prefix, err)
 	}
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, nbEnt, &oamgen.SourceProperty{
-		Source:     p.source.Name,
-		Confidence: p.source.Confidence,
-	})
+	support.AddSource(ctx, e.Session, nbEnt, p.source)
 
 	// The published prefix contains the matched address.
-	if edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &oamgen.SimpleRelation{Name: "contains"},
-		FromEntity: nbEnt,
-		ToEntity:   e.Entity,
-	}); err == nil && edge != nil {
-		_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &oamgen.SourceProperty{
-			Source:     p.source.Name,
-			Confidence: p.source.Confidence,
-		})
-	}
+	_, _ = support.Relate(ctx, e.Session, nbEnt, &oamgen.SimpleRelation{Name: "contains"}, e.Entity, p.source)
 
 	// The provider operates the prefix: a provider Organization on the
 	// netblock, reconciled with any organization of the same name already

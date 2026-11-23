@@ -18,7 +18,6 @@ import (
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
-	"github.com/owasp-amass/open-asset-model/general"
 	oamnet "github.com/owasp-amass/open-asset-model/network"
 )
 
@@ -156,23 +155,15 @@ func (d *dnsIP) store(e *et.Event, fqdn *dbt.Entity, rr []dns.RR) []*relIP {
 			continue
 		}
 
-		if edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-			Relation: &oamdns.BasicDNSRelation{
-				Name: "dns_record",
-				Header: oamdns.RRHeader{
-					RRType: int(record.Header().Rrtype),
-					Class:  int(record.Header().Class),
-					TTL:    int(record.Header().Ttl),
-				},
+		if _, err := support.Relate(ctx, e.Session, fqdn, &oamdns.BasicDNSRelation{
+			Name: "dns_record",
+			Header: oamdns.RRHeader{
+				RRType: int(record.Header().Rrtype),
+				Class:  int(record.Header().Class),
+				TTL:    int(record.Header().Ttl),
 			},
-			FromEntity: fqdn,
-			ToEntity:   ipaddr,
-		}); err == nil && edge != nil {
+		}, ipaddr, d.source); err == nil {
 			ips = append(ips, &relIP{rtype: "dns_record", ip: ipaddr})
-			_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-				Source:     d.source.Name,
-				Confidence: d.source.Confidence,
-			})
 		}
 	}
 

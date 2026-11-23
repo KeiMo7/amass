@@ -92,21 +92,9 @@ func (rd *rdapPlugin) storeRecord(e *et.Event, registered *dbt.Entity, rec oam.A
 		return nil
 	}
 
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, record, &general.SourceProperty{
-		Source:     rd.source.Name,
-		Confidence: rd.source.Confidence,
-	})
+	support.AddSource(ctx, e.Session, record, rd.source)
 
-	if edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &general.SimpleRelation{Name: "registration"},
-		FromEntity: registered,
-		ToEntity:   record,
-	}); err == nil && edge != nil {
-		_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-			Source:     rd.source.Name,
-			Confidence: rd.source.Confidence,
-		})
-	}
+	_, _ = support.Relate(ctx, e.Session, registered, &general.SimpleRelation{Name: "registration"}, record, rd.source)
 	return record
 }
 

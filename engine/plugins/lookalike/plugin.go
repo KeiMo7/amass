@@ -19,10 +19,8 @@ import (
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	"github.com/owasp-amass/amass/v5/internal/lookalike"
-	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
-	oamgen "github.com/owasp-amass/open-asset-model/general"
 	"github.com/owasp-amass/resolve/utils"
 )
 
@@ -135,8 +133,7 @@ func (l *lookalikes) store(e *et.Event, name string) bool {
 		return false
 	}
 
-	_, _ = db.CreateEntityProperty(ctx, ent, &oamgen.SourceProperty{Source: l.source.Name,
-		Confidence: l.source.Confidence})
+	support.AddSource(ctx, e.Session, ent, l.source)
 
 	for _, rr := range append(ns, mx...) {
 		var target string
@@ -161,10 +158,7 @@ func (l *lookalikes) store(e *et.Event, name string) bool {
 		if err != nil || to == nil {
 			continue
 		}
-		if edge, err := db.CreateEdge(ctx, &dbt.Edge{Relation: rel, FromEntity: ent, ToEntity: to}); err == nil {
-			_, _ = db.CreateEdgeProperty(ctx, edge, &oamgen.SourceProperty{Source: l.source.Name,
-				Confidence: l.source.Confidence})
-		}
+		_, _ = support.Relate(ctx, e.Session, ent, rel, to, l.source)
 	}
 
 	return true

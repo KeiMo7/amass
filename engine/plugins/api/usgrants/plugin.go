@@ -17,7 +17,6 @@
 package usgrants
 
 import (
-	"context"
 	"errors"
 	"log/slog"
 	"time"
@@ -26,7 +25,6 @@ import (
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	"github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 	"golang.org/x/time/rate"
 )
@@ -105,18 +103,4 @@ func (h *source) check(e *et.Event) error {
 	h.run(h, e, e.Entity, o.Name)
 	support.MarkAssetMonitored(e.Session, e.Entity, h.src)
 	return nil
-}
-
-func (h *source) createRelation(ctx context.Context, session et.Session, obj *dbt.Entity,
-	rel oam.Relation, subject *dbt.Entity, src *et.Source) error {
-	edge, err := session.DB().CreateEdge(ctx, &dbt.Edge{Relation: rel, FromEntity: obj, ToEntity: subject})
-	if err != nil {
-		return err
-	} else if edge == nil {
-		return errors.New("failed to create the edge")
-	}
-	_, err = session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-		Source: src.Name, Confidence: src.Confidence,
-	})
-	return err
 }

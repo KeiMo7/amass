@@ -7,7 +7,6 @@ package gleif
 import (
 	"context"
 	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -133,26 +132,19 @@ func (a *addresses) linkSeed(e *et.Event, seedent, orgent *dbt.Entity, rec *LEIR
 	if err != nil || cr == nil {
 		return
 	}
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, cr, &oamgen.SourceProperty{
-		Source: a.plugin.source.Name, Confidence: a.plugin.source.Confidence})
+	support.AddSource(ctx, e.Session, cr, a.plugin.source)
 
-	_ = a.plugin.createRelation(ctx, e.Session, cr, &oamgen.SimpleRelation{Name: "organization"},
-		orgent, a.plugin.source.Confidence)
-	_ = a.plugin.createRelation(ctx, e.Session, cr, &oamgen.SimpleRelation{Name: "street_address"},
-		seedent, a.plugin.source.Confidence)
+	_, _ = support.Relate(ctx, e.Session, cr,
+		&oamgen.SimpleRelation{Name: "organization"}, orgent, a.plugin.source)
+	_, _ = support.Relate(ctx, e.Session, cr,
+		&oamgen.SimpleRelation{Name: "street_address"}, seedent, a.plugin.source)
 }
 
 // process dispatches each resolved organization so the organization handlers
 // (identity, website -> domain) run and the pivot can reach the domains.
 func (a *addresses) process(e *et.Event, orgs []*dbt.Entity) {
 	for _, orgent := range orgs {
-		if o, ok := orgent.Asset.(*oamorg.Organization); ok {
-			_ = e.Dispatcher.DispatchEvent(&et.Event{
-				Name:    fmt.Sprintf("%s:%s", o.Name, o.ID),
-				Entity:  orgent,
-				Session: e.Session,
-			})
-		}
+		org.DispatchOrg(e, orgent)
 	}
 }
 

@@ -17,7 +17,6 @@ import (
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
-	"github.com/owasp-amass/open-asset-model/general"
 	oamnet "github.com/owasp-amass/open-asset-model/network"
 )
 
@@ -254,10 +253,7 @@ func sweepCallback(e *et.Event, ip *oamnet.IPAddress, src *et.Source) {
 
 	entity, err := e.Session.DB().CreateAsset(ctx, ip)
 	if err == nil && entity != nil {
-		_, _ = e.Session.DB().CreateEntityProperty(ctx, entity, &general.SourceProperty{
-			Source:     src.Name,
-			Confidence: src.Confidence,
-		})
+		support.AddSource(ctx, e.Session, entity, src)
 
 		_ = e.Dispatcher.DispatchEvent(&et.Event{
 			Name:    ip.Address.String(),

@@ -158,11 +158,9 @@ func (h *filings) storeEIN(e *et.Event, orgent *dbt.Entity, o *pubOrg) {
 	if err != nil || ident == nil {
 		return
 	}
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, ident, &general.SourceProperty{
-		Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
-	})
-	_ = h.plugin.createRelation(ctx, e.Session, orgent,
-		&general.SimpleRelation{Name: "id"}, ident, h.plugin.source.Confidence)
+	support.AddSource(ctx, e.Session, ident, h.plugin.source)
+	_, _ = support.Relate(ctx, e.Session, orgent,
+		&general.SimpleRelation{Name: "id"}, ident, h.plugin.source)
 }
 
 func (h *filings) storeContact(e *et.Event, orgent *dbt.Entity, o *pubOrg) {
@@ -179,20 +177,16 @@ func (h *filings) storeContact(e *et.Event, orgent *dbt.Entity, o *pubOrg) {
 	if err != nil || cr == nil {
 		return
 	}
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, cr, &general.SourceProperty{
-		Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
-	})
-	if err := h.plugin.createRelation(ctx, e.Session, cr,
-		&general.SimpleRelation{Name: "organization"}, orgent, h.plugin.source.Confidence); err != nil {
+	support.AddSource(ctx, e.Session, cr, h.plugin.source)
+	if _, err := support.Relate(ctx, e.Session, cr,
+		&general.SimpleRelation{Name: "organization"}, orgent, h.plugin.source); err != nil {
 		return
 	}
 	loc := &contact.StreetAddress{Address: a.Address, City: a.City, Province: a.State, PostalCode: a.Zipcode}
 	if l, err := e.Session.DB().CreateAsset(ctx, loc); err == nil && l != nil {
-		_, _ = e.Session.DB().CreateEntityProperty(ctx, l, &general.SourceProperty{
-			Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
-		})
-		_ = h.plugin.createRelation(ctx, e.Session, cr,
-			&general.SimpleRelation{Name: "street_address"}, l, h.plugin.source.Confidence)
+		support.AddSource(ctx, e.Session, l, h.plugin.source)
+		_, _ = support.Relate(ctx, e.Session, cr,
+			&general.SimpleRelation{Name: "street_address"}, l, h.plugin.source)
 	}
 }
 
@@ -231,11 +225,9 @@ func (h *filings) storeFilings(e *et.Event, orgent *dbt.Entity, o *pubOrg) {
 			ExchangeDate:    support.TransferDate(year),
 		})
 		if err == nil && fundent != nil {
-			_, _ = e.Session.DB().CreateEntityProperty(ctx, fundent, &general.SourceProperty{
-				Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
-			})
-			_ = h.plugin.createRelation(ctx, e.Session, fundent,
-				&general.SimpleRelation{Name: "recipient"}, orgacc, h.plugin.source.Confidence)
+			support.AddSource(ctx, e.Session, fundent, h.plugin.source)
+			_, _ = support.Relate(ctx, e.Session, fundent,
+				&general.SimpleRelation{Name: "recipient"}, orgacc, h.plugin.source)
 		}
 		cancel()
 	}

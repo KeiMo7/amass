@@ -195,13 +195,7 @@ func (h *filings) collect(e *et.Event, orgent *dbt.Entity, cik string) {
 	// Every subsidiary goes to the engine; each collector's monitoring TTL
 	// keeps a later run from looking the same subsidiaries up again.
 	for _, child := range h.storeSubsidiaries(e, orgent, cik, sub) {
-		if o, ok := child.Asset.(*oamorg.Organization); ok {
-			_ = e.Dispatcher.DispatchEvent(&et.Event{
-				Name:    fmt.Sprintf("%s:%s", o.Name, o.ID),
-				Entity:  child,
-				Session: e.Session,
-			})
-		}
+		org.DispatchOrg(e, child)
 	}
 }
 
@@ -241,11 +235,9 @@ func (h *filings) storeCIK(e *et.Event, orgent *dbt.Entity, cik string) {
 	if err != nil || ident == nil {
 		return
 	}
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, ident, &general.SourceProperty{
-		Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
-	})
-	_ = h.plugin.createRelation(ctx, e.Session, orgent,
-		&general.SimpleRelation{Name: "id"}, ident, h.plugin.source.Confidence)
+	support.AddSource(ctx, e.Session, ident, h.plugin.source)
+	_, _ = support.Relate(ctx, e.Session, orgent,
+		&general.SimpleRelation{Name: "id"}, ident, h.plugin.source)
 }
 
 func (h *filings) storeContact(e *et.Event, orgent *dbt.Entity, cik string, sub *submissions) {
@@ -264,32 +256,26 @@ func (h *filings) storeContact(e *et.Event, orgent *dbt.Entity, cik string, sub 
 	if err != nil || cr == nil {
 		return
 	}
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, cr, &general.SourceProperty{
-		Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
-	})
-	if err := h.plugin.createRelation(ctx, e.Session, cr,
-		&general.SimpleRelation{Name: "organization"}, orgent, h.plugin.source.Confidence); err != nil {
+	support.AddSource(ctx, e.Session, cr, h.plugin.source)
+	if _, err := support.Relate(ctx, e.Session, cr,
+		&general.SimpleRelation{Name: "organization"}, orgent, h.plugin.source); err != nil {
 		return
 	}
 
 	if phone != nil {
 		phone.Type = contact.PhoneTypeRegular
 		if a, err := e.Session.DB().CreateAsset(ctx, phone); err == nil && a != nil {
-			_, _ = e.Session.DB().CreateEntityProperty(ctx, a, &general.SourceProperty{
-				Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
-			})
-			_ = h.plugin.createRelation(ctx, e.Session, cr,
-				&general.SimpleRelation{Name: "phone"}, a, h.plugin.source.Confidence)
+			support.AddSource(ctx, e.Session, a, h.plugin.source)
+			_, _ = support.Relate(ctx, e.Session, cr,
+				&general.SimpleRelation{Name: "phone"}, a, h.plugin.source)
 			_ = e.Dispatcher.DispatchEvent(&et.Event{Name: phone.E164, Entity: a, Session: e.Session})
 		}
 	}
 	if loc != nil {
 		if a, err := e.Session.DB().CreateAsset(ctx, loc); err == nil && a != nil {
-			_, _ = e.Session.DB().CreateEntityProperty(ctx, a, &general.SourceProperty{
-				Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
-			})
-			_ = h.plugin.createRelation(ctx, e.Session, cr,
-				&general.SimpleRelation{Name: "street_address"}, a, h.plugin.source.Confidence)
+			support.AddSource(ctx, e.Session, a, h.plugin.source)
+			_, _ = support.Relate(ctx, e.Session, cr,
+				&general.SimpleRelation{Name: "street_address"}, a, h.plugin.source)
 		}
 	}
 }
@@ -348,11 +334,9 @@ func (h *filings) storeTransfer(e *et.Event, orgent *dbt.Entity, accession, date
 	if err != nil || fundent == nil {
 		return
 	}
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, fundent, &general.SourceProperty{
-		Source: h.plugin.source.Name, Confidence: h.plugin.source.Confidence,
-	})
-	if err := h.plugin.createRelation(ctx, e.Session, fundent,
-		&general.SimpleRelation{Name: "recipient"}, orgacc, h.plugin.source.Confidence); err != nil {
+	support.AddSource(ctx, e.Session, fundent, h.plugin.source)
+	if _, err := support.Relate(ctx, e.Session, fundent,
+		&general.SimpleRelation{Name: "recipient"}, orgacc, h.plugin.source); err != nil {
 		return
 	}
 	_ = e.Dispatcher.DispatchEvent(&et.Event{

@@ -17,17 +17,13 @@
 package edgar
 
 import (
-	"context"
-	"errors"
 	"log/slog"
 	"sync"
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
-	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	"github.com/owasp-amass/open-asset-model/general"
 	"golang.org/x/time/rate"
 )
 
@@ -102,19 +98,3 @@ func (ed *edgar) Start(r et.Registry) error {
 }
 
 func (ed *edgar) Stop() { ed.log.Info("Plugin stopped") }
-
-func (ed *edgar) createRelation(ctx context.Context, session et.Session, obj *dbt.Entity,
-	rel oam.Relation, subject *dbt.Entity, conf int) error {
-	edge, err := session.DB().CreateEdge(ctx, &dbt.Edge{Relation: rel, FromEntity: obj, ToEntity: subject})
-	if err != nil {
-		return err
-	} else if edge == nil {
-		return errors.New("failed to create the edge")
-	}
-
-	_, err = session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-		Source:     ed.source.Name,
-		Confidence: conf,
-	})
-	return err
-}

@@ -48,23 +48,11 @@ func StoreFingerprint(e *et.Event, entity *dbt.Entity, src *et.Source, idType, v
 	if err != nil || ident == nil {
 		return false
 	}
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, ident, &oamgen.SourceProperty{
-		Source:     src.Name,
-		Confidence: src.Confidence,
-	})
+	AddSource(ctx, e.Session, ident, src)
 
-	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &oamgen.SimpleRelation{Name: "fingerprint"},
-		FromEntity: entity,
-		ToEntity:   ident,
-	})
-	if err != nil || edge == nil {
+	if _, err := Relate(ctx, e.Session, entity, &oamgen.SimpleRelation{Name: "fingerprint"}, ident, src); err != nil {
 		return false
 	}
-	_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &oamgen.SourceProperty{
-		Source:     src.Name,
-		Confidence: src.Confidence,
-	})
 
 	return true
 }

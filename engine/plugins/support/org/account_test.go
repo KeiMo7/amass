@@ -61,7 +61,7 @@ func TestOrgTransfersReceivedKeepsToTheSource(t *testing.T) {
 	acct := OrgCheckingAccount(sess, orgent, srcA)
 	transfer := func(id string, src *et.Source) {
 		f := sess.Asset(t, &oamfin.FundsTransfer{ID: id, Amount: 100, Currency: "USD"})
-		if err := createRelation(context.Background(), sess, f, &oamgen.SimpleRelation{Name: "recipient"}, acct, src); err != nil {
+		if _, err := support.Relate(context.Background(), sess, f, &oamgen.SimpleRelation{Name: "recipient"}, acct, src); err != nil {
 			t.Fatal(err)
 		}
 	}

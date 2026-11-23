@@ -126,14 +126,7 @@ func (d *dnsSubs) storeSPFRange(e *et.Event, apex *dbt.Entity, p netip.Prefix) {
 	if err != nil || to == nil {
 		return
 	}
-	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &general.SimpleRelation{Name: relSPFAuthorizes},
-		FromEntity: apex,
-		ToEntity:   to,
-	})
-	if err == nil && edge != nil {
-		d.sourced(ctx, e, edge)
-	}
+	_, _ = support.Relate(ctx, e.Session, apex, &general.SimpleRelation{Name: relSPFAuthorizes}, to, d.plugin.source)
 }
 
 // storeDMARCEdges records a dmarc_reports_to edge from the apex to each domain
@@ -168,19 +161,9 @@ func (d *dnsSubs) storeMailPolicyEdge(e *et.Event, from *dbt.Entity, domain, lab
 		return
 	}
 
-	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &general.SimpleRelation{Name: label},
-		FromEntity: from,
-		ToEntity:   to,
-	})
-	if err != nil || edge == nil {
+	if _, err := support.Relate(ctx, e.Session, from, &general.SimpleRelation{Name: label}, to, d.plugin.source); err != nil {
 		return
 	}
-
-	_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-		Source:     d.plugin.source.Name,
-		Confidence: d.plugin.source.Confidence,
-	})
 	support.MarkAssetMonitored(e.Session, to, d.plugin.source)
 }
 

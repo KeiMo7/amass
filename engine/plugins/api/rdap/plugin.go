@@ -8,7 +8,6 @@ import (
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"log/slog"
 	"net/http"
 	"path/filepath"
@@ -28,7 +27,6 @@ import (
 	oam "github.com/owasp-amass/open-asset-model"
 	"github.com/owasp-amass/open-asset-model/contact"
 	"github.com/owasp-amass/open-asset-model/general"
-	oamorg "github.com/owasp-amass/open-asset-model/org"
 	oamreg "github.com/owasp-amass/open-asset-model/registration"
 	"github.com/owasp-amass/open-asset-model/url"
 	"golang.org/x/time/rate"
@@ -256,97 +254,47 @@ func (rd *rdapPlugin) storeEntity(e *et.Event, level int, entity *rdap.Entity, a
 		return
 	}
 
-	name := recordName(asset)
-
-	if u != nil && m.IsMatch(string(oam.URL)) {
-		if a, err := e.Session.DB().CreateAsset(ctx, u); err == nil && a != nil {
-			_ = rd.createContactEdge(ctx, e.Session, cr, a, &general.SimpleRelation{Name: "url"}, src)
-		}
-	}
-
 	v := entity.VCard
+	var info support.Contact
+	if u != nil {
+		info.URL = u.Raw
+	}
 	prop := v.GetFirst("kind")
 	if prop == nil {
+		// Without a kind the contact is only its RDAP link.
+		support.StoreContact(ctx, e.Session, cr, info, src, m)
 		return
 	}
 
-	if adr := v.GetFirst("adr"); adr != nil && m.IsMatch(string(oam.StreetAddress)) {
+	if adr := v.GetFirst("adr"); adr != nil {
 		if label, ok := adr.Parameters["label"]; ok {
-			s := strings.Join(label, " ")
+			info.Address = strings.Join(strings.Split(strings.Join(label, " "), "\n"), " ")
+		}
+	}
+	info.Email = v.Email()
+	info.Phone = v.Tel()
+	info.Fax = v.Fax()
+	info.Country = v.Country()
+	support.StoreContact(ctx, e.Session, cr, info, src, m)
 
-			addr := strings.Join(strings.Split(s, "\n"), " ")
-			if loc := support.ParseStreetAddress(addr); loc != nil {
-				if a, err := e.Session.DB().CreateAsset(ctx, loc); err == nil && a != nil {
-					_ = rd.createContactEdge(ctx, e.Session, cr, a, &general.SimpleRelation{Name: "street_address"}, src)
-				}
-			}
-		}
-	}
-	if email := strings.ToLower(v.Email()); m.IsMatch(string(oam.Identifier)) && email != "" {
-		if a, err := e.Session.DB().CreateAsset(ctx, &general.Identifier{
-			UniqueID: fmt.Sprintf("%s:%s", general.EmailAddress, email),
-			ID:       email,
-			Type:     general.EmailAddress,
-		}); err == nil && a != nil {
-			_ = rd.createContactEdge(ctx, e.Session, cr, a, &general.SimpleRelation{Name: "id"}, src)
-		}
-	}
-	if m.IsMatch(string(oam.Phone)) {
-		if phone := support.PhoneToOAMPhone(v.Tel(), "", v.Country()); phone != nil {
-			phone.Type = contact.PhoneTypeRegular
-			if a, err := e.Session.DB().CreateAsset(ctx, phone); err == nil && a != nil {
-				_ = rd.createContactEdge(ctx, e.Session, cr, a, &general.SimpleRelation{Name: "phone"}, src)
-			}
-		}
-		if fax := support.PhoneToOAMPhone(v.Fax(), "", v.Country()); fax != nil {
-			fax.Type = contact.PhoneTypeFax
-			if a, err := e.Session.DB().CreateAsset(ctx, fax); err == nil && a != nil {
-				_ = rd.createContactEdge(ctx, e.Session, cr, a, &general.SimpleRelation{Name: "phone"}, src)
-			}
-		}
-	}
-
-	var findings []*support.Finding
-	findings = append(findings, &support.Finding{
+	// process the relation immediately
+	support.ProcessAssetsWithSource(e, []*support.Finding{{
 		From:     asset,
-		FromName: name,
+		FromName: recordName(asset),
 		To:       cr,
 		ToName:   "ContactRecord: " + discoveredAt,
 		Rel:      &general.SimpleRelation{Name: rel},
-	})
-	// process the relation immediately
-	support.ProcessAssetsWithSource(e, findings, rd.source, rd.name, rd.name+"-storeEntity")
+	}}, rd.source, rd.name, rd.name+"-storeEntity")
 
-	name = v.Name()
 	// the organization must come last due to a potential chicken-and-egg problem
+	name := v.Name()
 	if kind := strings.Join(prop.Values(), " "); m.IsMatch(string(oam.Person)) && name != "" && kind == "individual" {
-		if p := support.FullNameToPerson(name); p != nil {
-			if a, err := support.CreatePersonAsset(e.Session, cr, &general.SimpleRelation{Name: "person"}, p, src); err == nil && a != nil {
-				_ = e.Dispatcher.DispatchEvent(&et.Event{
-					Name:    fmt.Sprintf("%s:%s", p.FullName, p.ID),
-					Entity:  a,
-					Session: e.Session,
-				})
-			}
-		}
+		support.LinkContactPerson(e, cr, name, src)
 	} else if m.IsMatch(string(oam.Organization)) && kind == "org" {
-		orgent, err := org.FindOrgByRDAPHandle(e.Session, entity.Handle, src)
-		if err != nil || orgent == nil {
-			orgent, err = org.CreateOrgAsset(e.Session, cr,
-				&general.SimpleRelation{Name: "organization"}, &oamorg.Organization{Name: name}, src)
-			if err == nil {
-				_, _ = org.CreateOrgRDAPHandle(e.Session, orgent, entity.Handle, src)
-			}
-		}
-
-		if err == nil && orgent != nil {
-			o := orgent.Asset.(*oamorg.Organization)
-
-			_ = e.Dispatcher.DispatchEvent(&et.Event{
-				Name:    fmt.Sprintf("%s:%s", o.Name, o.ID),
-				Entity:  orgent,
-				Session: e.Session,
-			})
+		if orgent, err := org.FindOrgByRDAPHandle(e.Session, entity.Handle, src); err == nil && orgent != nil {
+			org.DispatchOrg(e, orgent)
+		} else if orgent := org.LinkContactOrg(e, cr, name, src); orgent != nil {
+			_, _ = org.CreateOrgRDAPHandle(e.Session, orgent, entity.Handle, src)
 		}
 	}
 
@@ -380,23 +328,4 @@ func (rd *rdapPlugin) getJSONLink(links []rdap.Link) *url.URL {
 		}
 	}
 	return url
-}
-
-func (rd *rdapPlugin) createContactEdge(ctx context.Context, sess et.Session, cr, a *dbt.Entity, rel oam.Relation, src *et.Source) error {
-	edge, err := sess.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   rel,
-		FromEntity: cr,
-		ToEntity:   a,
-	})
-	if err != nil {
-		return err
-	} else if edge == nil {
-		return errors.New("failed to create the edge")
-	}
-
-	_, err = sess.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-		Source:     src.Name,
-		Confidence: src.Confidence,
-	})
-	return err
 }

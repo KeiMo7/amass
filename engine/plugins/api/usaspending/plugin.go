@@ -16,16 +16,12 @@
 package usaspending
 
 import (
-	"context"
-	"errors"
 	"log/slog"
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
-	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	oamgen "github.com/owasp-amass/open-asset-model/general"
 	"golang.org/x/time/rate"
 )
 
@@ -86,19 +82,3 @@ func (u *usaspending) Start(r et.Registry) error {
 }
 
 func (u *usaspending) Stop() { u.log.Info("Plugin stopped") }
-
-func (u *usaspending) createRelation(ctx context.Context, session et.Session, obj *dbt.Entity,
-	rel oam.Relation, subject *dbt.Entity, conf int) error {
-	edge, err := session.DB().CreateEdge(ctx, &dbt.Edge{Relation: rel, FromEntity: obj, ToEntity: subject})
-	if err != nil {
-		return err
-	} else if edge == nil {
-		return errors.New("failed to create the edge")
-	}
-
-	_, err = session.DB().CreateEdgeProperty(ctx, edge, &oamgen.SourceProperty{
-		Source:     u.source.Name,
-		Confidence: conf,
-	})
-	return err
-}

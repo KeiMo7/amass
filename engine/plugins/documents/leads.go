@@ -346,7 +346,7 @@ func (d *documents) linkAsset(e *et.Event, fent *dbt.Entity, a oam.Asset) *dbt.E
 	if err != nil || ent == nil {
 		return nil
 	}
-	d.sourced(ctx, e, ent)
+	support.AddSource(ctx, e.Session, ent, d.source)
 	d.contains(e, fent, ent)
 	return ent
 }
@@ -356,14 +356,7 @@ func (d *documents) contains(e *et.Event, fent, ent *dbt.Entity) {
 	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 10*time.Second)
 	defer cancel()
 
-	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{Relation: rel("contains"), FromEntity: fent, ToEntity: ent})
-	if err != nil || edge == nil {
-		return
-	}
-	_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &oamgen.SourceProperty{
-		Source:     d.source.Name,
-		Confidence: d.source.Confidence,
-	})
+	_, _ = support.Relate(ctx, e.Session, fent, rel("contains"), ent, d.source)
 }
 
 // dispatch hands an asset to the pipeline as a lead.

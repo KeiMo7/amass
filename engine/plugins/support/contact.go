@@ -6,8 +6,10 @@ package support
 
 import (
 	"context"
+	"fmt"
 	"strings"
 
+	"github.com/owasp-amass/amass/v5/config"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
@@ -97,4 +99,75 @@ func linkPhone(ctx context.Context, sess et.Session, cr *dbt.Entity, value strin
 		phone.Type = contact.PhoneTypeRegular
 	}
 	return LinkAsset(ctx, sess, cr, "phone", phone, src)
+}
+
+// Contact is the contact information a registration or a certificate
+// publishes for one party.
+type Contact struct {
+	Address  string // a freeform street address, parsed when stored
+	Email    string
+	Phone    string
+	PhoneExt string
+	Fax      string
+	FaxExt   string
+	Country  string // the region phone numbers are read in
+	URL      string
+}
+
+// StoreContact links what a contact carries to its ContactRecord, each kind
+// of asset only when the configuration matches it: the street address
+// (street_address), the email Identifier (id), the phone and fax numbers
+// (phone) and the URL (url), each with src as its source. It returns the
+// street address entity, or nil.
+func StoreContact(ctx context.Context, sess et.Session, cr *dbt.Entity, c Contact, src *et.Source,
+	m *config.Matches) *dbt.Entity {
+	if cr == nil {
+		return nil
+	}
+
+	var addr *dbt.Entity
+	if m.IsMatch(string(oam.StreetAddress)) {
+		if loc := ParseStreetAddress(strings.TrimSpace(c.Address)); loc != nil {
+			addr = LinkAsset(ctx, sess, cr, "street_address", loc, src)
+		}
+	}
+	if m.IsMatch(string(oam.Identifier)) {
+		LinkEmail(ctx, sess, cr, "id", c.Email, src)
+	}
+	if m.IsMatch(string(oam.Phone)) {
+		if phone := PhoneToOAMPhone(c.Phone, c.PhoneExt, c.Country); phone != nil {
+			phone.Type = contact.PhoneTypeRegular
+			LinkAsset(ctx, sess, cr, "phone", phone, src)
+		}
+		if fax := PhoneToOAMPhone(c.Fax, c.FaxExt, c.Country); fax != nil {
+			fax.Type = contact.PhoneTypeFax
+			LinkAsset(ctx, sess, cr, "phone", fax, src)
+		}
+	}
+	if m.IsMatch(string(oam.URL)) {
+		if u := RawURLToOAM(strings.TrimSpace(c.URL)); u != nil {
+			LinkAsset(ctx, sess, cr, "url", u, src)
+		}
+	}
+	return addr
+}
+
+// LinkContactPerson creates the Person named by a contact, linked from its
+// ContactRecord (person), and dispatches it. It returns the person, or nil.
+func LinkContactPerson(e *et.Event, cr *dbt.Entity, fullName string, src *et.Source) *dbt.Entity {
+	p := FullNameToPerson(fullName)
+	if p == nil {
+		return nil
+	}
+
+	ent, err := CreatePersonAsset(e.Session, cr, &general.SimpleRelation{Name: "person"}, p, src)
+	if err != nil || ent == nil {
+		return nil
+	}
+	_ = e.Dispatcher.DispatchEvent(&et.Event{
+		Name:    fmt.Sprintf("%s:%s", p.FullName, p.ID),
+		Entity:  ent,
+		Session: e.Session,
+	})
+	return ent
 }

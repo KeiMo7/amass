@@ -189,10 +189,7 @@ func (c *teamCymru) storeNetblock(e *et.Event, prefix string) *dbt.Entity {
 	if err != nil || nb == nil {
 		return nil
 	}
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, nb, &general.SourceProperty{
-		Source:     c.source.Name,
-		Confidence: c.source.Confidence,
-	})
+	support.AddSource(ctx, e.Session, nb, c.source)
 	return nb
 }
 
@@ -204,10 +201,7 @@ func (c *teamCymru) storeAutnum(e *et.Event, asn int) *dbt.Entity {
 	if err != nil || as == nil {
 		return nil
 	}
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, as, &general.SourceProperty{
-		Source:     c.source.Name,
-		Confidence: c.source.Confidence,
-	})
+	support.AddSource(ctx, e.Session, as, c.source)
 	return as
 }
 
@@ -215,18 +209,7 @@ func (c *teamCymru) edge(e *et.Event, from, to *dbt.Entity, label string) {
 	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 20*time.Second)
 	defer cancel()
 
-	edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   &general.SimpleRelation{Name: label},
-		FromEntity: from,
-		ToEntity:   to,
-	})
-	if err != nil || edge == nil {
-		return
-	}
-	_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-		Source:     c.source.Name,
-		Confidence: c.source.Confidence,
-	})
+	_, _ = support.Relate(ctx, e.Session, from, &general.SimpleRelation{Name: label}, to, c.source)
 }
 
 func (c *teamCymru) dispatch(e *et.Event, entity *dbt.Entity, name string) {

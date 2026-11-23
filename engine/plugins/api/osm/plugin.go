@@ -30,9 +30,7 @@ import (
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
-	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	"github.com/owasp-amass/open-asset-model/general"
 	"golang.org/x/time/rate"
 )
 
@@ -121,22 +119,6 @@ func (o *openstreetmap) Start(r et.Registry) error {
 }
 
 func (o *openstreetmap) Stop() { o.log.Info("Plugin stopped") }
-
-func (o *openstreetmap) createRelation(ctx context.Context, session et.Session, obj *dbt.Entity,
-	rel oam.Relation, subject *dbt.Entity, conf int) error {
-	edge, err := session.DB().CreateEdge(ctx, &dbt.Edge{Relation: rel, FromEntity: obj, ToEntity: subject})
-	if err != nil {
-		return err
-	} else if edge == nil {
-		return errors.New("failed to create the edge")
-	}
-
-	_, err = session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-		Source:     o.source.Name,
-		Confidence: conf,
-	})
-	return err
-}
 
 // overpass posts an Overpass QL query and returns the response body.
 func (o *openstreetmap) overpass(e *et.Event, query string) (string, error) {

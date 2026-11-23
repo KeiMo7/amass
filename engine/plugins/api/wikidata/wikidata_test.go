@@ -45,8 +45,8 @@ func TestParseSPARQLSingleEntity(t *testing.T) {
 	if c.Country != "MX" || c.LEI != "8COTL657Z5I1QULT5R68" {
 		t.Errorf("country/lei = %q/%q", c.Country, c.LEI)
 	}
-	if c.bestName() != "Fomento Económico Mexicano, S.A.B. de C.V." {
-		t.Errorf("bestName = %q", c.bestName())
+	if c.BestName() != "Fomento Económico Mexicano, S.A.B. de C.V." {
+		t.Errorf("bestName = %q", c.BestName())
 	}
 }
 
@@ -72,7 +72,7 @@ func TestParseSPARQLRealSample(t *testing.T) {
 		t.Fatalf("got %d, want 1", len(cs))
 	}
 	c := cs[0]
-	if c.QID != "Q1435628" || c.bestName() != "FEMSA" || c.Country != "MX" ||
+	if c.QID != "Q1435628" || c.BestName() != "FEMSA" || c.Country != "MX" ||
 		c.LEI != "549300A8MDWDJNMLV153" || c.Website != "http://femsa.com/" {
 		t.Fatalf("parsed %+v", c)
 	}

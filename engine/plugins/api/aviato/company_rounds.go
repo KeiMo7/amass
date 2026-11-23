@@ -190,25 +190,17 @@ func (cr *companyRounds) store(e *et.Event, ident, orgent *dbt.Entity, funds *co
 			continue
 		}
 
-		_, err = e.Session.DB().CreateEntityProperty(ctx, fundent, &oamgen.SourceProperty{
-			Source:     cr.plugin.source.Name,
-			Confidence: cr.plugin.source.Confidence,
-		})
-		if err != nil {
-			msg := fmt.Sprintf("failed to create the FundsTransfer asset source property for %s: %s", f.ID, err)
-			e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
-			continue
-		}
+		support.AddSource(ctx, e.Session, fundent, cr.plugin.source)
 
-		if err := cr.plugin.createRelation(ctx, e.Session, fundent,
-			oamgen.SimpleRelation{Name: "recipient"}, orgacc, cr.plugin.source.Confidence); err != nil {
+		if _, err := support.Relate(ctx, e.Session, fundent,
+			oamgen.SimpleRelation{Name: "recipient"}, orgacc, cr.plugin.source); err != nil {
 			msg := fmt.Sprintf("failed to create the recipient relation for %s: %s", f.ID, err)
 			e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
 			continue
 		}
 
-		if err := cr.plugin.createRelation(ctx, e.Session, fundent,
-			oamgen.SimpleRelation{Name: "sender"}, seedacc, cr.plugin.source.Confidence); err != nil {
+		if _, err := support.Relate(ctx, e.Session, fundent,
+			oamgen.SimpleRelation{Name: "sender"}, seedacc, cr.plugin.source); err != nil {
 			msg := fmt.Sprintf("failed to create the sender relation for %s: %s", f.ID, err)
 			e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
 			continue
@@ -238,15 +230,7 @@ func (cr *companyRounds) createSeedAccount(e *et.Event, round *companyFundingRou
 		return nil
 	}
 
-	_, err = e.Session.DB().CreateEntityProperty(ctx, accountent, &oamgen.SourceProperty{
-		Source:     cr.plugin.source.Name,
-		Confidence: cr.plugin.source.Confidence,
-	})
-	if err != nil {
-		msg := fmt.Sprintf("failed to create the Account asset source property for %s: %s", name, err)
-		e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
-		return nil
-	}
+	support.AddSource(ctx, e.Session, accountent, cr.plugin.source)
 
 	investors := cr.createOrgInvestors(e, round)
 	if ents := cr.createPersonInvestors(e, round); len(ents) > 0 {
@@ -254,8 +238,8 @@ func (cr *companyRounds) createSeedAccount(e *et.Event, round *companyFundingRou
 	}
 
 	for _, investor := range investors {
-		if err := cr.plugin.createRelation(ctx, e.Session, investor,
-			oamgen.SimpleRelation{Name: "account"}, accountent, cr.plugin.source.Confidence); err != nil {
+		if _, err := support.Relate(ctx, e.Session, investor,
+			oamgen.SimpleRelation{Name: "account"}, accountent, cr.plugin.source); err != nil {
 			msg := fmt.Sprintf("failed to create the account relation for %s: %s", investor.ID, err)
 			e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
 		}
@@ -317,8 +301,8 @@ func (cr *companyRounds) createOrgInvestors(e *et.Event, round *companyFundingRo
 			continue
 		}
 
-		if err := cr.plugin.createRelation(ctx, e.Session, orgent,
-			oamgen.SimpleRelation{Name: "id"}, ident, cr.plugin.source.Confidence); err != nil {
+		if _, err := support.Relate(ctx, e.Session, orgent,
+			oamgen.SimpleRelation{Name: "id"}, ident, cr.plugin.source); err != nil {
 			msg := fmt.Sprintf("failed to create the id relation for %s: %s", oamid.UniqueID, err)
 			e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
 		}
@@ -391,8 +375,8 @@ func (cr *companyRounds) createPersonInvestors(e *et.Event, round *companyFundin
 			continue
 		}
 
-		if err := cr.plugin.createRelation(ctx, e.Session, personent,
-			oamgen.SimpleRelation{Name: "id"}, ident, cr.plugin.source.Confidence); err != nil {
+		if _, err := support.Relate(ctx, e.Session, personent,
+			oamgen.SimpleRelation{Name: "id"}, ident, cr.plugin.source); err != nil {
 			msg := fmt.Sprintf("failed to create the id relation for %s: %s", oamid.UniqueID, err)
 			e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
 		}

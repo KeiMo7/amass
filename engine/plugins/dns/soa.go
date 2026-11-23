@@ -50,21 +50,14 @@ func (d *dnsSubs) storeSOA(e *et.Event, apex *dbt.Entity, name string, soa *dns.
 	if mname := strings.ToLower(strings.TrimSuffix(soa.Ns, ".")); strings.Contains(mname, ".") {
 		ns, err := e.Session.DB().CreateAsset(ctx, &oamdns.FQDN{Name: mname})
 		if err == nil && ns != nil {
-			edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-				Relation: &oamdns.BasicDNSRelation{
-					Name: "dns_record",
-					Header: oamdns.RRHeader{
-						RRType: int(dns.TypeSOA),
-						Class:  int(soa.Header().Class),
-						TTL:    int(soa.Header().Ttl),
-					},
+			_, _ = support.Relate(ctx, e.Session, apex, &oamdns.BasicDNSRelation{
+				Name: "dns_record",
+				Header: oamdns.RRHeader{
+					RRType: int(dns.TypeSOA),
+					Class:  int(soa.Header().Class),
+					TTL:    int(soa.Header().Ttl),
 				},
-				FromEntity: apex,
-				ToEntity:   ns,
-			})
-			if err == nil && edge != nil {
-				d.sourced(ctx, e, edge)
-			}
+			}, ns, d.plugin.source)
 			if _, conf := e.Session.Scope().IsAssetInScope(&oamdns.FQDN{Name: mname}, 0); conf > 0 {
 				_ = e.Dispatcher.DispatchEvent(&et.Event{Name: mname, Entity: ns, Session: e.Session})
 			}
@@ -76,26 +69,12 @@ func (d *dnsSubs) storeSOA(e *et.Event, apex *dbt.Entity, name string, soa *dns.
 			UniqueID: fmt.Sprintf("%s:%s", general.EmailAddress, mbox), ID: mbox, Type: general.EmailAddress,
 		})
 		if err == nil && id != nil {
-			edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-				Relation:   &general.SimpleRelation{Name: relSOARName},
-				FromEntity: apex,
-				ToEntity:   id,
-			})
-			if err == nil && edge != nil {
-				d.sourced(ctx, e, edge)
-			}
+			_, _ = support.Relate(ctx, e.Session, apex, &general.SimpleRelation{Name: relSOARName}, id, d.plugin.source)
 		}
 	}
 
 	e.Session.Log().Info("SOA record discovered", "fqdn", name, "mname", soa.Ns, "rname", soa.Mbox,
 		slog.Group("plugin", "name", d.plugin.name, "handler", d.name))
-}
-
-func (d *dnsSubs) sourced(ctx context.Context, e *et.Event, edge *dbt.Edge) {
-	_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-		Source:     d.plugin.source.Name,
-		Confidence: d.plugin.source.Confidence,
-	})
 }
 
 // soaMailbox turns an SOA RNAME into an email address: its first label is

@@ -157,15 +157,7 @@ func (r *fqdnLookup) store(e *et.Event, resp string, fent *dbt.Entity, src *et.S
 
 	autasset, err := e.Session.DB().CreateAsset(ctx, dr)
 	if err == nil && autasset != nil {
-		if edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-			Relation:   &general.SimpleRelation{Name: "registration"},
-			FromEntity: fent,
-			ToEntity:   autasset,
-		}); err == nil && edge != nil {
-			_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-				Source:     src.Name,
-				Confidence: src.Confidence,
-			})
+		if _, err := support.Relate(ctx, e.Session, fent, &general.SimpleRelation{Name: "registration"}, autasset, src); err == nil {
 			msg := fmt.Sprintf("successfully acquired the WHOIS record for %s", fqdn.Name)
 			e.Session.Log().Info(msg, slog.Group("plugin", "name", r.plugin.name, "handler", r.name))
 		}

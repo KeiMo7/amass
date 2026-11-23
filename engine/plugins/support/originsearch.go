@@ -218,10 +218,7 @@ func StoreOriginIP(e *et.Event, src *et.Source, ip string) bool {
 		return false
 	}
 
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, ent, &oamgen.SourceProperty{
-		Source:     src.Name,
-		Confidence: src.Confidence,
-	})
+	AddSource(ctx, e.Session, ent, src)
 	_ = e.Session.Backlog().Enqueue(ent)
 
 	return true

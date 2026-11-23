@@ -140,16 +140,10 @@ func (h *phones) store(e *et.Event, orgent *dbt.Entity, el *element, seen map[st
 			}
 			cr = ent
 
-			if _, err := e.Session.DB().CreateEntityProperty(ctx, cr, &general.SourceProperty{
-				Source:     h.plugin.source.Name,
-				Confidence: h.plugin.source.Confidence,
-			}); err != nil {
-				msg := fmt.Sprintf("failed to create the ContactRecord source property: %s", err)
-				e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
-			}
+			support.AddSource(ctx, e.Session, cr, h.plugin.source)
 
-			if err := h.plugin.createRelation(ctx, e.Session, cr,
-				&general.SimpleRelation{Name: "organization"}, orgent, h.plugin.source.Confidence); err != nil {
+			if _, err := support.Relate(ctx, e.Session, cr,
+				&general.SimpleRelation{Name: "organization"}, orgent, h.plugin.source); err != nil {
 				msg := fmt.Sprintf("failed to link the ContactRecord to the organization: %s", err)
 				e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
 				return
@@ -163,16 +157,10 @@ func (h *phones) store(e *et.Event, orgent *dbt.Entity, el *element, seen map[st
 			continue
 		}
 
-		if _, err := e.Session.DB().CreateEntityProperty(ctx, phoneent, &general.SourceProperty{
-			Source:     h.plugin.source.Name,
-			Confidence: h.plugin.source.Confidence,
-		}); err != nil {
-			msg := fmt.Sprintf("failed to create the Phone source property for %s: %s", phone.E164, err)
-			e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
-		}
+		support.AddSource(ctx, e.Session, phoneent, h.plugin.source)
 
-		if err := h.plugin.createRelation(ctx, e.Session, cr,
-			&general.SimpleRelation{Name: "phone"}, phoneent, h.plugin.source.Confidence); err != nil {
+		if _, err := support.Relate(ctx, e.Session, cr,
+			&general.SimpleRelation{Name: "phone"}, phoneent, h.plugin.source); err != nil {
 			msg := fmt.Sprintf("failed to link the Phone %s: %s", phone.E164, err)
 			e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
 			continue

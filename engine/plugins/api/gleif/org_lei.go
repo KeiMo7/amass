@@ -121,12 +121,9 @@ func (g *gleif) addAddress(e *et.Event, orgent *dbt.Entity, rel oam.Relation, ad
 		return err
 	}
 
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, a, &oamgen.SourceProperty{
-		Source:     g.source.Name,
-		Confidence: conf,
-	})
+	support.AddSource(ctx, e.Session, a, g.withConfidence(conf))
 
-	if err := g.createRelation(ctx, e.Session, orgent, rel, a, conf); err != nil {
+	if _, err := support.Relate(ctx, e.Session, orgent, rel, a, g.withConfidence(conf)); err != nil {
 		e.Session.Log().Error(err.Error(), slog.Group("plugin", "name", g.name, "handler", g.name))
 		return err
 	}
@@ -154,12 +151,9 @@ func (g *gleif) addIdentifiersToOrg(e *et.Event, orgent *dbt.Entity, idtype stri
 			return err
 		}
 
-		_, _ = e.Session.DB().CreateEntityProperty(ctx, ident, &oamgen.SourceProperty{
-			Source:     g.source.Name,
-			Confidence: conf,
-		})
+		support.AddSource(ctx, e.Session, ident, g.withConfidence(conf))
 
-		if err := g.createRelation(ctx, e.Session, orgent, oamgen.SimpleRelation{Name: "id"}, ident, conf); err != nil {
+		if _, err := support.Relate(ctx, e.Session, orgent, oamgen.SimpleRelation{Name: "id"}, ident, g.withConfidence(conf)); err != nil {
 			return err
 		}
 	}

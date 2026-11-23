@@ -6,14 +6,12 @@ package aviato
 
 import (
 	"context"
-	"errors"
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	oamgen "github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 	"golang.org/x/time/rate"
 )
@@ -121,25 +119,6 @@ func (a *aviato) Start(r et.Registry) error {
 
 func (a *aviato) Stop() {
 	a.log.Info("Plugin stopped")
-}
-
-func (a *aviato) createRelation(ctx context.Context, session et.Session, obj *dbt.Entity, rel oam.Relation, subject *dbt.Entity, conf int) error {
-	edge, err := session.DB().CreateEdge(ctx, &dbt.Edge{
-		Relation:   rel,
-		FromEntity: obj,
-		ToEntity:   subject,
-	})
-	if err != nil {
-		return err
-	} else if edge == nil {
-		return errors.New("failed to create the edge")
-	}
-
-	_, err = session.DB().CreateEdgeProperty(ctx, edge, &oamgen.SourceProperty{
-		Source:     a.source.Name,
-		Confidence: conf,
-	})
-	return err
 }
 
 // identOrg returns the organization that links to the Aviato identifier.

@@ -18,7 +18,6 @@ import (
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
-	"github.com/owasp-amass/open-asset-model/general"
 	oamnet "github.com/owasp-amass/open-asset-model/network"
 	"github.com/owasp-amass/open-asset-model/platform"
 	oamurl "github.com/owasp-amass/open-asset-model/url"
@@ -153,10 +152,7 @@ func (bu *bannerURLs) store(e *et.Event, urls []*oamurl.URL) []*dbt.Entity {
 	for _, u := range urls {
 		if a, err := e.Session.DB().CreateAsset(ctx, u); err == nil && a != nil {
 			assets = append(assets, a)
-			_, _ = e.Session.DB().CreateEntityProperty(ctx, a, &general.SourceProperty{
-				Source:     bu.source.Name,
-				Confidence: bu.source.Confidence,
-			})
+			support.AddSource(ctx, e.Session, a, bu.source)
 		}
 	}
 

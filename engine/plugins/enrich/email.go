@@ -121,15 +121,6 @@ func (ee *emailexpand) process(e *et.Event, findings []*support.Finding) {
 	defer cancel()
 
 	for _, f := range findings {
-		if edge, err := e.Session.DB().CreateEdge(ctx, &dbt.Edge{
-			Relation:   f.Rel,
-			FromEntity: f.From,
-			ToEntity:   f.To,
-		}); err == nil && edge != nil {
-			_, _ = e.Session.DB().CreateEdgeProperty(ctx, edge, &general.SourceProperty{
-				Source:     ee.source.Name,
-				Confidence: ee.source.Confidence,
-			})
-		}
+		_, _ = support.Relate(ctx, e.Session, f.From, f.Rel, f.To, ee.source)
 	}
 }

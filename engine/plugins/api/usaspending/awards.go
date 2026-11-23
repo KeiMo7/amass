@@ -225,17 +225,10 @@ func (h *awards) store(e *et.Event, orgent *dbt.Entity, a *award, id string) *db
 		return nil
 	}
 
-	if _, err := e.Session.DB().CreateEntityProperty(ctx, fundent, &oamgen.SourceProperty{
-		Source:     h.plugin.source.Name,
-		Confidence: h.plugin.source.Confidence,
-	}); err != nil {
-		msg := fmt.Sprintf("failed to create the FundsTransfer source property for %s: %s", id, err)
-		e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
-		return nil
-	}
+	support.AddSource(ctx, e.Session, fundent, h.plugin.source)
 
-	if err := h.plugin.createRelation(ctx, e.Session, fundent,
-		oamgen.SimpleRelation{Name: "recipient"}, orgacc, h.plugin.source.Confidence); err != nil {
+	if _, err := support.Relate(ctx, e.Session, fundent,
+		oamgen.SimpleRelation{Name: "recipient"}, orgacc, h.plugin.source); err != nil {
 		msg := fmt.Sprintf("failed to create the recipient relation for %s: %s", id, err)
 		e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
 		return nil
@@ -244,8 +237,8 @@ func (h *awards) store(e *et.Event, orgent *dbt.Entity, a *award, id string) *db
 	// The awarding agency is the funding party, surfaced by the funding lens.
 	if agency, err := org.CreateOrgAsset(e.Session, nil, nil,
 		&oamorg.Organization{Name: strings.TrimSpace(a.Agency)}, h.plugin.source); err == nil {
-		if err := h.plugin.createRelation(ctx, e.Session, fundent,
-			oamgen.SimpleRelation{Name: "third_party"}, agency, h.plugin.source.Confidence); err != nil {
+		if _, err := support.Relate(ctx, e.Session, fundent,
+			oamgen.SimpleRelation{Name: "third_party"}, agency, h.plugin.source); err != nil {
 			msg := fmt.Sprintf("failed to create the third_party relation for %s: %s", id, err)
 			e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
 		}

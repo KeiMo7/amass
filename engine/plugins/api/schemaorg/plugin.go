@@ -20,9 +20,6 @@
 package schemaorg
 
 import (
-	"context"
-	"errors"
-	"fmt"
 	"log/slog"
 	"strings"
 	"time"
@@ -30,10 +27,7 @@ import (
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
-	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	oamdns "github.com/owasp-amass/open-asset-model/dns"
-	oamgen "github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 	oamreg "github.com/owasp-amass/open-asset-model/registration"
 	"golang.org/x/time/rate"
@@ -127,93 +121,19 @@ func (s *schemaorg) query(e *et.Event, domain string) {
 		return
 	}
 	c, ok := parseSchemaOrg([]byte(html))
-	if !ok || c.bestName() == "" {
+	if !ok || c.BestName() == "" {
 		return
 	}
 	s.store(e, domain, c)
 }
 
 func (s *schemaorg) store(e *et.Event, domain string, c company) {
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	// Reuse an organization another identity source already created for this
-	// domain rather than making a duplicate; only create (and build the website
-	// chain) when none exists.
-	orgent := org.OrgForControlledDomain(e.Session, domain)
+	orgent := org.StoreDomainIdentity(e, domain, c, s.source)
 	if orgent == nil {
-		var err error
-		orgent, err = org.CreateOrgAsset(e.Session, nil, nil, &oamorg.Organization{
-			Name:         c.bestName(),
-			LegalName:    c.LegalName,
-			Jurisdiction: c.Country,
-		}, s.source)
-		if err != nil || orgent == nil {
-			return
-		}
-
-		// Organization --website--> URL --domain--> apex FQDN (existing OAM chain).
-		if u := support.RawURLToOAM("https://" + domain); u != nil {
-			if urlent, err := e.Session.DB().CreateAsset(ctx, u); err == nil && urlent != nil {
-				s.sourceProp(ctx, e, urlent)
-				_ = s.createRelation(ctx, e.Session, orgent, &oamgen.SimpleRelation{Name: "website"}, urlent)
-
-				if fq, err := e.Session.DB().CreateAsset(ctx, &oamdns.FQDN{Name: domain}); err == nil && fq != nil {
-					s.sourceProp(ctx, e, fq)
-					_ = s.createRelation(ctx, e.Session, urlent, &oamgen.SimpleRelation{Name: "domain"}, fq)
-				}
-			}
-		}
-	} else {
-		// Reusing another source's org: add SchemaOrg provenance, and fill the
-		// jurisdiction when it is still unset.
-		s.sourceProp(ctx, e, orgent)
-		if o := orgent.Asset.(*oamorg.Organization); c.Country != "" && o.Jurisdiction == "" {
-			o.Jurisdiction = c.Country
-			_, _ = e.Session.DB().CreateEntity(ctx, orgent)
-		}
+		return
 	}
 
-	// A leiCode is an exact key GLEIF's handlers enrich from authoritatively,
-	// turning this low-confidence self-assertion into a high-confidence record.
-	if c.LEI != "" {
-		id := &oamgen.Identifier{
-			UniqueID: fmt.Sprintf("%s:%s", oamgen.LEICode, c.LEI),
-			ID:       c.LEI,
-			Type:     oamgen.LEICode,
-		}
-		if ident, err := e.Session.DB().CreateAsset(ctx, id); err == nil && ident != nil {
-			s.sourceProp(ctx, e, ident)
-			_ = s.createRelation(ctx, e.Session, orgent, &oamgen.SimpleRelation{Name: "id"}, ident)
-			_ = e.Dispatcher.DispatchEvent(&et.Event{Name: id.UniqueID, Entity: ident, Session: e.Session})
-		}
-	}
-
-	o := orgent.Asset.(*oamorg.Organization)
-	_ = e.Dispatcher.DispatchEvent(&et.Event{Name: fmt.Sprintf("%s:%s", o.Name, o.ID), Entity: orgent, Session: e.Session})
 	e.Session.Log().Info("organization identified from homepage schema.org markup",
-		"domain", domain, "org", o.Name,
+		"domain", domain, "org", orgent.Asset.(*oamorg.Organization).Name,
 		slog.Group("plugin", "name", s.name, "handler", s.handler.name))
-}
-
-func (s *schemaorg) sourceProp(ctx context.Context, e *et.Event, ent *dbt.Entity) {
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, ent, &oamgen.SourceProperty{
-		Source:     s.source.Name,
-		Confidence: s.source.Confidence,
-	})
-}
-
-func (s *schemaorg) createRelation(ctx context.Context, sess et.Session, obj *dbt.Entity,
-	rel oam.Relation, subject *dbt.Entity) error {
-	edge, err := sess.DB().CreateEdge(ctx, &dbt.Edge{Relation: rel, FromEntity: obj, ToEntity: subject})
-	if err != nil {
-		return err
-	} else if edge == nil {
-		return errors.New("failed to create the edge")
-	}
-	_, err = sess.DB().CreateEdgeProperty(ctx, edge, &oamgen.SourceProperty{
-		Source:     s.source.Name,
-		Confidence: s.source.Confidence,
-	})
-	return err
 }

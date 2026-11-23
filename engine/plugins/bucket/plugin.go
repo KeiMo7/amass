@@ -211,10 +211,7 @@ func (p *bucketProbe) store(e *et.Event, host *dbt.Entity, name string, prov sem
 		p.log.Warn("failed to store the storage bucket", "bucket", sb.ID, "error", err)
 		return
 	}
-	_, _ = e.Session.DB().CreateEntityProperty(ctx, sbEnt, &oamgen.SourceProperty{
-		Source:     p.source.Name,
-		Confidence: p.source.Confidence,
-	})
+	support.AddSource(ctx, e.Session, sbEnt, p.source)
 
 	support.ProcessAssetsWithSource(e, []*support.Finding{{
 		From:     host,

@@ -120,7 +120,6 @@ type Backlog interface {
 	Has(e *dbt.Entity) bool
 
 	Enqueue(e *dbt.Entity) error
-	EnqueueDone(e *dbt.Entity) error
 
 	// ClaimNext leases up to num entities of this asset type.
 	// Claimed items will not be returned again until Ack/Release or lease expiry.
@@ -134,12 +133,7 @@ type Backlog interface {
 
 	Counts(atype oam.AssetType) (queued, leased, done int64, err error)
 
-	Delete(e *dbt.Entity) error
 	Close() error
-
-	// Optional knobs:
-	SetOwner(owner string)
-	SetLeaseTTL(ttl time.Duration)
 }
 
 type SessionStats struct {

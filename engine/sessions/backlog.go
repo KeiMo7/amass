@@ -43,8 +43,7 @@ func newSessionBacklog(s *Session) (*sessionBacklog, error) {
 		return nil, err
 	}
 
-	// Default owner is stable per session. If you have multiple concurrent consumers per session,
-	// override with SetOwner (e.g., include dispatcher instance ID).
+	// The owner is stable per session; the dispatcher is its only consumer.
 	owner := s.ID().String()
 
 	return &sessionBacklog{
@@ -62,16 +61,9 @@ func (sb *sessionBacklog) Close() error {
 	return sb.db.Close()
 }
 
-// SetOwner overrides the owner used for Claim/Ack/Release ownership enforcement.
-// Recommended when multiple consumers may claim from the same session backlog.
-func (sb *sessionBacklog) SetOwner(owner string) {
-	if owner != "" {
-		sb.owner = owner
-	}
-}
-
 // SetLeaseTTL overrides the default lease TTL used by ClaimNext.
 // TTL should exceed typical end-to-end pipeline latency, or use Release on backpressure.
+// A TTL of zero leases claimed entities until they are acked or released.
 func (sb *sessionBacklog) SetLeaseTTL(ttl time.Duration) {
 	if ttl >= 0 {
 		sb.leaseTTL = ttl
@@ -91,8 +83,9 @@ func (sb *sessionBacklog) Has(e *dbt.Entity) bool {
 	return err == nil && ok
 }
 
-// Enqueue adds the entity to the backlog in queued state.
-// Idempotent: if it already exists, it will not be duplicated.
+// Enqueue adds the entity to the backlog in queued state. An entity already in the
+// backlog is not duplicated, but it returns to the queued state, so callers that
+// must not repeat work check Has first.
 func (sb *sessionBacklog) Enqueue(e *dbt.Entity) error {
 	if sb == nil || sb.db == nil {
 		return errors.New("backlog is nil")
@@ -118,38 +111,12 @@ func (sb *sessionBacklog) Enqueue(e *dbt.Entity) error {
 	return sb.db.Enqueue(ctx, atype, e.ID)
 }
 
-// EnqueueDone adds the entity to the backlog and marks it done (or updates to done if already present).
-func (sb *sessionBacklog) EnqueueDone(e *dbt.Entity) error {
-	if sb == nil || sb.db == nil {
-		return errors.New("backlog is nil")
-	}
-	if e == nil {
-		return errors.New("entity is nil")
-	}
-	if e.ID == "" {
-		return errors.New("entity ID is empty")
-	}
-	if e.Asset == nil {
-		return errors.New("asset is nil")
-	}
-
-	atype := e.Asset.AssetType()
-	if atype == "" {
-		return errors.New("asset type is empty")
-	}
-
-	ctx, cancel := context.WithTimeout(sb.session.Ctx(), 5*time.Second)
-	defer cancel()
-
-	return sb.db.EnqueueDone(ctx, atype, e.ID)
-}
-
 // ClaimNext claims up to num entities of the given asset type from the backlog and returns
 // the corresponding entities loaded from the asset DB. Claimed items are leased (in-flight)
 // until Ack() or Release().
 //
-// Important: If an entity ID is present in the backlog but missing from the asset DB,
-// this function will Release() the claim so the item can be retried or handled elsewhere.
+// An entity ID present in the backlog but missing from the asset DB is acked, so it
+// is not claimed again, and left out of the results.
 func (sb *sessionBacklog) ClaimNext(atype oam.AssetType, num int) ([]*dbt.Entity, error) {
 	if sb == nil || sb.db == nil {
 		return nil, errors.New("backlog is nil")
@@ -237,21 +204,6 @@ func (sb *sessionBacklog) Release(e *dbt.Entity, atype oam.AssetType, enforceOwn
 	}
 
 	return sb.db.Release(ctx, e.ID, owner)
-}
-
-// Delete removes an entity from the backlog regardless of state.
-func (sb *sessionBacklog) Delete(e *dbt.Entity) error {
-	if sb == nil || sb.db == nil {
-		return errors.New("backlog is nil")
-	}
-	if e == nil || e.ID == "" {
-		return errors.New("entity is nil or ID is empty")
-	}
-
-	ctx, cancel := context.WithTimeout(sb.session.Ctx(), 5*time.Second)
-	defer cancel()
-
-	return sb.db.Delete(ctx, e.ID)
 }
 
 func (sb *sessionBacklog) Counts(atype oam.AssetType) (queued, leased, done int64, err error) {

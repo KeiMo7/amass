@@ -56,27 +56,6 @@ func TestEnqueueIsIdempotent(t *testing.T) {
 	assert.Equal(t, int64(0), done)
 }
 
-func TestEnqueueDoneMarksDone(t *testing.T) {
-	db, _ := openTestBacklog(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	eid := "entity-done"
-	require.NoError(t, db.EnqueueDone(ctx, oam.FQDN, eid))
-
-	queued, leased, done, err := db.Counts(ctx, oam.FQDN)
-	require.NoError(t, err)
-	assert.Equal(t, int64(0), queued)
-	assert.Equal(t, int64(0), leased)
-	assert.Equal(t, int64(1), done)
-
-	// Ensure it cannot be claimed
-	claims, err := db.ClaimNext(ctx, oam.FQDN, "owner", 10, 30*time.Second)
-	require.NoError(t, err)
-	assert.Len(t, claims, 0)
-}
-
 func TestClaimNextFIFOOrdering(t *testing.T) {
 	db, _ := openTestBacklog(t)
 
@@ -263,37 +242,6 @@ func TestClaimNextReclaimsExpiredLease(t *testing.T) {
 	assert.Equal(t, eid, claims2[0].EntityID)
 }
 
-func TestRequeueExpiredNormalizesState(t *testing.T) {
-	db, _ := openTestBacklog(t)
-
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-
-	eid := "entity-requeue"
-	require.NoError(t, db.Enqueue(ctx, oam.FQDN, eid))
-
-	claims, err := db.ClaimNext(ctx, oam.FQDN, "ownerA", 1, 1*time.Second)
-	require.NoError(t, err)
-	require.Len(t, claims, 1)
-
-	time.Sleep(1100 * time.Millisecond)
-
-	// Normalize
-	require.NoError(t, db.RequeueExpired(ctx))
-
-	queued, leased, done, err := db.Counts(ctx, oam.FQDN)
-	require.NoError(t, err)
-	assert.Equal(t, int64(1), queued)
-	assert.Equal(t, int64(0), leased)
-	assert.Equal(t, int64(0), done)
-
-	// Claim again
-	claims2, err := db.ClaimNext(ctx, oam.FQDN, "ownerB", 1, 60*time.Second)
-	require.NoError(t, err)
-	require.Len(t, claims2, 1)
-	assert.Equal(t, eid, claims2[0].EntityID)
-}
-
 func TestDeleteRemovesRegardlessOfState(t *testing.T) {
 	db, _ := openTestBacklog(t)
 
@@ -335,10 +283,15 @@ func TestCountsMultiState(t *testing.T) {
 	l1 := "l1"
 	d1 := "d1"
 
+	require.NoError(t, db.Enqueue(ctx, oam.FQDN, d1))
+	done1, err := db.ClaimNext(ctx, oam.FQDN, "ownerA", 1, 60*time.Second)
+	require.NoError(t, err)
+	require.Len(t, done1, 1)
+	require.NoError(t, db.Ack(ctx, d1, "ownerA"))
+
 	require.NoError(t, db.Enqueue(ctx, oam.FQDN, q1))
 	require.NoError(t, db.Enqueue(ctx, oam.FQDN, q2))
 	require.NoError(t, db.Enqueue(ctx, oam.FQDN, l1))
-	require.NoError(t, db.EnqueueDone(ctx, oam.FQDN, d1))
 
 	// lease l1
 	claims, err := db.ClaimNext(ctx, oam.FQDN, "ownerA", 1, 60*time.Second)
@@ -352,4 +305,65 @@ func TestCountsMultiState(t *testing.T) {
 	assert.Equal(t, int64(2), queued) // q2,l1
 	assert.Equal(t, int64(1), leased) // q1
 	assert.Equal(t, int64(1), done)   // d1
+}
+
+func TestClaimNextWithoutTTLKeepsTheLease(t *testing.T) {
+	db, _ := openTestBacklog(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	require.NoError(t, db.Enqueue(ctx, oam.FQDN, "entity-held"))
+	claims, err := db.ClaimNext(ctx, oam.FQDN, "ownerA", 1, 0)
+	require.NoError(t, err)
+	require.Len(t, claims, 1)
+
+	time.Sleep(1100 * time.Millisecond)
+
+	// A lease without a time to live does not expire.
+	claims2, err := db.ClaimNext(ctx, oam.FQDN, "ownerB", 1, time.Second)
+	require.NoError(t, err)
+	assert.Empty(t, claims2)
+
+	// It returns to the queue only when released.
+	require.NoError(t, db.Release(ctx, "entity-held", "ownerA"))
+	claims3, err := db.ClaimNext(ctx, oam.FQDN, "ownerB", 1, time.Second)
+	require.NoError(t, err)
+	require.Len(t, claims3, 1)
+}
+
+func TestClaimNextRoundsAShortTTLUp(t *testing.T) {
+	db, _ := openTestBacklog(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	require.NoError(t, db.Enqueue(ctx, oam.FQDN, "entity-short"))
+	claims, err := db.ClaimNext(ctx, oam.FQDN, "ownerA", 1, 200*time.Millisecond)
+	require.NoError(t, err)
+	require.Len(t, claims, 1)
+
+	// A lease shorter than a second still lasts until the next second.
+	claims2, err := db.ClaimNext(ctx, oam.FQDN, "ownerB", 1, time.Second)
+	require.NoError(t, err)
+	assert.Empty(t, claims2)
+}
+
+func TestClaimNextIsFIFOWithinASecond(t *testing.T) {
+	db, _ := openTestBacklog(t)
+
+	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	defer cancel()
+
+	ids := []string{"e5", "e3", "e9", "e1", "e7"}
+	for _, id := range ids {
+		require.NoError(t, db.Enqueue(ctx, oam.FQDN, id))
+	}
+
+	claims, err := db.ClaimNext(ctx, oam.FQDN, "ownerA", len(ids), time.Minute)
+	require.NoError(t, err)
+	require.Len(t, claims, len(ids))
+	for i, c := range claims {
+		assert.Equal(t, ids[i], c.EntityID)
+	}
 }

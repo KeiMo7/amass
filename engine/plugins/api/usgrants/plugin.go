@@ -3,10 +3,11 @@
 // SPDX-License-Identifier: Apache-2.0
 
 // Package usgrants collects United States federal research grants made to an
-// enumerated Organization from three keyless public APIs — NSF Award Search,
-// NIH RePORTER and SBIR/STTR — and stores each as a FundsTransfer the funding
-// lens surfaces, with the funding agency as the funding party. These complement
-// the USAspending collector (contracts/assistance) with research-grant funding.
+// enumerated Organization from three keyless public sources — the NSF Award
+// Search and NIH RePORTER APIs and SBIR.gov's bulk SBIR/STTR award file — and
+// stores each as a FundsTransfer the funding lens surfaces, with the funding
+// agency as the funding party. These complement the USAspending collector
+// (contracts/assistance) with research-grant funding.
 //
 // Each source is its own plugin, named for the source (NSF, NIH-RePORTER,
 // SBIR), so a user can opt any one of them out individually by name through the

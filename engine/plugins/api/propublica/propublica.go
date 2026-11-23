@@ -22,7 +22,6 @@ import (
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	"github.com/owasp-amass/open-asset-model/contact"
-	oamfin "github.com/owasp-amass/open-asset-model/financial"
 	"github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 )
@@ -199,36 +198,14 @@ func (h *filings) storeFilings(e *et.Event, orgent *dbt.Entity, o *pubOrg) {
 		return
 	}
 
-	var orgacc *dbt.Entity
 	for i, f := range o.Filings {
 		if i >= maxFilings {
 			break
 		}
-		amount := support.JSONNumber(f["totcntrbgfts"])
-		if amount <= 0 {
-			continue
-		}
 		year := support.JSONString(f["tax_prd_yr"])
-
-		if orgacc == nil {
-			if orgacc = org.OrgCheckingAccount(e.Session, orgent, h.plugin.source); orgacc == nil {
-				return
-			}
-		}
-
-		ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-		fundent, err := e.Session.DB().CreateAsset(ctx, &oamfin.FundsTransfer{
-			ID:              "irs990:" + strein + ":" + year,
-			Amount:          amount,
-			Currency:        "USD",
-			ReferenceNumber: strein + ":" + year,
-			ExchangeDate:    support.TransferDate(year),
-		})
-		if err == nil && fundent != nil {
-			support.AddSource(ctx, e.Session, fundent, h.plugin.source)
-			_, _ = support.Relate(ctx, e.Session, fundent,
-				&general.SimpleRelation{Name: "recipient"}, orgacc, h.plugin.source)
-		}
-		cancel()
+		org.StoreReceivedTransfer(e, orgent, org.ReceivedTransfer{
+			ID: "irs990:" + strein + ":" + year, Reference: strein + ":" + year,
+			Amount: support.JSONNumber(f["totcntrbgfts"]), Date: year,
+		}, h.plugin.source)
 	}
 }

@@ -6,6 +6,9 @@ package org
 
 import (
 	"context"
+	"fmt"
+	"log/slog"
+	"strings"
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
@@ -53,6 +56,87 @@ func OrgCheckingAccount(sess et.Session, orgent *dbt.Entity, src *et.Source) *db
 		return nil
 	}
 	return accountent
+}
+
+// ReceivedTransfer is a funds transfer an organization received, as a
+// funding source (an award, grant, contract, filing or funding round)
+// reports it.
+type ReceivedTransfer struct {
+	// ID is the FundsTransfer's unique ID, such as "ted:<notice>".
+	ID string
+	// Reference is the source's own reference number for the transfer.
+	Reference string
+	Amount    float64
+	// Currency defaults to USD.
+	Currency string
+	// Date is in any form support.TransferDate reads.
+	Date string
+	// Funder names the paying organization, related to the transfer as its
+	// third_party; empty when the source names none.
+	Funder string
+}
+
+// StoreReceivedTransfer writes t as a FundsTransfer received by the
+// organization's default checking account (recipient), with the funder as
+// its third_party, all tagged with src. A transfer without an ID or a
+// positive amount, which the Asset Database rejects, is skipped without an
+// error. It returns the transfer, or nil when nothing was stored.
+func StoreReceivedTransfer(e *et.Event, orgent *dbt.Entity, t ReceivedTransfer, src *et.Source) *dbt.Entity {
+	if t.ID == "" || t.Amount <= 0 {
+		return nil
+	}
+
+	orgacc := OrgCheckingAccount(e.Session, orgent, src)
+	if orgacc == nil {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
+	defer cancel()
+
+	currency := t.Currency
+	if currency == "" {
+		currency = "USD"
+	}
+	fundent, err := e.Session.DB().CreateAsset(ctx, &oamfin.FundsTransfer{
+		ID:              t.ID,
+		Amount:          t.Amount,
+		Currency:        currency,
+		ReferenceNumber: t.Reference,
+		ExchangeDate:    support.TransferDate(t.Date),
+	})
+	if err != nil || fundent == nil {
+		e.Session.Log().Error(fmt.Sprintf("failed to store the funds transfer %s: %v", t.ID, err),
+			slog.Group("plugin", "name", src.Name))
+		return nil
+	}
+	support.AddSource(ctx, e.Session, fundent, src)
+
+	if _, err := support.Relate(ctx, e.Session, fundent,
+		&oamgen.SimpleRelation{Name: "recipient"}, orgacc, src); err != nil {
+		return nil
+	}
+	if funder := strings.TrimSpace(t.Funder); funder != "" {
+		if fent, err := CreateOrgAsset(e.Session, nil, nil, &oamorg.Organization{Name: funder}, src); err == nil {
+			_, _ = support.Relate(ctx, e.Session, fundent, &oamgen.SimpleRelation{Name: "third_party"}, fent, src)
+		}
+	}
+	return fundent
+}
+
+// DispatchTransfers sends the funds transfers on as events.
+func DispatchTransfers(e *et.Event, fundents ...*dbt.Entity) {
+	for _, fundent := range fundents {
+		f, ok := fundent.Asset.(*oamfin.FundsTransfer)
+		if !ok {
+			continue
+		}
+		_ = e.Dispatcher.DispatchEvent(&et.Event{
+			Name:    fmt.Sprintf("%f:%s", f.Amount, f.ID),
+			Entity:  fundent,
+			Session: e.Session,
+		})
+	}
 }
 
 // OrgTransfersReceived returns the funds transfers src recorded since the

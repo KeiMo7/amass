@@ -43,10 +43,16 @@ func grantsSession(t *testing.T) *plugintest.Session {
 		   "organization":{"org_name":"COLGATE UNIVERSITY"},"fiscal_year":2023}
 		]}`)
 	})
-	sess.Web().Reply("GET api.www.sbir.gov/public/api/awards", http.StatusOK, `{"results":[
-	  {"firm":"Colgate University","agency":"DOD","award_title":"Gadget Study","award_year":"2022","award_amount":"750000"},
-	  {"firm":"Colgate University","agency":"DOD","contract":"","award_title":"","award_year":"","award_amount":"5"}
-	]}`)
+	old := sbirBulk
+	sbirBulk = newSBIRIndex(t.TempDir(), sbirBulkURL)
+	t.Cleanup(func() { sbirBulk = old })
+	sess.Web().Reply("GET data.www.sbir.gov/mod_awarddatapublic_no_abstract/award_data_no_abstract.csv", http.StatusOK,
+		"Company,Award Title,Agency,Branch,Phase,Program,Agency Tracking Number,Contract,Proposal Award Date,"+
+			"Contract End Date,Solicitation Number,Solicitation Year,Solicitation Close Date,Proposal Submitted Date,"+
+			"Date of Notification,Topic Code,Award Year,Award Amount\n"+
+			"Colgate University,Gadget Study,DOD,,Phase I,SBIR,,,,,,,,,,,2022,\"$750,000.00\"\n"+
+			"Colgate University,,DOD,,Phase I,SBIR,,,,,,,,,,,,5\n"+
+			"Colgate Research LLC,Widget,NASA,,Phase I,SBIR,,NNX-1,2021-05-01,,,,,,,,2021,90000\n")
 	return sess
 }
 

@@ -84,3 +84,56 @@ func TestOrgTransfersReceivedKeepsToTheSource(t *testing.T) {
 		t.Errorf("SourceB found %d transfers through an account edge it never recorded", len(ents))
 	}
 }
+
+func TestStoreReceivedTransfer(t *testing.T) {
+	sess := plugintest.NewSession(t)
+	src := &et.Source{Name: "Grants", Confidence: 90}
+	orgent := sess.Asset(t, &oamorg.Organization{ID: "acme:test", Name: "acme", Active: true})
+	e := &et.Event{Entity: orgent, Session: sess, Dispatcher: &plugintest.Dispatcher{}}
+
+	// Nothing is stored without an ID or a positive amount.
+	for _, bad := range []ReceivedTransfer{
+		{Amount: 100},
+		{ID: "grant:zero"},
+		{ID: "grant:negative", Amount: -5},
+	} {
+		if got := StoreReceivedTransfer(e, orgent, bad, src); got != nil {
+			t.Errorf("%+v was stored", bad)
+		}
+	}
+
+	fundent := StoreReceivedTransfer(e, orgent, ReceivedTransfer{
+		ID: "grant:1", Reference: "G-1", Amount: 2500, Date: "2026-03-04", Funder: " National Science Foundation ",
+	}, src)
+	if fundent == nil {
+		t.Fatal("the transfer was not stored")
+	}
+	f := fundent.Asset.(*oamfin.FundsTransfer)
+	if f.Currency != "USD" || f.ReferenceNumber != "G-1" || f.Amount != 2500 || f.ExchangeDate == "" {
+		t.Errorf("transfer = %+v", f)
+	}
+
+	// The organization's checking account received it, as src says.
+	if got := OrgTransfersReceived(sess, orgent, time.Time{}, src); len(got) != 1 || got[0].ID != fundent.ID {
+		t.Errorf("transfers received = %v", got)
+	}
+
+	ctx := context.Background()
+	edges, err := sess.DB().OutgoingEdges(ctx, fundent, time.Time{}, "third_party")
+	if err != nil || len(edges) != 1 {
+		t.Fatalf("funder edges = %v, %v", edges, err)
+	}
+	funder, err := sess.DB().FindEntityById(ctx, edges[0].ToEntity.ID)
+	if err != nil {
+		t.Fatal(err)
+	}
+	if o := funder.Asset.(*oamorg.Organization); o.Name == "" || !support.Sourced(ctx, sess, edges[0], time.Time{}, src) {
+		t.Errorf("funder = %+v", o)
+	}
+
+	disp := &plugintest.Dispatcher{}
+	DispatchTransfers(&et.Event{Session: sess, Dispatcher: disp}, fundent)
+	if names := disp.Names(); len(names) != 1 || names[0] != "2500.000000:grant:1" {
+		t.Errorf("dispatched %v", names)
+	}
+}

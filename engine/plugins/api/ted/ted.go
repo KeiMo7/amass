@@ -12,7 +12,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strings"
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
@@ -22,8 +21,6 @@ import (
 	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	oamfin "github.com/owasp-amass/open-asset-model/financial"
-	"github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 )
 
@@ -160,50 +157,16 @@ type award struct {
 }
 
 func (h *awards) store(e *et.Event, orgent *dbt.Entity, a *award) {
-	// The Asset Database rejects a FundsTransfer with a non-positive amount,
-	// so a matched notice that carries no value is not stored.
-	if a.amount <= 0 {
-		return
-	}
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	orgacc := org.OrgCheckingAccount(e.Session, orgent, h.plugin.source)
-	if orgacc == nil {
-		return
-	}
-
 	currency := a.currency
 	if currency == "" {
 		currency = "EUR"
 	}
-	fundent, err := e.Session.DB().CreateAsset(ctx, &oamfin.FundsTransfer{
-		ID:              "ted:" + a.id,
-		Amount:          a.amount,
-		Currency:        currency,
-		ReferenceNumber: a.id,
-		ExchangeDate:    support.TransferDate(a.date),
-	})
-	if err != nil || fundent == nil {
-		return
-	}
-	support.AddSource(ctx, e.Session, fundent, h.plugin.source)
-	if _, err := support.Relate(ctx, e.Session, fundent,
-		&general.SimpleRelation{Name: "recipient"}, orgacc, h.plugin.source); err != nil {
-		return
-	}
-
 	// The contracting authority (buyer) is the funding party.
-	if buyer, err := org.CreateOrgAsset(e.Session, nil, nil,
-		&oamorg.Organization{Name: strings.TrimSpace(a.buyer)}, h.plugin.source); err == nil {
-		_, _ = support.Relate(ctx, e.Session, fundent,
-			&general.SimpleRelation{Name: "third_party"}, buyer, h.plugin.source)
+	if fundent := org.StoreReceivedTransfer(e, orgent, org.ReceivedTransfer{
+		ID: "ted:" + a.id, Reference: a.id, Amount: a.amount, Currency: currency, Date: a.date, Funder: a.buyer,
+	}, h.plugin.source); fundent != nil {
+		org.DispatchTransfers(e, fundent)
 	}
-
-	_ = e.Dispatcher.DispatchEvent(&et.Event{
-		Name: fmt.Sprintf("%f:ted:%s", a.amount, a.id), Entity: fundent, Session: e.Session,
-	})
 }
 
 // winnerMatches reports whether any winner name on a notice is the subject

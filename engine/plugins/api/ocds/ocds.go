@@ -29,8 +29,6 @@ import (
 	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	oamfin "github.com/owasp-amass/open-asset-model/financial"
-	"github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 )
 
@@ -463,45 +461,11 @@ func bulkExt(pub publisher) string {
 }
 
 func (h *handler) store(e *et.Event, orgent *dbt.Entity, a *award, id string) {
-	// The Asset Database rejects a FundsTransfer with a non-positive amount,
-	// so skip an award we found no value for (award, contract or tender)
-	// rather than logging a storage error for each.
-	if a.amount <= 0 {
-		return
+	// An award without a value (award, contract or tender) is skipped.
+	if fundent := org.StoreReceivedTransfer(e, orgent, org.ReceivedTransfer{
+		ID: id, Reference: a.ocid + ":" + a.id, Amount: a.amount, Currency: a.currency, Date: a.date,
+		Funder: a.buyer,
+	}, h.plugin.source); fundent != nil {
+		org.DispatchTransfers(e, fundent)
 	}
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	orgacc := org.OrgCheckingAccount(e.Session, orgent, h.plugin.source)
-	if orgacc == nil {
-		return
-	}
-
-	currency := a.currency
-	if currency == "" {
-		currency = "USD"
-	}
-	fundent, err := e.Session.DB().CreateAsset(ctx, &oamfin.FundsTransfer{
-		ID:              id,
-		Amount:          a.amount,
-		Currency:        currency,
-		ReferenceNumber: a.ocid + ":" + a.id,
-		ExchangeDate:    support.TransferDate(a.date),
-	})
-	if err != nil || fundent == nil {
-		return
-	}
-	support.AddSource(ctx, e.Session, fundent, h.plugin.source)
-	if _, err := support.Relate(ctx, e.Session, fundent,
-		&general.SimpleRelation{Name: "recipient"}, orgacc, h.plugin.source); err != nil {
-		return
-	}
-	if buyer, err := org.CreateOrgAsset(e.Session, nil, nil,
-		&oamorg.Organization{Name: strings.TrimSpace(a.buyer)}, h.plugin.source); err == nil {
-		_, _ = support.Relate(ctx, e.Session, fundent,
-			&general.SimpleRelation{Name: "third_party"}, buyer, h.plugin.source)
-	}
-
-	_ = e.Dispatcher.DispatchEvent(&et.Event{Name: fmt.Sprintf("%f:%s", a.amount, id), Entity: fundent, Session: e.Session})
 }

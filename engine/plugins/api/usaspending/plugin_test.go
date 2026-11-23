@@ -50,11 +50,26 @@ func newTestUSASpending(t *testing.T) (*usaspending, *plugintest.Session) {
 				RecipientSearchText []string `json:"recipient_search_text"`
 				AwardTypeCodes      []string `json:"award_type_codes"`
 			} `json:"filters"`
-			Page int `json:"page"`
+			Fields []string `json:"fields"`
+			Page   int      `json:"page"`
+			Sort   string   `json:"sort"`
 		}
 		body, _ := io.ReadAll(r.Body)
 		if err := json.Unmarshal(body, &req); err != nil || !slices.Equal(req.Filters.RecipientSearchText, []string{"acme widgets"}) {
 			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		// As the API does: loans have a loan value, not an award amount, and
+		// the sort must be one of the fields asked for.
+		loans := slices.Contains(req.Filters.AwardTypeCodes, "07")
+		if loans == slices.Contains(req.Fields, "Award Amount") || !slices.Contains(req.Fields, req.Sort) {
+			w.WriteHeader(http.StatusBadRequest)
+			return
+		}
+		if loans {
+			_, _ = io.WriteString(w, `{"results":[{"Award ID":"L-1","Recipient Name":"ACME WIDGETS INC",`+
+				`"Loan Value":80000,"Awarding Agency":"Small Business Administration","generated_internal_id":"ASST_L-1"}],`+
+				`"page_metadata":{"hasNext":false}}`)
 			return
 		}
 		if slices.Contains(req.Filters.AwardTypeCodes, "A") {
@@ -91,7 +106,7 @@ func TestAwardsStoresTheOrganizationsAwards(t *testing.T) {
 			got[f.ID] = f.Amount
 		}
 	}
-	if len(got) != 2 || got["CONT_AWD_C-1"] != 250000 || got["usaspending:C-2"] != 5000 {
+	if len(got) != 3 || got["CONT_AWD_C-1"] != 250000 || got["usaspending:C-2"] != 5000 || got["ASST_L-1"] != 80000 {
 		t.Fatalf("dispatched transfers = %v", got)
 	}
 
@@ -126,7 +141,7 @@ func TestAwardsStoresTheOrganizationsAwards(t *testing.T) {
 	if len(sess.Web().Requests()) != sent {
 		t.Error("the API was asked again within the TTL")
 	}
-	if len(d2.Events()) != 2 {
+	if len(d2.Events()) != 3 {
 		t.Errorf("transfers dispatched within the TTL = %v", d2.Names())
 	}
 }

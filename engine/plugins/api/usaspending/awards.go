@@ -10,7 +10,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
@@ -20,18 +19,25 @@ import (
 	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	oamfin "github.com/owasp-amass/open-asset-model/financial"
-	oamgen "github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 )
 
-// awardTypeGroups are queried one at a time: the API rejects a request that
-// mixes award types from different categories.
-var awardTypeGroups = [][]string{
-	{"A", "B", "C", "D"},     // contracts
-	{"02", "03", "04", "05"}, // grants
-	{"06", "10"},             // direct payments
-	{"07", "08"},             // loans
+// awardGroup is one category of award types with the field that holds its
+// amount. The groups are queried one at a time: the API rejects a request
+// that mixes award types from different categories, and loans have a loan
+// value instead of an award amount (asking for "Award Amount" on loans is
+// rejected).
+type awardGroup struct {
+	codes  []string
+	amount string
+	date   string
+}
+
+var awardTypeGroups = []awardGroup{
+	{codes: []string{"A", "B", "C", "D"}, amount: "Award Amount", date: "Start Date"},     // contracts
+	{codes: []string{"02", "03", "04", "05"}, amount: "Award Amount", date: "Start Date"}, // grants
+	{codes: []string{"06", "10"}, amount: "Award Amount", date: "Start Date"},             // direct payments
+	{codes: []string{"07", "08"}, amount: "Loan Value"},                                   // loans
 }
 
 const (
@@ -45,6 +51,7 @@ type award struct {
 	AwardID       string  `json:"Award ID"`
 	RecipientName string  `json:"Recipient Name"`
 	Amount        float64 `json:"Award Amount"`
+	LoanValue     float64 `json:"Loan Value"`
 	Agency        string  `json:"Awarding Agency"`
 	StartDate     string  `json:"Start Date"`
 	GeneratedID   string  `json:"generated_internal_id"`
@@ -100,7 +107,7 @@ func (h *awards) check(e *et.Event) error {
 	}
 
 	if len(fundents) > 0 {
-		h.process(e, fundents)
+		org.DispatchTransfers(e, fundents...)
 	}
 	return nil
 }
@@ -109,9 +116,9 @@ func (h *awards) query(e *et.Event, orgent *dbt.Entity, name string) []*dbt.Enti
 	var fundents []*dbt.Entity
 	seen := map[string]bool{}
 
-	for _, codes := range awardTypeGroups {
+	for _, group := range awardTypeGroups {
 		for page := 1; page <= awardsMaxPage; page++ {
-			body, err := h.requestPage(e, name, codes, page)
+			body, err := h.requestPage(e, name, group, page)
 			if err != nil {
 				msg := fmt.Sprintf("failed to obtain awards for %s: %s", name, err)
 				e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
@@ -152,10 +159,14 @@ func (h *awards) query(e *et.Event, orgent *dbt.Entity, name string) []*dbt.Enti
 
 // requestPage posts one page of a spending_by_award query for an award-type
 // group and returns the response body.
-func (h *awards) requestPage(e *et.Event, name string, codes []string, page int) (string, error) {
+func (h *awards) requestPage(e *et.Event, name string, group awardGroup, page int) (string, error) {
 	type filters struct {
 		RecipientSearchText []string `json:"recipient_search_text"`
 		AwardTypeCodes      []string `json:"award_type_codes"`
+	}
+	fields := []string{"Award ID", "Recipient Name", group.amount, "Awarding Agency"}
+	if group.date != "" {
+		fields = append(fields, group.date)
 	}
 	req := struct {
 		Filters filters  `json:"filters"`
@@ -165,11 +176,11 @@ func (h *awards) requestPage(e *et.Event, name string, codes []string, page int)
 		Sort    string   `json:"sort"`
 		Order   string   `json:"order"`
 	}{
-		Filters: filters{RecipientSearchText: []string{name}, AwardTypeCodes: codes},
-		Fields:  []string{"Award ID", "Recipient Name", "Award Amount", "Awarding Agency", "Start Date"},
+		Filters: filters{RecipientSearchText: []string{name}, AwardTypeCodes: group.codes},
+		Fields:  fields,
 		Page:    page,
 		Limit:   awardsPerPage,
-		Sort:    "Award Amount",
+		Sort:    group.amount,
 		Order:   "desc",
 	}
 
@@ -203,57 +214,10 @@ func (h *awards) requestPage(e *et.Event, name string, codes []string, page int)
 }
 
 func (h *awards) store(e *et.Event, orgent *dbt.Entity, a *award, id string) *dbt.Entity {
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	orgacc := org.OrgCheckingAccount(e.Session, orgent, h.plugin.source)
-	if orgacc == nil {
-		return nil
-	}
-
-	f := &oamfin.FundsTransfer{
-		ID:              id,
-		Amount:          a.Amount,
-		Currency:        "USD",
-		ReferenceNumber: a.AwardID,
-		ExchangeDate:    support.TransferDate(a.StartDate),
-	}
-	fundent, err := e.Session.DB().CreateAsset(ctx, f)
-	if err != nil || fundent == nil {
-		msg := fmt.Sprintf("failed to create the FundsTransfer asset for %s: %s", id, err)
-		e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
-		return nil
-	}
-
-	support.AddSource(ctx, e.Session, fundent, h.plugin.source)
-
-	if _, err := support.Relate(ctx, e.Session, fundent,
-		oamgen.SimpleRelation{Name: "recipient"}, orgacc, h.plugin.source); err != nil {
-		msg := fmt.Sprintf("failed to create the recipient relation for %s: %s", id, err)
-		e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
-		return nil
-	}
-
 	// The awarding agency is the funding party, surfaced by the funding lens.
-	if agency, err := org.CreateOrgAsset(e.Session, nil, nil,
-		&oamorg.Organization{Name: strings.TrimSpace(a.Agency)}, h.plugin.source); err == nil {
-		if _, err := support.Relate(ctx, e.Session, fundent,
-			oamgen.SimpleRelation{Name: "third_party"}, agency, h.plugin.source); err != nil {
-			msg := fmt.Sprintf("failed to create the third_party relation for %s: %s", id, err)
-			e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
-		}
-	}
-
-	return fundent
-}
-
-func (h *awards) process(e *et.Event, fundents []*dbt.Entity) {
-	for _, fund := range fundents {
-		f := fund.Asset.(*oamfin.FundsTransfer)
-		_ = e.Dispatcher.DispatchEvent(&et.Event{
-			Name:    fmt.Sprintf("%f:%s", f.Amount, f.ID),
-			Entity:  fund,
-			Session: e.Session,
-		})
-	}
+	// An award with no positive amount (a deobligation or modification) is
+	// skipped.
+	return org.StoreReceivedTransfer(e, orgent, org.ReceivedTransfer{
+		ID: id, Reference: a.AwardID, Amount: max(a.Amount, a.LoanValue), Date: a.StartDate, Funder: a.Agency,
+	}, h.plugin.source)
 }

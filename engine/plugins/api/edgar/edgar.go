@@ -23,7 +23,6 @@ import (
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	"github.com/owasp-amass/open-asset-model/contact"
-	oamfin "github.com/owasp-amass/open-asset-model/financial"
 	"github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 )
@@ -316,32 +315,11 @@ func (h *filings) storeFormD(e *et.Event, orgent *dbt.Entity, cik string, sub *s
 }
 
 func (h *filings) storeTransfer(e *et.Event, orgent *dbt.Entity, accession, date string, amount float64) {
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	orgacc := org.OrgCheckingAccount(e.Session, orgent, h.plugin.source)
-	if orgacc == nil {
-		return
+	if fundent := org.StoreReceivedTransfer(e, orgent, org.ReceivedTransfer{
+		ID: "secformd:" + accession, Reference: accession, Amount: amount, Date: date,
+	}, h.plugin.source); fundent != nil {
+		org.DispatchTransfers(e, fundent)
 	}
-
-	fundent, err := e.Session.DB().CreateAsset(ctx, &oamfin.FundsTransfer{
-		ID:              "secformd:" + accession,
-		Amount:          amount,
-		Currency:        "USD",
-		ReferenceNumber: accession,
-		ExchangeDate:    support.TransferDate(date),
-	})
-	if err != nil || fundent == nil {
-		return
-	}
-	support.AddSource(ctx, e.Session, fundent, h.plugin.source)
-	if _, err := support.Relate(ctx, e.Session, fundent,
-		&general.SimpleRelation{Name: "recipient"}, orgacc, h.plugin.source); err != nil {
-		return
-	}
-	_ = e.Dispatcher.DispatchEvent(&et.Event{
-		Name: fmt.Sprintf("%f:secformd:%s", amount, accession), Entity: fundent, Session: e.Session,
-	})
 }
 
 // businessAddress builds a StreetAddress from a filer's business address, or nil

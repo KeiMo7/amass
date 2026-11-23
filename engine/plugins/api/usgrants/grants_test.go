@@ -4,7 +4,12 @@
 
 package usgrants
 
-import "testing"
+import (
+	"strings"
+	"testing"
+
+	"github.com/owasp-amass/amass/v5/internal/semantics"
+)
 
 func TestParseNSF(t *testing.T) {
 	body := []byte(`{"response":{"award":[
@@ -91,21 +96,35 @@ func TestParseNIHAmountFallbacks(t *testing.T) {
 	}
 }
 
-func TestParseSBIR(t *testing.T) {
-	// Amount as a number in one, a string in the other — both must parse.
-	body := []byte(`[
-	  {"firm":"Acme Research Inc","agency":"DOD","contract":"FA8750-23-C-0001","award_title":"Widget","award_year":2023,"award_amount":1500000},
-	  {"firm":"Acme Research Inc","agency":"NASA","contract":"","award_title":"Gadget Study","award_year":"2022","award_amount":"750000"}
-	]`)
-	g, err := parseSBIR(body)
-	if err != nil || len(g) != 2 {
-		t.Fatalf("grants=%v err=%v", g, err)
+func TestParseSBIRAwards(t *testing.T) {
+	body := "\ufeffCompany,Award Title,Agency,Contract,Proposal Award Date,Award Year,Award Amount\n" +
+		"Acme Research Inc,Widget,DOD,FA8750-23-C-0001,2023-02-01,2023,1500000\n" +
+		"ACME RESEARCH INC.,Gadget Study,NASA,,,2022,\"$750,000.50\"\n" +
+		"Acme Research Inc,No Money,DOD,X-1,,2021,0\n" +
+		",Orphan,DOD,X-2,,2021,100\n" +
+		"Acme Research Inc,,DOD,,,2020,100\n" +
+		"Other Labs LLC,Thing,NSF,NSF-9,,2024,5000\n"
+
+	byKey, err := parseSBIRAwards(strings.NewReader(body))
+	if err != nil {
+		t.Fatal(err)
 	}
-	if g[0].id != "sbir:FA8750-23-C-0001" || g[0].amount != 1500000 {
+	g := byKey[semantics.OrgNameKey("Acme Research Inc")]
+	if len(g) != 2 {
+		t.Fatalf("Acme's awards = %+v; want the two with an amount and an identity", g)
+	}
+	if g[0].id != "sbir:FA8750-23-C-0001" || g[0].amount != 1500000 || g[0].date != "2023-02-01" || g[0].agency != "DOD" {
 		t.Errorf("g0 = %+v", g[0])
 	}
-	// No contract → id composed from title and year; amount from string.
-	if g[1].id != "sbir:Gadget_Study:2022" || g[1].amount != 750000 || g[1].date != "2022" {
+	// No contract: the ID comes from the title and year, and the year is the date.
+	if g[1].id != "sbir:Gadget_Study:2022" || g[1].amount != 750000.50 || g[1].date != "2022" {
 		t.Errorf("g1 = %+v", g[1])
+	}
+	if len(byKey[semantics.OrgNameKey("Other Labs LLC")]) != 1 {
+		t.Errorf("Other Labs' award is missing: %v", byKey)
+	}
+
+	if _, err := parseSBIRAwards(strings.NewReader("Name,Amount\nAcme,5\n")); err == nil {
+		t.Error("a file without the Company and Award Amount columns was accepted")
 	}
 }

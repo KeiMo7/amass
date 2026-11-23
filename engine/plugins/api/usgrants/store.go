@@ -8,8 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"log/slog"
-	"strings"
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
@@ -17,9 +15,6 @@ import (
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
 	dbt "github.com/owasp-amass/asset-db/types"
-	oamfin "github.com/owasp-amass/open-asset-model/financial"
-	"github.com/owasp-amass/open-asset-model/general"
-	oamorg "github.com/owasp-amass/open-asset-model/org"
 )
 
 // grant is one award normalized across the three APIs before it is stored.
@@ -63,49 +58,11 @@ func (h *source) request(e *et.Event, r *amasshttp.Request) (string, error) {
 // store writes a matched grant as a FundsTransfer received by the organization,
 // with the funding agency as the third_party funder.
 func (h *source) store(e *et.Event, orgent *dbt.Entity, g *grant) *dbt.Entity {
-	if g.id == "" {
-		return nil
+	fundent := org.StoreReceivedTransfer(e, orgent, org.ReceivedTransfer{
+		ID: g.id, Reference: g.id, Amount: g.amount, Date: g.date, Funder: g.agency,
+	}, h.src)
+	if fundent != nil {
+		org.DispatchTransfers(e, fundent)
 	}
-	// The Asset Database rejects a FundsTransfer with a non-positive amount,
-	// so skip a grant we could find no amount for rather than logging a
-	// storage error for every one.
-	if g.amount <= 0 {
-		return nil
-	}
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	orgacc := org.OrgCheckingAccount(e.Session, orgent, h.src)
-	if orgacc == nil {
-		return nil
-	}
-
-	fundent, err := e.Session.DB().CreateAsset(ctx, &oamfin.FundsTransfer{
-		ID:              g.id,
-		Amount:          g.amount,
-		Currency:        "USD",
-		ReferenceNumber: g.id,
-		ExchangeDate:    support.TransferDate(g.date),
-	})
-	if err != nil || fundent == nil {
-		msg := fmt.Sprintf("failed to create the FundsTransfer for %s: %s", g.id, err)
-		e.Session.Log().Error(msg, slog.Group("plugin", "name", h.name))
-		return nil
-	}
-	support.AddSource(ctx, e.Session, fundent, h.src)
-	if _, err := support.Relate(ctx, e.Session, fundent,
-		&general.SimpleRelation{Name: "recipient"}, orgacc, h.src); err != nil {
-		return nil
-	}
-	if agency, err := org.CreateOrgAsset(e.Session, nil, nil,
-		&oamorg.Organization{Name: strings.TrimSpace(g.agency)}, h.src); err == nil {
-		_, _ = support.Relate(ctx, e.Session, fundent,
-			&general.SimpleRelation{Name: "third_party"}, agency, h.src)
-	}
-
-	_ = e.Dispatcher.DispatchEvent(&et.Event{
-		Name: fmt.Sprintf("%f:%s", g.amount, g.id), Entity: fundent, Session: e.Session,
-	})
 	return fundent
 }

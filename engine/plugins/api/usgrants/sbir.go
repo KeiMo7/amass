@@ -5,11 +5,17 @@
 package usgrants
 
 import (
-	"encoding/json"
+	"encoding/csv"
+	"errors"
 	"fmt"
+	"io"
 	"log/slog"
-	"net/url"
+	"os"
+	"path/filepath"
+	"strconv"
 	"strings"
+	"sync"
+	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
@@ -17,72 +23,140 @@ import (
 	dbt "github.com/owasp-amass/asset-db/types"
 )
 
-// sbirAward is one SBIR/STTR award (api.www.sbir.gov/public/api/awards). The
-// award endpoint is less documented than the others and has been under
-// maintenance, so numeric fields are decoded flexibly (they may arrive as a
-// number or a string) and the shape is worth validating against a live sample.
-type sbirAward struct {
-	Firm        string          `json:"firm"`
-	Agency      string          `json:"agency"`
-	Contract    string          `json:"contract"`
-	AwardTitle  string          `json:"award_title"`
-	AwardYear   json.RawMessage `json:"award_year"`
-	AwardAmount json.RawMessage `json:"award_amount"`
+// SBIR.gov's award API refuses every request while it is under maintenance,
+// so the awards come from its bulk export of every SBIR/STTR award (the
+// file without abstracts, about 65 MB), which SBIR.gov refreshes monthly.
+const (
+	sbirBulkURL     = "https://data.www.sbir.gov/mod_awarddatapublic_no_abstract/award_data_no_abstract.csv"
+	sbirBulkTTL     = 7 * 24 * time.Hour
+	sbirBulkTimeout = 15 * time.Minute
+	sbirBulkMax     = 512 << 20
+)
+
+// sbirIndex is the bulk award file, downloaded at most once per TTL and
+// indexed by the recipient's organization name key, shared by every session.
+type sbirIndex struct {
+	sync.Mutex
+	url     string
+	file    string
+	modTime time.Time // of the file the index was built from
+	byKey   map[string][]grant
 }
 
-// sbirAwards unwraps the response whether it is a bare array or wrapped.
-func parseSBIR(body []byte) ([]grant, error) {
-	var arr []sbirAward
-	if err := json.Unmarshal(body, &arr); err != nil {
-		// Some deployments wrap the list; tolerate that too.
-		var wrapped struct {
-			Results []sbirAward `json:"results"`
-			Awards  []sbirAward `json:"awards"`
-		}
-		if json.Unmarshal(body, &wrapped) != nil {
+var sbirBulk = newSBIRIndex(filepath.Join(os.TempDir(), "amass-sbir"), sbirBulkURL)
+
+func newSBIRIndex(dir, u string) *sbirIndex {
+	return &sbirIndex{url: u, file: filepath.Join(dir, "award_data_no_abstract.csv")}
+}
+
+// awards returns the awards whose recipient has the name's key, refreshing
+// the file and its index when the file is older than the TTL.
+func (x *sbirIndex) awards(e *et.Event, name string) ([]grant, error) {
+	x.Lock()
+	defer x.Unlock()
+
+	if err := os.MkdirAll(filepath.Dir(x.file), 0o755); err != nil {
+		return nil, err
+	}
+	if err := support.CachedDownload(e, x.url, x.file, sbirBulkTTL, sbirBulkTimeout, sbirBulkMax); err != nil {
+		return nil, err
+	}
+	fi, err := os.Stat(x.file)
+	if err != nil {
+		return nil, err
+	}
+	if x.byKey == nil || !fi.ModTime().Equal(x.modTime) {
+		f, err := os.Open(x.file)
+		if err != nil {
 			return nil, err
 		}
-		arr = wrapped.Results
-		if len(arr) == 0 {
-			arr = wrapped.Awards
+		byKey, err := parseSBIRAwards(f)
+		_ = f.Close()
+		if err != nil {
+			return nil, err
+		}
+		x.byKey, x.modTime = byKey, fi.ModTime()
+	}
+	return x.byKey[semantics.OrgNameKey(name)], nil
+}
+
+// parseSBIRAwards reads the bulk award file (CSV with a header row) into the
+// awards with a recipient and a positive amount, keyed by the recipient's
+// organization name key. An award is identified by its contract number, or
+// by its title and year when it has none.
+func parseSBIRAwards(r io.Reader) (map[string][]grant, error) {
+	cr := csv.NewReader(r)
+	cr.FieldsPerRecord = -1
+	cr.LazyQuotes = true
+	cr.ReuseRecord = true
+
+	header, err := cr.Read()
+	if err != nil {
+		return nil, fmt.Errorf("the SBIR award file has no header: %w", err)
+	}
+	col := map[string]int{}
+	for i, h := range header {
+		col[strings.TrimSpace(strings.TrimPrefix(h, "\ufeff"))] = i
+	}
+	for _, need := range []string{"Company", "Award Amount"} {
+		if _, ok := col[need]; !ok {
+			return nil, fmt.Errorf("the SBIR award file has no %q column", need)
 		}
 	}
+	field := func(rec []string, name string) string {
+		if i, ok := col[name]; ok && i < len(rec) {
+			return strings.TrimSpace(rec[i])
+		}
+		return ""
+	}
 
-	var out []grant
-	for _, a := range arr {
-		year := support.JSONString(a.AwardYear)
-		id := "sbir:" + a.Contract
-		if a.Contract == "" {
-			title := strings.TrimSpace(a.AwardTitle)
+	out := map[string][]grant{}
+	for {
+		rec, err := cr.Read()
+		if errors.Is(err, io.EOF) {
+			break
+		}
+		if err != nil {
+			// A malformed row is skipped; the rest of the file still counts.
+			continue
+		}
+
+		company := field(rec, "Company")
+		amount, _ := strconv.ParseFloat(strings.NewReplacer("$", "", ",", "").Replace(field(rec, "Award Amount")), 64)
+		key := semantics.OrgNameKey(company)
+		if key == "" || amount <= 0 {
+			continue
+		}
+
+		year := field(rec, "Award Year")
+		id := "sbir:" + field(rec, "Contract")
+		if id == "sbir:" {
+			title := field(rec, "Award Title")
 			if title == "" {
 				// Nothing identifies the award, so it cannot be stored once.
 				continue
 			}
 			id = "sbir:" + strings.ReplaceAll(title, " ", "_") + ":" + year
 		}
-		out = append(out, grant{
+		date := field(rec, "Proposal Award Date")
+		if date == "" {
+			date = year
+		}
+		out[key] = append(out[key], grant{
 			id:        id,
-			amount:    support.JSONNumber(a.AwardAmount),
-			date:      year,
-			agency:    a.Agency,
-			recipient: a.Firm,
+			amount:    amount,
+			date:      date,
+			agency:    field(rec, "Agency"),
+			recipient: company,
 		})
 	}
 	return out, nil
 }
 
 func querySBIR(h *source, e *et.Event, orgent *dbt.Entity, name string) {
-	u := "https://api.www.sbir.gov/public/api/awards?format=json&firm=" + url.QueryEscape(name)
-
-	body, err := h.get(e, u)
+	grants, err := sbirBulk.awards(e, name)
 	if err != nil {
-		e.Session.Log().Error(fmt.Sprintf("SBIR query for %s failed: %s", name, err),
-			slog.Group("plugin", "name", h.name))
-		return
-	}
-	grants, err := parseSBIR([]byte(body))
-	if err != nil {
-		e.Session.Log().Error(fmt.Sprintf("failed to parse SBIR awards for %s: %s", name, err),
+		e.Session.Log().Error(fmt.Sprintf("SBIR awards for %s are unavailable: %s", name, err),
 			slog.Group("plugin", "name", h.name))
 		return
 	}

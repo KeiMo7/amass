@@ -21,7 +21,6 @@ import (
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamacct "github.com/owasp-amass/open-asset-model/account"
-	oamfin "github.com/owasp-amass/open-asset-model/financial"
 	oamgen "github.com/owasp-amass/open-asset-model/general"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 	oampeop "github.com/owasp-amass/open-asset-model/people"
@@ -71,7 +70,7 @@ func (cr *companyRounds) check(e *et.Event) error {
 	}
 
 	if len(fundents) > 0 {
-		cr.process(e, fundents)
+		org.DispatchTransfers(e, fundents...)
 	}
 	return nil
 }
@@ -162,10 +161,9 @@ func (cr *companyRounds) store(e *et.Event, ident, orgent *dbt.Entity, funds *co
 	defer cancel()
 
 	for _, round := range funds.FundingRounds {
-		orgacc := org.OrgCheckingAccount(e.Session, orgent, cr.plugin.source)
-		if orgacc == nil {
-			msg := fmt.Sprintf("failed to create the checking account for %s", o.Name)
-			e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
+		// A round without an announced amount is skipped (the Asset Database
+		// rejects a FundsTransfer without a positive amount).
+		if round.MoneyRaised <= 0 {
 			continue
 		}
 
@@ -176,32 +174,17 @@ func (cr *companyRounds) store(e *et.Event, ident, orgent *dbt.Entity, funds *co
 			continue
 		}
 
-		f := &oamfin.FundsTransfer{
-			ID:           fmt.Sprintf("%s:%s", round.Name, round.Stage),
-			Amount:       float64(round.MoneyRaised),
-			Currency:     "USD",
-			ExchangeDate: support.TransferDate(round.AnnouncedOn),
-		}
-
-		fundent, err := e.Session.DB().CreateAsset(ctx, f)
-		if err != nil {
-			msg := fmt.Sprintf("failed to create the FundsTransfer asset for %s: %s", f.ID, err)
-			e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
-			continue
-		}
-
-		support.AddSource(ctx, e.Session, fundent, cr.plugin.source)
-
-		if _, err := support.Relate(ctx, e.Session, fundent,
-			oamgen.SimpleRelation{Name: "recipient"}, orgacc, cr.plugin.source); err != nil {
-			msg := fmt.Sprintf("failed to create the recipient relation for %s: %s", f.ID, err)
-			e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
+		id := fmt.Sprintf("%s:%s", round.Name, round.Stage)
+		fundent := org.StoreReceivedTransfer(e, orgent, org.ReceivedTransfer{
+			ID: id, Amount: float64(round.MoneyRaised), Date: round.AnnouncedOn,
+		}, cr.plugin.source)
+		if fundent == nil {
 			continue
 		}
 
 		if _, err := support.Relate(ctx, e.Session, fundent,
 			oamgen.SimpleRelation{Name: "sender"}, seedacc, cr.plugin.source); err != nil {
-			msg := fmt.Sprintf("failed to create the sender relation for %s: %s", f.ID, err)
+			msg := fmt.Sprintf("failed to create the sender relation for %s: %s", id, err)
 			e.Session.Log().Error(msg, slog.Group("plugin", "name", cr.plugin.name, "handler", cr.name))
 			continue
 		}
@@ -390,16 +373,4 @@ func (cr *companyRounds) createPersonInvestors(e *et.Event, round *companyFundin
 	}
 
 	return investors
-}
-
-func (cr *companyRounds) process(e *et.Event, fundents []*dbt.Entity) {
-	for _, fund := range fundents {
-		f := fund.Asset.(*oamfin.FundsTransfer)
-
-		_ = e.Dispatcher.DispatchEvent(&et.Event{
-			Name:    fmt.Sprintf("%f:%s", f.Amount, f.ID),
-			Entity:  fund,
-			Session: e.Session,
-		})
-	}
 }

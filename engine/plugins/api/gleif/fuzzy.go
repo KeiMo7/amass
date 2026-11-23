@@ -90,7 +90,9 @@ func (fc *fuzzyCompletions) query(e *et.Event, orgent *dbt.Entity) *dbt.Entity {
 
 		result, err := GLEIFSearchFuzzyCompletions(e.Session.Ctx(), e.Session.Clients().General, o.Name)
 		if err != nil {
-			e.Session.Log().Error(err.Error(), slog.Group("plugin", "name", fc.plugin.name, "handler", fc.name))
+			if !errors.Is(err, errNoResults) {
+				e.Session.Log().Error(err.Error(), slog.Group("plugin", "name", fc.plugin.name, "handler", fc.name))
+			}
 			return nil
 		}
 

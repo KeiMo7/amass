@@ -26,26 +26,46 @@ func init() {
 	gleifLimit = rate.NewLimiter(limit, 1)
 }
 
-// GLEIFSearchFuzzyCompletions performs the fuzzy completion search for the given name.
-func GLEIFSearchFuzzyCompletions(ctx context.Context, client *http.Client, name string) (*FuzzyCompletionsResponse, error) {
-	u := "https://api.gleif.org/api/v1/fuzzycompletions?field=entity.legalName&q=" + url.QueryEscape(name)
+// errNoResults is a search that found no LEI record, which is an answer and
+// not a failure.
+var errNoResults = errors.New("no results found")
 
+// gleifGet fetches the GLEIF API URL within the rate limit and returns the
+// body, or an error that says why there is none: the request failed, or the
+// API answered with another status than 200 or with nothing.
+func gleifGet(ctx context.Context, client *http.Client, u string) (string, error) {
 	_ = support.WaitLimit(ctx, gleifLimit)
 	wctx, cancel := context.WithTimeout(ctx, 60*time.Second)
 	defer cancel()
 
 	resp, err := amasshttp.RequestWebPage(wctx, client, &amasshttp.Request{URL: u})
-	if err != nil || resp.Body == "" {
-		msg := fmt.Sprintf("Failed to obtain the LEI record for %s: %s", name, err)
-		return nil, fmt.Errorf("GLEIFSearchFuzzyCompletions: %s", msg)
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != http.StatusOK {
+		return "", fmt.Errorf("status %d", resp.StatusCode)
+	}
+	if resp.Body == "" {
+		return "", errors.New("empty answer")
+	}
+	return resp.Body, nil
+}
+
+// GLEIFSearchFuzzyCompletions performs the fuzzy completion search for the given name.
+func GLEIFSearchFuzzyCompletions(ctx context.Context, client *http.Client, name string) (*FuzzyCompletionsResponse, error) {
+	u := "https://api.gleif.org/api/v1/fuzzycompletions?field=entity.legalName&q=" + url.QueryEscape(name)
+
+	body, err := gleifGet(ctx, client, u)
+	if err != nil {
+		return nil, fmt.Errorf("GLEIFSearchFuzzyCompletions: failed to search for %s: %w", name, err)
 	}
 
 	var result FuzzyCompletionsResponse
-	if err := json.Unmarshal([]byte(resp.Body), &result); err != nil {
+	if err := json.Unmarshal([]byte(body), &result); err != nil {
 		msg := fmt.Sprintf("Failed to unmarshal the LEI record for %s: %s", name, err)
 		return nil, fmt.Errorf("GLEIFSearchFuzzyCompletions: %s", msg)
 	} else if len(result.Data) == 0 {
-		return nil, fmt.Errorf("GLEIFSearchFuzzyCompletions: no results found")
+		return nil, fmt.Errorf("GLEIFSearchFuzzyCompletions: %w", errNoResults)
 	}
 
 	return &result, nil
@@ -74,17 +94,13 @@ func GLEIFSearchByAddress(ctx context.Context, client *http.Client, city, countr
 	v.Set("page[size]", "50")
 	u := "https://api.gleif.org/api/v1/lei-records?" + v.Encode()
 
-	_ = support.WaitLimit(ctx, gleifLimit)
-	wctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-
-	resp, err := amasshttp.RequestWebPage(wctx, client, &amasshttp.Request{URL: u})
-	if err != nil || resp.StatusCode != 200 || resp.Body == "" {
-		return nil, fmt.Errorf("GLEIFSearchByAddress: failed to query the register: %v", err)
+	body, err := gleifGet(ctx, client, u)
+	if err != nil {
+		return nil, fmt.Errorf("GLEIFSearchByAddress: failed to query the register: %w", err)
 	}
 
 	var result MultipleResponse
-	if err := json.Unmarshal([]byte(resp.Body), &result); err != nil {
+	if err := json.Unmarshal([]byte(body), &result); err != nil {
 		return nil, fmt.Errorf("GLEIFSearchByAddress: %v", err)
 	}
 
@@ -99,18 +115,13 @@ func GLEIFSearchByAddress(ctx context.Context, client *http.Client, city, countr
 func GLEIFGetLEIRecord(ctx context.Context, client *http.Client, id string) (*LEIRecord, error) {
 	u := "https://api.gleif.org/api/v1/lei-records/" + id
 
-	_ = support.WaitLimit(ctx, gleifLimit)
-	wctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-
-	resp, err := amasshttp.RequestWebPage(wctx,
-		client, &amasshttp.Request{URL: u})
-	if err != nil || resp.StatusCode != 200 || resp.Body == "" {
+	body, err := gleifGet(ctx, client, u)
+	if err != nil {
 		return nil, err
 	}
 
 	var result SingleResponse
-	if err := json.Unmarshal([]byte(resp.Body), &result); err != nil {
+	if err := json.Unmarshal([]byte(body), &result); err != nil {
 		return nil, err
 	} else if result.Data.Type != "lei-records" || result.Data.ID != id {
 		return nil, errors.New("failed to find the LEI record")
@@ -122,18 +133,13 @@ func GLEIFGetLEIRecord(ctx context.Context, client *http.Client, id string) (*LE
 func GLEIFGetDirectParentRecord(ctx context.Context, client *http.Client, id string) (*LEIRecord, error) {
 	u := "https://api.gleif.org/api/v1/lei-records/" + id + "/direct-parent"
 
-	_ = support.WaitLimit(ctx, gleifLimit)
-	wctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-	defer cancel()
-
-	resp, err := amasshttp.RequestWebPage(wctx,
-		client, &amasshttp.Request{URL: u})
-	if err != nil || resp.StatusCode != 200 || resp.Body == "" {
+	body, err := gleifGet(ctx, client, u)
+	if err != nil {
 		return nil, err
 	}
 
 	var result SingleResponse
-	if err := json.Unmarshal([]byte(resp.Body), &result); err != nil {
+	if err := json.Unmarshal([]byte(body), &result); err != nil {
 		return nil, err
 	} else if result.Data.Type != "lei-records" {
 		return nil, errors.New("failed to find the LEI record")
@@ -148,18 +154,13 @@ func GLEIFGetDirectChildrenRecords(ctx context.Context, client *http.Client, id 
 	last := 1
 	link := "https://api.gleif.org/api/v1/lei-records/" + id + "/direct-children"
 	for i := 1; i <= last && link != ""; i++ {
-		_ = support.WaitLimit(ctx, gleifLimit)
-		wctx, cancel := context.WithTimeout(ctx, 60*time.Second)
-		defer cancel()
-
-		resp, err := amasshttp.RequestWebPage(wctx,
-			client, &amasshttp.Request{URL: link})
-		if err != nil || resp.StatusCode != 200 || resp.Body == "" {
+		body, err := gleifGet(ctx, client, link)
+		if err != nil {
 			return nil, err
 		}
 
 		var result MultipleResponse
-		if err := json.Unmarshal([]byte(resp.Body), &result); err != nil {
+		if err := json.Unmarshal([]byte(body), &result); err != nil {
 			return nil, err
 		}
 

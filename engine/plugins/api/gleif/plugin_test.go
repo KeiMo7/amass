@@ -7,6 +7,7 @@ package gleif
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"net/http"
 	"slices"
@@ -388,5 +389,34 @@ func TestGLEIFGetLEIRecordRejectsAnotherRecord(t *testing.T) {
 
 	if rec, err := GLEIFGetLEIRecord(context.Background(), sess.Clients().General, acmeLEI); err == nil || rec != nil {
 		t.Errorf("a record for another LEI was returned: %+v", rec)
+	}
+}
+
+// A record the register does not answer for is an error, never a nil record
+// without one, so callers that check only the error cannot use a nil record.
+func TestGLEIFLookupsReportAFailedAnswer(t *testing.T) {
+	sess, _ := newTestGLEIF(t)
+	sess.Web().Reply("GET api.gleif.org/api/v1/lei-records/"+acmeLEI, http.StatusNotFound, "")
+	sess.Web().Reply("GET api.gleif.org/api/v1/lei-records/"+acmeLEI+"/direct-parent", http.StatusNotFound, "")
+	sess.Web().Reply("GET api.gleif.org/api/v1/lei-records/"+acmeLEI+"/direct-children", http.StatusInternalServerError, "")
+	sess.Web().Reply("GET api.gleif.org/api/v1/lei-records", http.StatusServiceUnavailable, "")
+	sess.Web().Reply("GET api.gleif.org/api/v1/fuzzycompletions", http.StatusOK, `{"data":[]}`)
+
+	ctx, client := context.Background(), sess.Clients().General
+	if rec, err := GLEIFGetLEIRecord(ctx, client, acmeLEI); err == nil || rec != nil {
+		t.Errorf("a missing record gave %+v, %v", rec, err)
+	}
+	if rec, err := GLEIFGetDirectParentRecord(ctx, client, acmeLEI); err == nil || rec != nil {
+		t.Errorf("a missing parent gave %+v, %v", rec, err)
+	}
+	if recs, err := GLEIFGetDirectChildrenRecords(ctx, client, acmeLEI); err == nil || recs != nil {
+		t.Errorf("a failed children query gave %v, %v", recs, err)
+	}
+	if _, err := GLEIFSearchByAddress(ctx, client, "Ithaca", "US", ""); err == nil ||
+		!strings.Contains(err.Error(), "status 503") {
+		t.Errorf("a refused address search gave %v; want the status in the error", err)
+	}
+	if _, err := GLEIFSearchFuzzyCompletions(ctx, client, "Nobody Inc"); !errors.Is(err, errNoResults) {
+		t.Errorf("a search without results gave %v; want errNoResults", err)
 	}
 }

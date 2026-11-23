@@ -10,21 +10,19 @@ import (
 	"errors"
 	"log/slog"
 	"net/http"
-	"net/netip"
-	"net/url"
 	"sort"
 	"strings"
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
+	amassdns "github.com/owasp-amass/amass/v5/internal/net/dns"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
 	"github.com/owasp-amass/open-asset-model/general"
 	"github.com/owasp-amass/open-asset-model/platform"
 	oamurl "github.com/owasp-amass/open-asset-model/url"
-	"golang.org/x/net/publicsuffix"
 )
 
 // headerRefs records what a web service's stored response headers name:
@@ -251,7 +249,7 @@ func parseHeaderRefs(headers map[string][]string) headerReferences {
 		for _, v := range h.Values(key) {
 			for _, part := range strings.Split(v, ",") {
 				for _, tok := range strings.Fields(part) {
-					leaked.add(hostName(strings.Trim(tok, "()[];")))
+					leaked.add(amassdns.HostName(strings.Trim(tok, "()[];")))
 				}
 			}
 		}
@@ -288,28 +286,7 @@ func sourceHost(src string) string {
 	if i := strings.LastIndexByte(src, ':'); i >= 0 && !strings.Contains(src[i:], "]") {
 		src = src[:i]
 	}
-	return hostName(strings.TrimPrefix(src, "*."))
-}
-
-// hostName returns s as a lower-case host name with an ICANN public suffix
-// and a label in front of it, or "" (IP addresses, single labels and private
-// names such as host.corp or host.local are not host names here).
-func hostName(s string) string {
-	s = strings.ToLower(strings.TrimSuffix(strings.TrimSpace(s), "."))
-	if s == "" || strings.ContainsAny(s, " *_@") {
-		return ""
-	}
-	if _, err := netip.ParseAddr(s); err == nil {
-		return ""
-	}
-	if u, err := url.Parse("http://" + s); err != nil || u.Hostname() != s {
-		return ""
-	}
-	suffix, icann := publicsuffix.PublicSuffix(s)
-	if !icann || suffix == s || !strings.Contains(s, ".") {
-		return ""
-	}
-	return s
+	return amassdns.HostName(strings.TrimPrefix(src, "*."))
 }
 
 // nameSet keeps names once each, in order, up to maxHeaderRefs.

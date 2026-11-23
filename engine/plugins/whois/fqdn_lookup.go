@@ -16,12 +16,12 @@ import (
 	whoisparser "github.com/likexian/whois-parser"
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
+	amassdns "github.com/owasp-amass/amass/v5/internal/net/dns"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
 	"github.com/owasp-amass/open-asset-model/general"
 	oamreg "github.com/owasp-amass/open-asset-model/registration"
-	"golang.org/x/net/publicsuffix"
 )
 
 type fqdnLookup struct {
@@ -40,7 +40,9 @@ func (r *fqdnLookup) check(e *et.Event) error {
 	}
 
 	name := strings.ToLower(fqdn.Name)
-	if dom, err := publicsuffix.EffectiveTLDPlusOne(name); err != nil || dom != name {
+	// Only a domain registered with a registry has a WHOIS record; a name
+	// under a hosting provider's suffix (site.github.io) has none.
+	if amassdns.RegistrableDomain(name) != name {
 		return nil
 	}
 

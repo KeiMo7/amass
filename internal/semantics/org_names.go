@@ -113,9 +113,12 @@ func IsOrgGenericWord(w string) bool {
 	return loadOrgNames().generic[w]
 }
 
-var foldAccents = sync.OnceValue(func() transform.Transformer {
+// foldAccents returns a new transformer that removes accents. A chained
+// transformer keeps state between calls, so each use needs its own; sharing
+// one across goroutines corrupts its buffers.
+func foldAccents() transform.Transformer {
 	return transform.Chain(norm.NFKD, runes.Remove(runes.In(unicode.Mn)), norm.NFC)
-})
+}
 
 // OrgNameKey returns the form organization names are compared in: folded to
 // plain lower case, with "&" read as "and", abbreviations written out, a

@@ -61,7 +61,8 @@ func CountryToAlpha2Code(country string) string {
 }
 
 // ParseStreetAddress parses an address with libpostal and returns the
-// StreetAddress it names, or nil when the address cannot be parsed. The same
+// StreetAddress it names, or nil when the address cannot be parsed or names
+// no city, which the Asset Database requires of a StreetAddress. The same
 // place written different ways becomes the same StreetAddress: its Address is
 // built from the parsed parts in standard form (see address_forms.json).
 func ParseStreetAddress(address string) *contact.StreetAddress {
@@ -75,7 +76,10 @@ func ParseStreetAddress(address string) *contact.StreetAddress {
 		return nil
 	}
 
-	return streetAddressFromParts(address, parts)
+	if loc := streetAddressFromParts(address, parts); loc.City != "" {
+		return loc
+	}
+	return nil
 }
 
 // streetAddressFromParts builds a StreetAddress from the parts libpostal found in an

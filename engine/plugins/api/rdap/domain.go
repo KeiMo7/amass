@@ -11,11 +11,11 @@ import (
 	"github.com/openrdap/rdap"
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
+	amassdns "github.com/owasp-amass/amass/v5/internal/net/dns"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
 	oamreg "github.com/owasp-amass/open-asset-model/registration"
-	"golang.org/x/net/publicsuffix"
 )
 
 // domain is the RDAP discovery handler: it turns a registered domain name
@@ -37,10 +37,11 @@ func (d *domain) check(e *et.Event) error {
 		return nil
 	}
 
-	// Only a registered domain (an apex) has a domain record; a name below
-	// one does not, the same gate the WHOIS plugin applies.
+	// Only a domain registered with a registry (an apex) has a domain record;
+	// a name below one, or under a hosting provider's suffix
+	// (site.github.io), does not. The WHOIS plugin applies the same gate.
 	name := strings.ToLower(fqdn.Name)
-	if dom, err := publicsuffix.EffectiveTLDPlusOne(name); err != nil || dom != name {
+	if amassdns.RegistrableDomain(name) != name {
 		return nil
 	}
 

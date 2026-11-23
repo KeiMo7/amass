@@ -13,6 +13,7 @@ import (
 	"strconv"
 	"strings"
 
+	amassdns "github.com/owasp-amass/amass/v5/internal/net/dns"
 	"github.com/owasp-amass/amass/v5/internal/semantics"
 	"golang.org/x/net/publicsuffix"
 )
@@ -257,26 +258,8 @@ func parseTarget(raw string) (host string, prefix netip.Prefix, ok bool) {
 	}
 	s = strings.TrimPrefix(strings.TrimPrefix(s, "*"), ".")
 	s = strings.TrimSuffix(s, ".")
-	if !validHost(s) || reverseDomainID(s) {
+	if amassdns.HostName(s) != s || reverseDomainID(s) {
 		return "", netip.Prefix{}, false
 	}
 	return s, netip.Prefix{}, true
-}
-
-// validHost reports whether s is a DNS name under an ICANN public suffix
-// with at least one label of its own.
-func validHost(s string) bool {
-	if s == "" || len(s) > 253 || strings.Contains(s, "..") {
-		return false
-	}
-	for _, r := range s {
-		if !(r >= 'a' && r <= 'z' || r >= '0' && r <= '9' || r == '-' || r == '.') {
-			return false
-		}
-	}
-	if _, err := netip.ParseAddr(s); err == nil {
-		return false
-	}
-	suffix, icann := publicsuffix.PublicSuffix(s)
-	return icann && suffix != s
 }

@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"testing"
 )
 
@@ -120,4 +121,32 @@ func TestOrgNameMatchesLabel(t *testing.T) {
 			t.Errorf("OrgNameMatchesLabel(%q, %q) = %v, want %v", c.name, c.label, got, c.want)
 		}
 	}
+}
+
+// Names are compared from many plugin handlers at once, so the key must be
+// safe to compute concurrently (a shared accent-folding transformer once
+// panicked with slice bounds out of range).
+func TestOrgNameKeyIsSafeForConcurrentUse(t *testing.T) {
+	names := []string{"Société Générale S.A.", "Hewlett Packard Enterprise", "Café Müller GmbH", "Ithaca College"}
+	want := make([]string, len(names))
+	for i, n := range names {
+		want[i] = OrgNameKey(n)
+	}
+
+	var wg sync.WaitGroup
+	for g := 0; g < 16; g++ {
+		wg.Add(1)
+		go func() {
+			defer wg.Done()
+			for i := 0; i < 500; i++ {
+				n := i % len(names)
+				if got := OrgNameKey(names[n]); got != want[n] {
+					t.Errorf("OrgNameKey(%q) = %q, want %q", names[n], got, want[n])
+					return
+				}
+				_ = PlainText(names[n])
+			}
+		}()
+	}
+	wg.Wait()
 }

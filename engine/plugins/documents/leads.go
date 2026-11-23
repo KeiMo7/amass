@@ -27,7 +27,6 @@ import (
 	oamnet "github.com/owasp-amass/open-asset-model/network"
 	oamorg "github.com/owasp-amass/open-asset-model/org"
 	oamurl "github.com/owasp-amass/open-asset-model/url"
-	"golang.org/x/net/publicsuffix"
 )
 
 // maxLeads caps the leads of one kind taken from one document, so a
@@ -161,7 +160,7 @@ func (d *documents) contentLeads(e *et.Event, fent *dbt.Entity, u *oamurl.URL, d
 		}
 		// a host must be an address or a real domain name: text broken across
 		// lines leaves fragments ("http://www.oneon") that are neither
-		if _, err := netip.ParseAddr(x.Host); err != nil && !isDomainName(strings.ToLower(x.Host)) {
+		if _, err := netip.ParseAddr(x.Host); err != nil && amassdns.HostName(x.Host) == "" {
 			return
 		}
 		seenURL[x.Raw] = true
@@ -223,13 +222,13 @@ func (d *documents) contentLeads(e *et.Event, fent *dbt.Entity, u *oamurl.URL, d
 	for _, m := range amassdns.AnySubdomainRegex().FindAllString(body, -1) {
 		name := strings.ToLower(strings.Trim(m, "."))
 		if hosts[name] || inScope(e, name) {
-			if isDomainName(name) {
+			if amassdns.HostName(name) != "" {
 				hosts[name] = true
 			}
 		}
 	}
 	for name := range hosts {
-		if isDomainName(name) && len(names) < maxLeads {
+		if amassdns.HostName(name) != "" && len(names) < maxLeads {
 			names = append(names, name)
 		}
 	}
@@ -266,16 +265,6 @@ func (d *documents) contentLeads(e *et.Event, fent *dbt.Entity, u *oamurl.URL, d
 
 // explicitURLRe finds URLs written with their web scheme.
 var explicitURLRe = regexp.MustCompile(`(?i)\bhttps?://[^\s<>"'()\[\]{}]+`)
-
-// isDomainName reports whether name ends in a public suffix ICANN manages
-// and has a label in front of it.
-func isDomainName(name string) bool {
-	if addr, err := netip.ParseAddr(name); err == nil && addr.IsValid() {
-		return false
-	}
-	suffix, icann := publicsuffix.PublicSuffix(name)
-	return icann && suffix != name && strings.Contains(name, ".")
-}
 
 // ipv4Re finds dotted-quad IPv4 addresses.
 var ipv4Re = regexp.MustCompile(`\b(?:\d{1,3}\.){3}\d{1,3}\b`)

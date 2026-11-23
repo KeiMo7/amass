@@ -415,6 +415,21 @@ func standardPostcode(code, country string) string {
 
 // provinceCode returns the code of the country's subdivision the province
 // names, in any language its data has, or the province as given.
+// IsSubdivision reports whether code is one of the country's subdivision
+// codes, such as NY for US.
+func IsSubdivision(country, code string) bool {
+	c := pioz.Get(country)
+	if c == nil || code == "" {
+		return false
+	}
+	for _, sub := range c.Subdivisions {
+		if strings.EqualFold(sub.Code, code) {
+			return true
+		}
+	}
+	return false
+}
+
 func provinceCode(province, country string) string {
 	c := pioz.Get(country)
 	if c == nil || province == "" {

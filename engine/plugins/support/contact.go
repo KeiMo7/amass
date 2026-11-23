@@ -127,7 +127,7 @@ func StoreContact(ctx context.Context, sess et.Session, cr *dbt.Entity, c Contac
 
 	var addr *dbt.Entity
 	if m.IsMatch(string(oam.StreetAddress)) {
-		if loc := ParseStreetAddress(strings.TrimSpace(c.Address)); loc != nil {
+		if loc := ParseStreetAddressIn(c.Address, c.Country); loc != nil {
 			addr = LinkAsset(ctx, sess, cr, "street_address", loc, src)
 		}
 	}

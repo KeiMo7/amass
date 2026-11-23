@@ -9,6 +9,7 @@ import (
 	"io"
 	"log/slog"
 	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -72,7 +73,10 @@ func TestFilingsCollectsTheNonprofit(t *testing.T) {
 	if err != nil || len(addrs) != 1 {
 		t.Fatalf("addresses = %v, %v", addrs, err)
 	}
-	if a, _ := sess.DB().FindEntityById(ctx, addrs[0].ToEntity.ID); a.Asset.(*contact.StreetAddress).City != "Hamilton" {
+	// The address is in the standard form a parsed address has, in the US.
+	if a, _ := sess.DB().FindEntityById(ctx, addrs[0].ToEntity.ID); a.Asset.(*contact.StreetAddress).City != "hamilton" ||
+		a.Asset.(*contact.StreetAddress).Country != "US" ||
+		!strings.HasSuffix(a.Asset.(*contact.StreetAddress).Address, ", HAMILTON, NY 13346, US") {
 		t.Errorf("address = %+v", a.Asset)
 	}
 

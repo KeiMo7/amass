@@ -10,6 +10,7 @@ import (
 	"errors"
 	"net/http"
 	"os"
+	"slices"
 	"strings"
 	"time"
 
@@ -61,11 +62,19 @@ func CountryToAlpha2Code(country string) string {
 }
 
 // ParseStreetAddress parses an address with libpostal and returns the
-// StreetAddress it names, or nil when the address cannot be parsed or names
-// no city, which the Asset Database requires of a StreetAddress. The same
-// place written different ways becomes the same StreetAddress: its Address is
-// built from the parsed parts in standard form (see address_forms.json).
+// StreetAddress it names, or nil when the address cannot be parsed or does
+// not name both its city and its country (an address is only useful when it
+// is known where in the world it is). The same place written different ways
+// becomes the same StreetAddress: its Address is built from the parsed parts
+// in standard form (see address_forms.json).
 func ParseStreetAddress(address string) *contact.StreetAddress {
+	return ParseStreetAddressIn(address, "")
+}
+
+// ParseStreetAddressIn is ParseStreetAddress for an address whose source
+// knows its country (a name or code), used when the address itself names
+// none.
+func ParseStreetAddressIn(address, country string) *contact.StreetAddress {
 	address = strings.TrimSpace(address)
 	if address == "" {
 		return nil
@@ -75,11 +84,39 @@ func ParseStreetAddress(address string) *contact.StreetAddress {
 	if err != nil {
 		return nil
 	}
-
-	if loc := streetAddressFromParts(address, parts); loc.City != "" {
-		return loc
+	if country = strings.TrimSpace(country); country != "" &&
+		!slices.ContainsFunc(parts, func(p parsedComponent) bool { return p.Label == "country" }) {
+		parts = append(parts, parsedComponent{Label: "country", Value: country})
 	}
-	return nil
+
+	return locatedAddress(streetAddressFromParts(address, parts))
+}
+
+// NormalizeStreetAddress puts an address a source gives in separate fields
+// (street line in Address, City, Province, PostalCode and Country, a name or
+// code) in the standard form ParseStreetAddress gives, without libpostal. It
+// returns nil when the city or the country is missing.
+func NormalizeStreetAddress(fields *contact.StreetAddress) *contact.StreetAddress {
+	if fields == nil {
+		return nil
+	}
+
+	loc := *fields
+	street := strings.TrimSpace(loc.Address)
+	if loc.StreetName == "" && loc.BuildingNumber == "" {
+		loc.StreetName = street
+	}
+	loc.Address = ""
+	loc.Country = CountryToAlpha2Code(strings.TrimSpace(loc.Country))
+	return locatedAddress(standardizeStreetAddress(&loc, street))
+}
+
+// locatedAddress returns loc when it names its city and country, or nil.
+func locatedAddress(loc *contact.StreetAddress) *contact.StreetAddress {
+	if loc == nil || loc.City == "" || loc.Country == "" {
+		return nil
+	}
+	return loc
 }
 
 // streetAddressFromParts builds a StreetAddress from the parts libpostal found in an
@@ -118,6 +155,13 @@ func streetAddressFromParts(address string, parts []parsedComponent) *contact.St
 		}
 	}
 
+	return standardizeStreetAddress(loc, address)
+}
+
+// standardizeStreetAddress puts each part of loc in standard form and builds
+// its Address from them, or uses the address given when no part names a
+// place.
+func standardizeStreetAddress(loc *contact.StreetAddress, address string) *contact.StreetAddress {
 	// the province's code, from its name in any language the country data has
 	if loc.Country != "" && len(loc.Province) > 2 {
 		loc.Province = provinceCode(loc.Province, loc.Country)

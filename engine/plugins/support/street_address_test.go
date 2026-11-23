@@ -8,6 +8,7 @@ import (
 	"strings"
 	"testing"
 
+	"github.com/owasp-amass/open-asset-model/contact"
 	pioz "github.com/pioz/countries"
 )
 
@@ -251,6 +252,46 @@ func TestAddressFormsData(t *testing.T) {
 
 				seen[key] = v
 			}
+		}
+	}
+}
+
+// An address given in separate fields comes out in the same standard form a
+// parsed one has, and only when its city and country are known.
+func TestNormalizeStreetAddress(t *testing.T) {
+	parsed := streetAddressFromParts("", parts("house_number=110|road=eighth street|city=troy|state=new york|"+
+		"postcode=12180|country=usa"))
+	fields := NormalizeStreetAddress(&contact.StreetAddress{Address: "110 Eighth Street", City: "Troy",
+		Province: "NY", PostalCode: "12180", Country: "United States"})
+	if fields == nil || fields.Address != parsed.Address || fields.Country != "US" {
+		t.Errorf("fields gave %+v, want the parsed form %q", fields, parsed.Address)
+	}
+
+	for _, missing := range []*contact.StreetAddress{
+		{Address: "110 Eighth Street", City: "Troy", Province: "NY"},
+		{Address: "110 Eighth Street", Province: "NY", Country: "US"},
+		nil,
+	} {
+		if loc := NormalizeStreetAddress(missing); loc != nil {
+			t.Errorf("%+v gave %+v; an address needs its city and country", missing, loc)
+		}
+	}
+}
+
+func TestIsSubdivision(t *testing.T) {
+	for _, tc := range []struct {
+		country, code string
+		want          bool
+	}{
+		{"US", "NY", true},
+		{"US", "ca", true},
+		{"US", "X0", false},
+		{"CA", "ON", true},
+		{"US", "", false},
+		{"ZZ", "NY", false},
+	} {
+		if got := IsSubdivision(tc.country, tc.code); got != tc.want {
+			t.Errorf("IsSubdivision(%q, %q) = %t", tc.country, tc.code, got)
 		}
 	}
 }

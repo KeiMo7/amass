@@ -322,17 +322,19 @@ func (h *filings) storeTransfer(e *et.Event, orgent *dbt.Entity, accession, date
 	}
 }
 
-// businessAddress builds a StreetAddress from a filer's business address, or nil
-// when the address is empty.
+// businessAddress builds a StreetAddress in standard form from a filer's
+// business address, or nil when it has no city or its country is unknown.
+// EDGAR's stateOrCountry is a US state's code for a US address and an EDGAR
+// code otherwise, so only US addresses have a known country.
 func businessAddress(a *address) *contact.StreetAddress {
-	street := strings.TrimSpace(a.Street1 + " " + a.Street2)
-	if street == "" && a.City == "" {
+	if !support.IsSubdivision("US", a.StateOrCountry) {
 		return nil
 	}
-	return &contact.StreetAddress{
-		Address:    street,
+	return support.NormalizeStreetAddress(&contact.StreetAddress{
+		Address:    strings.TrimSpace(a.Street1 + " " + a.Street2),
 		City:       a.City,
 		Province:   a.StateOrCountry,
 		PostalCode: a.ZipCode,
-	}
+		Country:    "US",
+	})
 }

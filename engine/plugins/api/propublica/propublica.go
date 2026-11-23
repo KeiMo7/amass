@@ -181,7 +181,12 @@ func (h *filings) storeContact(e *et.Event, orgent *dbt.Entity, o *pubOrg) {
 		&general.SimpleRelation{Name: "organization"}, orgent, h.plugin.source); err != nil {
 		return
 	}
-	loc := &contact.StreetAddress{Address: a.Address, City: a.City, Province: a.State, PostalCode: a.Zipcode}
+	// ProPublica lists organizations that file with the US IRS.
+	loc := support.NormalizeStreetAddress(&contact.StreetAddress{Address: a.Address, City: a.City,
+		Province: a.State, PostalCode: a.Zipcode, Country: "US"})
+	if loc == nil {
+		return
+	}
 	if l, err := e.Session.DB().CreateAsset(ctx, loc); err == nil && l != nil {
 		support.AddSource(ctx, e.Session, l, h.plugin.source)
 		_, _ = support.Relate(ctx, e.Session, cr,

@@ -5,6 +5,7 @@
 package edgar
 
 import (
+	"strings"
 	"testing"
 
 	"github.com/owasp-amass/amass/v5/internal/semantics"
@@ -64,8 +65,8 @@ func TestParseSubmissions(t *testing.T) {
 		t.Errorf("filings = %+v", sub.Filings.Recent)
 	}
 
-	if loc := businessAddress(&sub.Addresses.Business); loc == nil || loc.City != "CUPERTINO" ||
-		loc.Address != "ONE APPLE PARK WAY" {
+	if loc := businessAddress(&sub.Addresses.Business); loc == nil || loc.City != "cupertino" ||
+		loc.Country != "US" || !strings.HasSuffix(loc.Address, ", CUPERTINO, CA 95014, US") {
 		t.Errorf("location = %+v", loc)
 	}
 	if businessAddress(&address{}) != nil {
@@ -105,22 +106,25 @@ func TestParseFormDAmount(t *testing.T) {
 }
 
 func TestBusinessAddress(t *testing.T) {
-	// Full address maps field for field.
+	// A US address comes out in standard form with its country.
 	loc := businessAddress(&address{Street1: "1 Infinite Loop", Street2: "Suite 100",
 		City: "Cupertino", StateOrCountry: "CA", ZipCode: "95014"})
-	if loc == nil || loc.Address != "1 Infinite Loop Suite 100" || loc.City != "Cupertino" ||
-		loc.Province != "CA" || loc.PostalCode != "95014" {
+	if loc == nil || loc.City != "cupertino" || loc.Province != "CA" || loc.PostalCode != "95014" ||
+		loc.Country != "US" || !strings.HasSuffix(loc.Address, ", CUPERTINO, CA 95014, US") {
 		t.Errorf("full address = %+v", loc)
 	}
 
-	// City but no street still yields a location (address empty).
+	// A city without a street still locates the filer.
 	if loc := businessAddress(&address{City: "Reno", StateOrCountry: "NV"}); loc == nil ||
-		loc.Address != "" || loc.City != "Reno" {
+		loc.City != "reno" || loc.Address != "RENO, NV, US" {
 		t.Errorf("city-only = %+v", loc)
 	}
 
-	// Nothing to locate → nil.
+	// No city, or a country EDGAR names by its own code: nothing to store.
 	if loc := businessAddress(&address{StateOrCountry: "NY", ZipCode: "10001"}); loc != nil {
-		t.Errorf("no street or city should be nil, got %+v", loc)
+		t.Errorf("no city should be nil, got %+v", loc)
+	}
+	if loc := businessAddress(&address{Street1: "1 High St", City: "London", StateOrCountry: "X0"}); loc != nil {
+		t.Errorf("a foreign EDGAR code should be nil, got %+v", loc)
 	}
 }

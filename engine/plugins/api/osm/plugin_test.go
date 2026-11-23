@@ -131,7 +131,16 @@ func TestReverseFindsTheOrganizationsAtAPhone(t *testing.T) {
 	o, sess, _ := newTestOSM(t)
 	phone := sess.Asset(t, &contact.Phone{Raw: "+1 315 228 5555", E164: "+13152285555", Type: contact.PhoneTypeRegular})
 
+	// A number the enumeration does not hold is not searched.
 	d := &plugintest.Dispatcher{}
+	if err := o.reverse.checkPhone(&et.Event{Entity: phone, Session: sess, Dispatcher: d}); err != nil {
+		t.Fatal(err)
+	}
+	if len(d.Events()) != 0 {
+		t.Fatalf("an out-of-scope phone was searched: %v", d.Names())
+	}
+
+	sess.Config().AddPhone("+13152285555") // a phone pivot's seed
 	if err := o.reverse.checkPhone(&et.Event{Entity: phone, Session: sess, Dispatcher: d}); err != nil {
 		t.Fatal(err)
 	}
@@ -149,10 +158,20 @@ func TestReverseFindsTheOrganizationsAtAPhone(t *testing.T) {
 
 func TestReverseFindsTheOrganizationsAtAnAddress(t *testing.T) {
 	o, sess, queries := newTestOSM(t)
-	loc := sess.Asset(t, &contact.StreetAddress{Address: "13 Main Street Hamilton NY", BuildingNumber: "13",
-		StreetName: "Main Street", City: "Hamilton"})
+	addr := &contact.StreetAddress{Address: "13 Main Street Hamilton NY", BuildingNumber: "13",
+		StreetName: "Main Street", City: "Hamilton"}
+	loc := sess.Asset(t, addr)
 
+	// An address the enumeration does not hold is not searched.
 	d := &plugintest.Dispatcher{}
+	if err := o.reverse.checkAddress(&et.Event{Entity: loc, Session: sess, Dispatcher: d}); err != nil {
+		t.Fatal(err)
+	}
+	if len(*queries) != 0 {
+		t.Fatalf("an out-of-scope address was searched: %v", *queries)
+	}
+
+	sess.Scope().AddStreetAddress(addr) // an address pivot's seed
 	if err := o.reverse.checkAddress(&et.Event{Entity: loc, Session: sess, Dispatcher: d}); err != nil {
 		t.Fatal(err)
 	}

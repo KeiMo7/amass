@@ -292,8 +292,10 @@ func TestAddressesResolvesOrganizationsOnTheStreet(t *testing.T) {
 	sess.Web().Reply("GET api.gleif.org/api/v1/lei-records", http.StatusOK,
 		jsonBody(t, MultipleResponse{Data: []LEIRecord{at, elsewhere}}))
 
-	seed := sess.Asset(t, &contact.StreetAddress{Address: "1 Main Street Springfield IL 62701 US",
-		BuildingNumber: "1", StreetName: "Main Street", City: "Springfield", Country: "US", PostalCode: "62701"})
+	loc := &contact.StreetAddress{Address: "1 Main Street Springfield IL 62701 US",
+		BuildingNumber: "1", StreetName: "Main Street", City: "Springfield", Country: "US", PostalCode: "62701"}
+	seed := sess.Asset(t, loc)
+	sess.Scope().AddStreetAddress(loc) // a pivot seed is in scope
 	d := &plugintest.Dispatcher{}
 	if err := g.address.check(&et.Event{Name: "addr", Entity: seed, Session: sess, Dispatcher: d}); err != nil {
 		t.Fatal(err)
@@ -303,7 +305,7 @@ func TestAddressesResolvesOrganizationsOnTheStreet(t *testing.T) {
 	if len(reqs) != 1 {
 		t.Fatalf("requests = %v", reqs)
 	}
-	for _, want := range []string{"city%5D=Springfield", "country%5D=US", "postalCode%5D=62701"} {
+	for _, want := range []string{"country%5D=US", "fulltext%5D=Main+Street+Springfield"} {
 		if !strings.Contains(reqs[0], want) {
 			t.Errorf("the search %q is missing %q", reqs[0], want)
 		}
@@ -353,6 +355,49 @@ func TestAddressesSkipsAnUnboundedSearch(t *testing.T) {
 	}
 	if reqs := sess.Web().Requests(); len(reqs) != 0 {
 		t.Errorf("requests = %v", reqs)
+	}
+}
+
+// The register filters addresses only by country, so the search sends the
+// street and city as full text, and a search missing any of the three is
+// refused before it is sent.
+func TestGLEIFSearchByAddressQuery(t *testing.T) {
+	sess, _ := newTestGLEIF(t)
+	sess.Web().Reply("GET api.gleif.org/api/v1/lei-records", http.StatusOK, jsonBody(t, MultipleResponse{}))
+
+	ctx, client := context.Background(), sess.Clients().General
+	if _, err := GLEIFSearchByAddress(ctx, client, "Microsoft Way", "Redmond", "US"); err != nil {
+		t.Fatal(err)
+	}
+
+	reqs := sess.Web().Requests()
+	if len(reqs) != 1 || strings.Contains(reqs[0], "city%5D") || strings.Contains(reqs[0], "postalCode%5D") ||
+		!strings.Contains(reqs[0], "fulltext%5D=Microsoft+Way+Redmond") {
+		t.Errorf("the search = %v; want the country filter and the street and city as full text", reqs)
+	}
+
+	for _, args := range [][3]string{{"", "Redmond", "US"}, {"Microsoft Way", "", "US"}, {"Microsoft Way", "Redmond", ""}} {
+		if _, err := GLEIFSearchByAddress(ctx, client, args[0], args[1], args[2]); err == nil {
+			t.Errorf("a search without all of %q was sent", args)
+		}
+	}
+	if len(sess.Web().Requests()) != 1 {
+		t.Error("an incomplete search reached the register")
+	}
+}
+
+// An address none of the enumeration's assets hold, such as a network
+// operator's from a registration record, is not searched.
+func TestAddressesSkipsAnAddressOutOfScope(t *testing.T) {
+	sess, g := newTestGLEIF(t)
+
+	seed := sess.Asset(t, &contact.StreetAddress{Address: "1 Microsoft Way Redmond WA 98052 US",
+		BuildingNumber: "1", StreetName: "Microsoft Way", City: "Redmond", Country: "US", PostalCode: "98052"})
+	if err := g.address.check(&et.Event{Name: "addr", Entity: seed, Session: sess, Dispatcher: &plugintest.Dispatcher{}}); err != nil {
+		t.Fatal(err)
+	}
+	if reqs := sess.Web().Requests(); len(reqs) != 0 {
+		t.Errorf("an out-of-scope address was searched: %v", reqs)
 	}
 }
 
@@ -415,7 +460,7 @@ func TestGLEIFLookupsReportAFailedAnswer(t *testing.T) {
 	if recs, err := GLEIFGetDirectChildrenRecords(ctx, client, acmeLEI); err == nil || recs != nil {
 		t.Errorf("a failed children query gave %v, %v", recs, err)
 	}
-	if _, err := GLEIFSearchByAddress(ctx, client, "Ithaca", "US", ""); err == nil ||
+	if _, err := GLEIFSearchByAddress(ctx, client, "Main Street", "Ithaca", "US"); err == nil ||
 		!strings.Contains(err.Error(), "status 503") {
 		t.Errorf("a refused address search gave %v; want the status in the error", err)
 	}

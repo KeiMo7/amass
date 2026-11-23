@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/url"
+	"strings"
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
@@ -71,26 +72,22 @@ func GLEIFSearchFuzzyCompletions(ctx context.Context, client *http.Client, name 
 	return &result, nil
 }
 
-// GLEIFSearchByAddress finds LEI records whose legal address is in the given
-// city, country and/or postal code, so an address can be resolved to the
-// organizations registered there. GLEIF filters only to the city/country/postal
-// level, not a street line, so the caller confirms the street itself; this
-// bounds the result to one page. At least one filter is required so the search
-// is never the whole register.
-func GLEIFSearchByAddress(ctx context.Context, client *http.Client, city, country, postal string) ([]*LEIRecord, error) {
+// GLEIFSearchByAddress finds LEI records that mention the street and city,
+// with a legal address in the country, so an address can be resolved to the
+// organizations registered there. The register filters addresses only by
+// country; the street and city go to its full-text search, which also matches
+// other fields, so the caller confirms the street, number and city itself.
+// The result is bounded to one page, and a country, street and city are all
+// required so the search is never a whole country.
+func GLEIFSearchByAddress(ctx context.Context, client *http.Client, street, city, country string) ([]*LEIRecord, error) {
+	street, city, country = strings.TrimSpace(street), strings.TrimSpace(city), strings.TrimSpace(country)
+	if street == "" || city == "" || country == "" {
+		return nil, errors.New("GLEIFSearchByAddress: a street, city and country are required")
+	}
+
 	v := url.Values{}
-	if city != "" {
-		v.Set("filter[entity.legalAddress.city]", city)
-	}
-	if country != "" {
-		v.Set("filter[entity.legalAddress.country]", country)
-	}
-	if postal != "" {
-		v.Set("filter[entity.legalAddress.postalCode]", postal)
-	}
-	if len(v) == 0 {
-		return nil, errors.New("GLEIFSearchByAddress: a city, country or postal code is required")
-	}
+	v.Set("filter[entity.legalAddress.country]", country)
+	v.Set("filter[fulltext]", street+" "+city)
 	v.Set("page[size]", "50")
 	u := "https://api.gleif.org/api/v1/lei-records?" + v.Encode()
 

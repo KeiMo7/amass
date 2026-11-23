@@ -47,6 +47,10 @@ func (h *reverse) checkPhone(e *et.Event) error {
 	if digitsOnly(ph.E164) == "" {
 		return nil
 	}
+	// a vendor's or provider's number is stored but not searched
+	if !orgsupport.ContactInScope(e.Session, e.Entity) {
+		return nil
+	}
 
 	since, err := support.TTLStartTime(e.Session.Config(),
 		string(oam.Phone), string(oam.Organization), h.plugin.name)
@@ -81,6 +85,11 @@ func (h *reverse) checkAddress(e *et.Event) error {
 		}
 	}
 	if strings.TrimSpace(loc.StreetName) == "" {
+		return nil
+	}
+	// a vendor's or provider's address, such as a network operator's from a
+	// registration record, is stored but not searched
+	if !orgsupport.ContactInScope(e.Session, e.Entity) {
 		return nil
 	}
 

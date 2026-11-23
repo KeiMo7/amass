@@ -45,6 +45,14 @@ func TestAddressLineMatchesUsesHeadquartersAndNumberField(t *testing.T) {
 		t.Error("a split street/number address was not matched")
 	}
 
+	// The full-text search can return a record on a street of the same name
+	// in another city.
+	inCity := &contact.StreetAddress{StreetName: "Main St", BuildingNumber: "7", City: "Springfield"}
+	elsewhere := &LEIAddress{AddressLines: []string{"7 Main St"}, City: "Shelbyville"}
+	if addressLineMatches(inCity, elsewhere) {
+		t.Error("a record in another city was matched")
+	}
+
 	// With no street on the seed there is nothing to confirm.
 	if addressLineMatches(&contact.StreetAddress{}, ad) {
 		t.Error("an empty seed street matched")

@@ -24,10 +24,10 @@ import (
 
 // addresses resolves the organizations registered at a street address, the
 // reverse of the model's organization -> address direction, so an enumeration
-// can pivot from a StreetAddress to the organizations there. GLEIF filters only to
-// the city/country/postal level, so the handler confirms the street itself and
-// attaches only records whose registered address line matches the seed; a
-// city-level-only match is dropped to avoid attaching every company in a city.
+// can pivot from a StreetAddress to the organizations there. GLEIF filters
+// addresses only by country and searches the street and city as full text, so
+// the handler confirms the street, number and city itself and attaches only
+// records whose registered address matches the seed.
 type addresses struct {
 	name   string
 	plugin *gleif
@@ -45,9 +45,15 @@ func (a *addresses) check(e *et.Event) error {
 			loc = parsed
 		}
 	}
-	// A bounded search needs a city and the street to confirm against; without
-	// them the query would be too broad or unverifiable, so skip.
-	if loc.City == "" || loc.StreetName == "" || (loc.Country == "" && loc.PostalCode == "") {
+	// A bounded search needs the street, city and country; without them the
+	// query would be too broad or unverifiable, so skip.
+	country := normCountry(loc.Country)
+	if loc.City == "" || loc.StreetName == "" || country == "" {
+		return nil
+	}
+	// An address only the enumeration's vendors and providers use (one from a
+	// network operator's registration record, for one) is not searched.
+	if !org.ContactInScope(e.Session, e.Entity) {
 		return nil
 	}
 
@@ -62,8 +68,8 @@ func (a *addresses) check(e *et.Event) error {
 		return nil
 	}
 
-	recs, err := GLEIFSearchByAddress(e.Session.Ctx(), e.Session.Clients().General, loc.City,
-		normCountry(loc.Country), normPostal(loc.PostalCode))
+	recs, err := GLEIFSearchByAddress(e.Session.Ctx(), e.Session.Clients().General, loc.StreetName, loc.City,
+		country)
 	if err != nil {
 		e.Session.Log().Error(err.Error(), slog.Group("plugin", "name", a.plugin.name, "handler", a.name))
 		return nil
@@ -149,8 +155,8 @@ func (a *addresses) process(e *et.Event, orgs []*dbt.Entity) {
 }
 
 // recordAtAddress reports whether a record's legal, headquarters or other
-// address matches the seed's street (and house number, when known), so a
-// record merely in the same city is not attached.
+// address matches the seed's street (and house number and city, when known),
+// so a record that merely mentions the street elsewhere is not attached.
 func recordAtAddress(seed *contact.StreetAddress, rec *LEIRecord) bool {
 	addrs := []*LEIAddress{&rec.Attributes.Entity.LegalAddress, &rec.Attributes.Entity.HeadquartersAddress}
 	for i := range rec.Attributes.Entity.OtherAddresses {
@@ -166,7 +172,8 @@ func recordAtAddress(seed *contact.StreetAddress, rec *LEIRecord) bool {
 }
 
 // addressLineMatches reports whether the record address's street line contains
-// the seed's street, and its house number when the seed names one.
+// the seed's street, its house number when the seed names one, and whether
+// its city is the seed's when both name one.
 func addressLineMatches(seed *contact.StreetAddress, ad *LEIAddress) bool {
 	street := semantics.PlainText(seed.StreetName)
 	if street == "" {
@@ -178,6 +185,9 @@ func addressLineMatches(seed *contact.StreetAddress, ad *LEIAddress) bool {
 		return false
 	}
 	if n := semantics.PlainText(seed.BuildingNumber); n != "" && !strings.Contains(line, n) {
+		return false
+	}
+	if c, rc := semantics.PlainText(seed.City), semantics.PlainText(ad.City); c != "" && rc != "" && c != rc {
 		return false
 	}
 	return true

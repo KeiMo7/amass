@@ -80,7 +80,7 @@ func (ae *employees) lookup(e *et.Event, ident *dbt.Entity, since time.Time) (*d
 
 	if edges, err := e.Session.DB().IncomingEdges(ctx, ident, since, "id"); err == nil {
 		for _, edge := range edges {
-			if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, since, ae.plugin.source.Name); err != nil || len(tags) == 0 {
+			if !support.Sourced(ctx, e.Session, edge, since, ae.plugin.source) {
 				continue
 			}
 			if a, err := e.Session.DB().FindEntityById(ctx, edge.FromEntity.ID); err == nil && a != nil {
@@ -99,7 +99,7 @@ func (ae *employees) lookup(e *et.Event, ident *dbt.Entity, since time.Time) (*d
 
 	if edges, err := e.Session.DB().OutgoingEdges(ctx, orgent, since, "member"); err == nil {
 		for _, edge := range edges {
-			if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, since, ae.plugin.source.Name); err != nil || len(tags) == 0 {
+			if !support.Sourced(ctx, e.Session, edge, since, ae.plugin.source) {
 				continue
 			}
 			if a, err := e.Session.DB().FindEntityById(ctx, edge.ToEntity.ID); err == nil && a != nil {

@@ -14,7 +14,6 @@ import (
 	"github.com/owasp-amass/amass/v5/config"
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
-	amassdb "github.com/owasp-amass/amass/v5/internal/db"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
@@ -106,7 +105,13 @@ func (u *urlexpand) check(e *et.Event) error {
 	var findings []*support.Finding
 	if support.AssetMonitoredWithinTTL(e.Session, e.Entity, u.source, since) {
 		if inscope {
-			findings = append(findings, u.lookup(e, e.Entity, matches)...)
+			findings = support.StoredFindings(e, e.Entity, "URL: "+oamu.Raw, u.name, matches,
+				map[string][]string{
+					string(oam.FQDN):      {"domain"},
+					string(oam.IPAddress): {"ip_address"},
+					string(oam.Service):   {"port"},
+					string(oam.File):      {"file"},
+				}, u.source)
 		}
 	} else {
 		findings = append(findings, u.store(e, tstr, e.Entity, matches)...)
@@ -117,56 +122,6 @@ func (u *urlexpand) check(e *et.Event) error {
 		u.process(e, findings)
 	}
 	return nil
-}
-
-func (u *urlexpand) lookup(e *et.Event, asset *dbt.Entity, m *config.Matches) []*support.Finding {
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 60*time.Second)
-	defer cancel()
-
-	var findings []*support.Finding
-	for _, atype := range u.transforms {
-		if !m.IsMatch(atype) {
-			continue
-		}
-
-		since, err := support.TTLStartTime(e.Session.Config(), string(oam.URL), atype, u.name)
-		if err != nil {
-			continue
-		}
-
-		var label string
-		switch atype {
-		case string(oam.FQDN):
-			label = "domain"
-		case string(oam.IPAddress):
-			label = "ip_address"
-		case string(oam.Service):
-			label = "port"
-		case string(oam.File):
-			label = "file"
-		}
-
-		if edges, err := e.Session.DB().OutgoingEdges(ctx, asset, since, label); err == nil && len(edges) > 0 {
-			ends := amassdb.EdgeEnds(ctx, e.Session.DB(), edges, false)
-			for _, edge := range edges {
-				to, ok := ends[edge.ToEntity.ID]
-				if !ok {
-					continue
-				}
-
-				oamu := asset.Asset.(*url.URL)
-				findings = append(findings, &support.Finding{
-					From:     asset,
-					FromName: "URL: " + oamu.Raw,
-					To:       to,
-					ToName:   to.Asset.Key(),
-					Rel:      edge.Relation,
-				})
-			}
-		}
-	}
-
-	return findings
 }
 
 func (u *urlexpand) store(e *et.Event, tstr string, asset *dbt.Entity, m *config.Matches) []*support.Finding {

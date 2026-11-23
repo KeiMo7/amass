@@ -19,7 +19,6 @@ import (
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
-	amassdb "github.com/owasp-amass/amass/v5/internal/db"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	oamcert "github.com/owasp-amass/open-asset-model/certificate"
@@ -101,91 +100,22 @@ func (te *tlsexpand) check(e *et.Event) error {
 	if cert, ok := e.Meta.(*x509.Certificate); ok && cert != nil {
 		te.store(e, cert, e.Entity, matches)
 	} else {
-		findings = append(findings, te.lookup(e, e.Entity, matches)...)
+		t := e.Entity.Asset.(*oamcert.TLSCertificate)
+		findings = support.StoredFindings(e, e.Entity, "TLSCertificate: "+t.SerialNumber, te.name, matches,
+			map[string][]string{
+				string(oam.URL):            {"san_url", "ocsp_server", "issuing_certificate_url"},
+				string(oam.FQDN):           {"common_name", "san_dns_name"},
+				string(oam.ContactRecord):  {"subject_contact", "issuer_contact"},
+				string(oam.IPAddress):      {"san_ip_address"},
+				string(oam.Identifier):     {"san_email_address"},
+				string(oam.TLSCertificate): {"issuing_certificate"},
+			}, te.source)
 	}
 
 	if len(findings) > 0 {
 		te.process(e, findings)
 	}
 	return nil
-}
-
-func (te *tlsexpand) lookup(e *et.Event, asset *dbt.Entity, m *config.Matches) []*support.Finding {
-	var rtypes []string
-	var findings []*support.Finding
-	sinces := make(map[string]time.Time)
-
-	for _, atype := range te.transforms {
-		if !m.IsMatch(atype) {
-			continue
-		}
-
-		since, err := support.TTLStartTime(e.Session.Config(), string(oam.TLSCertificate), atype, te.name)
-		if err != nil {
-			continue
-		}
-		sinces[atype] = since
-
-		switch atype {
-		case string(oam.URL):
-			rtypes = append(rtypes, "san_url", "ocsp_server", "issuing_certificate_url")
-		case string(oam.FQDN):
-			rtypes = append(rtypes, "common_name", "san_dns_name")
-		case string(oam.ContactRecord):
-			rtypes = append(rtypes, "subject_contact", "issuer_contact")
-		case string(oam.IPAddress):
-			rtypes = append(rtypes, "san_ip_address")
-		case string(oam.Identifier):
-			rtypes = append(rtypes, "san_email_address")
-		case string(oam.TLSCertificate):
-			rtypes = append(rtypes, "issuing_certificate")
-		}
-	}
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), time.Minute)
-	defer cancel()
-
-	if edges, err := e.Session.DB().OutgoingEdges(ctx, asset, time.Time{}, rtypes...); err == nil && len(edges) > 0 {
-		ends := amassdb.EdgeEnds(ctx, e.Session.DB(), edges, false)
-		for _, edge := range edges {
-			a, ok := ends[edge.ToEntity.ID]
-			if !ok {
-				continue
-			}
-			totype := string(a.Asset.AssetType())
-
-			since, ok := sinces[totype]
-			if !ok || (ok && a.LastSeen.Before(since)) {
-				continue
-			}
-
-			if !te.oneOfSources(ctx, e, edge, te.source, since) {
-				continue
-			}
-
-			t := asset.Asset.(*oamcert.TLSCertificate)
-			findings = append(findings, &support.Finding{
-				From:     asset,
-				FromName: "TLSCertificate: " + t.SerialNumber,
-				To:       a,
-				ToName:   a.Asset.Key(),
-				Rel:      edge.Relation,
-			})
-		}
-	}
-
-	return findings
-}
-
-func (te *tlsexpand) oneOfSources(ctx context.Context, e *et.Event, edge *dbt.Edge, src *et.Source, since time.Time) bool {
-	if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, since, src.Name); err == nil && len(tags) > 0 {
-		for _, tag := range tags {
-			if _, ok := tag.Property.(*general.SourceProperty); ok {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func (te *tlsexpand) store(e *et.Event, cert *x509.Certificate, asset *dbt.Entity, m *config.Matches) {

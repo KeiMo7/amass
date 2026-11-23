@@ -6,8 +6,11 @@ package support
 
 import (
 	"context"
+	"time"
 
+	"github.com/owasp-amass/amass/v5/config"
 	et "github.com/owasp-amass/amass/v5/engine/types"
+	amassdb "github.com/owasp-amass/amass/v5/internal/db"
 	dbt "github.com/owasp-amass/asset-db/types"
 	"github.com/owasp-amass/open-asset-model/general"
 )
@@ -65,4 +68,85 @@ func Link(ctx context.Context, sess et.Session, from *dbt.Entity, label string, 
 		})
 	}
 	return edge
+}
+
+// Sourced reports whether src vouched for the edge since the time: whether the
+// edge carries src's source property.
+func Sourced(ctx context.Context, sess et.Session, edge *dbt.Edge, since time.Time, src *et.Source) bool {
+	if edge == nil || src == nil {
+		return false
+	}
+
+	tags, err := sess.DB().FindEdgeTags(ctx, edge, since, src.Name)
+	if err != nil {
+		return false
+	}
+	for _, tag := range tags {
+		if _, ok := tag.Property.(*general.SourceProperty); ok {
+			return true
+		}
+	}
+	return false
+}
+
+// StoredFindings returns what an expansion handler found from an entity
+// before, so a handler within its TTL can dispatch it again instead of asking
+// its source: the entity's outgoing edges with a label that labels lists for
+// an asset type the configuration matches, whose target was seen within that
+// type's TTL (the transformation from the entity's type for the plugin) and,
+// unless src is nil, that src vouched for.
+func StoredFindings(e *et.Event, from *dbt.Entity, fromName, plugin string, m *config.Matches,
+	labels map[string][]string, src *et.Source) []*Finding {
+	fromType := string(from.Asset.AssetType())
+
+	var rels []string
+	sinces := make(map[string]time.Time)
+	for atype, labs := range labels {
+		if !m.IsMatch(atype) {
+			continue
+		}
+		since, err := TTLStartTime(e.Session.Config(), fromType, atype, plugin)
+		if err != nil {
+			continue
+		}
+		sinces[atype] = since
+		rels = append(rels, labs...)
+	}
+	if len(rels) == 0 {
+		return nil
+	}
+
+	ctx, cancel := context.WithTimeout(e.Session.Ctx(), time.Minute)
+	defer cancel()
+
+	edges, err := e.Session.DB().OutgoingEdges(ctx, from, time.Time{}, rels...)
+	if err != nil || len(edges) == 0 {
+		return nil
+	}
+
+	var findings []*Finding
+	ends := amassdb.EdgeEnds(ctx, e.Session.DB(), edges, false)
+	for _, edge := range edges {
+		to, ok := ends[edge.ToEntity.ID]
+		if !ok {
+			continue
+		}
+
+		since, ok := sinces[string(to.Asset.AssetType())]
+		if !ok || to.LastSeen.Before(since) {
+			continue
+		}
+		if src != nil && !Sourced(ctx, e.Session, edge, since, src) {
+			continue
+		}
+
+		findings = append(findings, &Finding{
+			From:     from,
+			FromName: fromName,
+			To:       to,
+			ToName:   to.Asset.Key(),
+			Rel:      edge.Relation,
+		})
+	}
+	return findings
 }

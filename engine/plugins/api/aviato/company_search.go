@@ -73,8 +73,7 @@ func (cs *companySearch) lookup(e *et.Event, orgent *dbt.Entity, since time.Time
 
 	if edges, err := e.Session.DB().OutgoingEdges(ctx, orgent, since, "id"); err == nil {
 		for _, edge := range edges {
-			if tags, err := e.Session.DB().FindEdgeTags(ctx, edge,
-				since, cs.plugin.source.Name); err != nil || len(tags) == 0 {
+			if !support.Sourced(ctx, e.Session, edge, since, cs.plugin.source) {
 				continue
 			}
 			if a, err := e.Session.DB().FindEntityById(ctx, edge.ToEntity.ID); err == nil && a != nil {

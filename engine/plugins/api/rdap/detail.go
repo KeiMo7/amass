@@ -16,11 +16,9 @@ import (
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
-	"github.com/owasp-amass/open-asset-model/contact"
 	oamdns "github.com/owasp-amass/open-asset-model/dns"
 	"github.com/owasp-amass/open-asset-model/general"
 	oamreg "github.com/owasp-amass/open-asset-model/registration"
-	"github.com/owasp-amass/open-asset-model/url"
 )
 
 // recordDetail expands a registration record (an AutnumRecord, IPNetRecord or
@@ -89,7 +87,12 @@ func (r *recordDetail) check(e *et.Event) error {
 
 	if obj, ok := responseOf(e.Meta); ok {
 		r.store(e, obj, e.Entity, matches)
-	} else if findings := r.lookup(e, e.Entity, matches); len(findings) > 0 {
+	} else if findings := support.StoredFindings(e, e.Entity, recordName(e.Entity), r.plugin.name, matches,
+		map[string][]string{
+			string(oam.URL):           {"rdap_url"},
+			string(oam.FQDN):          r.servers,
+			string(oam.ContactRecord): r.contacts,
+		}, r.plugin.source); len(findings) > 0 {
 		support.ProcessAssetsWithSource(e, findings, r.plugin.source, r.plugin.name, r.name)
 	}
 	return nil
@@ -136,80 +139,6 @@ func whoisServer(record *dbt.Entity) string {
 		return v.WhoisServer
 	}
 	return ""
-}
-
-func (r *recordDetail) lookup(e *et.Event, record *dbt.Entity, m *config.Matches) []*support.Finding {
-	var labels []string
-	sinces := make(map[string]time.Time)
-	for _, atype := range r.transforms {
-		if !m.IsMatch(atype) {
-			continue
-		}
-
-		since, err := support.TTLStartTime(e.Session.Config(), string(r.recType), atype, r.plugin.name)
-		if err != nil {
-			continue
-		}
-		sinces[atype] = since
-
-		switch atype {
-		case string(oam.URL):
-			labels = append(labels, "rdap_url")
-		case string(oam.FQDN):
-			labels = append(labels, r.servers...)
-		case string(oam.ContactRecord):
-			labels = append(labels, r.contacts...)
-		}
-	}
-	if len(labels) == 0 {
-		return nil
-	}
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 30*time.Second)
-	defer cancel()
-
-	edges, err := e.Session.DB().OutgoingEdges(ctx, record, time.Time{}, labels...)
-	if err != nil {
-		return nil
-	}
-
-	from := recordName(record)
-	var findings []*support.Finding
-	for _, edge := range edges {
-		a, err := e.Session.DB().FindEntityById(ctx, edge.ToEntity.ID)
-		if err != nil {
-			continue
-		}
-
-		since, ok := sinces[string(a.Asset.AssetType())]
-		if !ok || a.LastSeen.Before(since) {
-			continue
-		}
-		if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, since, r.plugin.source.Name); err != nil || len(tags) == 0 {
-			continue
-		}
-
-		var name string
-		switch v := a.Asset.(type) {
-		case *oamdns.FQDN:
-			name = v.Name
-		case *contact.ContactRecord:
-			name = "ContactRecord: " + v.DiscoveredAt
-		case *url.URL:
-			name = v.Raw
-		default:
-			continue
-		}
-
-		findings = append(findings, &support.Finding{
-			From:     record,
-			FromName: from,
-			To:       a,
-			ToName:   name,
-			Rel:      edge.Relation,
-		})
-	}
-	return findings
 }
 
 func (r *recordDetail) store(e *et.Event, resp *response, record *dbt.Entity, m *config.Matches) {

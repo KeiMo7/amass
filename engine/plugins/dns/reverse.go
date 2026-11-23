@@ -107,7 +107,7 @@ func (d *dnsReverse) lookup(e *et.Event, fqdn *dbt.Entity, since time.Time) []*r
 		return rev
 	}
 
-	if assets := d.plugin.lookupWithinTTL(e.Session, fqdn, oam.FQDN, since, oam.BasicDNSRelation, 12); len(assets) > 0 {
+	if assets := d.plugin.lookupWithinTTL(e.Session, fqdn, oam.FQDN, since, d.plugin.source, oam.BasicDNSRelation, 12); len(assets) > 0 {
 		for _, a := range assets {
 			rev = append(rev, &relRev{ipFQDN: fqdn, target: a})
 		}

@@ -178,7 +178,8 @@ func (d *dnsPlugin) Stop() {
 	d.log.Info("Plugin stopped")
 }
 
-func (d *dnsPlugin) lookupWithinTTL(session et.Session, fent *dbt.Entity, atype oam.AssetType, since time.Time, reltype oam.RelationType, rrtypes ...int) []*dbt.Entity {
+func (d *dnsPlugin) lookupWithinTTL(session et.Session, fent *dbt.Entity, atype oam.AssetType, since time.Time,
+	src *et.Source, reltype oam.RelationType, rrtypes ...int) []*dbt.Entity {
 	var results []*dbt.Entity
 
 	if len(rrtypes) == 0 || since.IsZero() {
@@ -219,18 +220,9 @@ func (d *dnsPlugin) lookupWithinTTL(session et.Session, fent *dbt.Entity, atype 
 				continue
 			}
 
-			if tags, err := session.DB().FindEdgeTags(ctx, edge, since, d.source.Name); err == nil && len(tags) > 0 {
-				var found bool
-
-				for _, tag := range tags {
-					if _, ok := tag.Property.(*general.SourceProperty); ok {
-						found = true
-						break
-					}
-				}
-				if !found {
-					continue
-				}
+			// only the records the asking handler resolved count
+			if !support.Sourced(ctx, session, edge, since, src) {
+				continue
 			}
 
 			keep = append(keep, edge)

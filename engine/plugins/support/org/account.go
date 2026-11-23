@@ -8,6 +8,7 @@ import (
 	"context"
 	"time"
 
+	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oamacct "github.com/owasp-amass/open-asset-model/account"
@@ -74,7 +75,7 @@ func OrgTransfersReceived(sess et.Session, orgent *dbt.Entity, since time.Time, 
 			continue
 		}
 		for _, edge := range edges {
-			if !sourcedEdge(ctx, sess, edge, since, src) {
+			if !support.Sourced(ctx, sess, edge, since, src) {
 				continue
 			}
 			if a, err := sess.DB().FindEntityById(ctx, edge.FromEntity.ID); err == nil && a != nil {
@@ -98,7 +99,7 @@ func checkingAccounts(ctx context.Context, sess et.Session, orgent *dbt.Entity, 
 
 	var accts []*dbt.Entity
 	for _, edge := range edges {
-		if src != nil && !sourcedEdge(ctx, sess, edge, since, src) {
+		if src != nil && !support.Sourced(ctx, sess, edge, since, src) {
 			continue
 		}
 		if a, err := sess.DB().FindEntityById(ctx, edge.ToEntity.ID); err == nil && a != nil {
@@ -108,10 +109,4 @@ func checkingAccounts(ctx context.Context, sess et.Session, orgent *dbt.Entity, 
 		}
 	}
 	return accts
-}
-
-// sourcedEdge reports whether src vouched for the edge since the time.
-func sourcedEdge(ctx context.Context, sess et.Session, edge *dbt.Edge, since time.Time, src *et.Source) bool {
-	tags, err := sess.DB().FindEdgeTags(ctx, edge, since, src.Name)
-	return err == nil && len(tags) > 0
 }

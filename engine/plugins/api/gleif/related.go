@@ -60,7 +60,7 @@ func (ro *relatedOrgs) lookup(e *et.Event, ident *dbt.Entity, since time.Time) [
 
 	if edges, err := e.Session.DB().IncomingEdges(ctx, ident, since, "id"); err == nil {
 		for _, edge := range edges {
-			if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, since, ro.plugin.source.Name); err != nil || len(tags) == 0 {
+			if !support.Sourced(ctx, e.Session, edge, since, ro.plugin.source) {
 				continue
 			}
 			if a, err := e.Session.DB().FindEntityById(ctx, edge.FromEntity.ID); err == nil && a != nil {
@@ -79,7 +79,7 @@ func (ro *relatedOrgs) lookup(e *et.Event, ident *dbt.Entity, since time.Time) [
 	var p *dbt.Entity
 	if edges, err := e.Session.DB().IncomingEdges(ctx, o, since, "subsidiary"); err == nil {
 		for _, edge := range edges {
-			if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, since, ro.plugin.source.Name); err != nil || len(tags) == 0 {
+			if !support.Sourced(ctx, e.Session, edge, since, ro.plugin.source) {
 				continue
 			}
 			if a, err := e.Session.DB().FindEntityById(ctx, edge.FromEntity.ID); err == nil && a != nil {
@@ -94,7 +94,7 @@ func (ro *relatedOrgs) lookup(e *et.Event, ident *dbt.Entity, since time.Time) [
 	var children []*dbt.Entity
 	if edges, err := e.Session.DB().OutgoingEdges(ctx, o, since, "subsidiary"); err == nil {
 		for _, edge := range edges {
-			if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, since, ro.plugin.source.Name); err != nil || len(tags) == 0 {
+			if !support.Sourced(ctx, e.Session, edge, since, ro.plugin.source) {
 				continue
 			}
 			if a, err := e.Session.DB().FindEntityById(ctx, edge.ToEntity.ID); err == nil && a != nil {

@@ -77,8 +77,7 @@ func (r *ipaddrEndpoint) lookup(e *et.Event, ip *dbt.Entity, since time.Time) []
 	if edges, err := e.Session.DB().OutgoingEdges(ctx, ip, since); err == nil && len(edges) > 0 {
 		for _, edge := range edges {
 			// only the services this plugin found count
-			if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, since, r.plugin.source.Name); err != nil ||
-				len(tags) == 0 {
+			if !support.Sourced(ctx, e.Session, edge, since, r.plugin.source) {
 				continue
 			}
 			if _, ok := edge.Relation.(*general.PortRelation); ok {

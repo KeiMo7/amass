@@ -113,18 +113,7 @@ func (r *netblock) lookup(e *et.Event, ip *dbt.Entity, since time.Time) (*dbt.En
 		}
 		if tmp, ok := entity.Asset.(*oamnet.Netblock); ok && tmp.CIDR.Contains(addr.Address) {
 			if s := tmp.CIDR.Masked().Bits(); s > size {
-				var found bool
-
-				if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, since, r.plugin.source.Name); err == nil && len(tags) > 0 {
-					for _, tag := range tags {
-						if _, ok := tag.Property.(*general.SourceProperty); ok {
-							found = true
-							break
-						}
-					}
-				}
-
-				if found {
+				if support.Sourced(ctx, e.Session, edge, since, r.plugin.source) {
 					size = s
 					nb = entity
 				}

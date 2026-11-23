@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
@@ -129,7 +130,7 @@ func findOrgByIDClaim(sess et.Session, idType, value string, src *et.Source) (*d
 
 	if edges, err := sess.DB().IncomingEdges(ctx, ids[0], time.Time{}, "id"); err == nil {
 		for _, edge := range edges {
-			if tags, err := sess.DB().FindEdgeTags(ctx, edge, time.Time{}, src.Name); err != nil || len(tags) == 0 {
+			if !support.Sourced(ctx, sess, edge, time.Time{}, src) {
 				continue
 			}
 			if o, err := sess.DB().FindEntityById(ctx, edge.FromEntity.ID); err == nil && o != nil {

@@ -292,7 +292,7 @@ func (cr *companyRounds) createOrgInvestors(e *et.Event, round *companyFundingRo
 		// check if the Person asset already exists
 		if edges, err := e.Session.DB().IncomingEdges(ctx, ident, time.Time{}, "id"); err == nil {
 			for _, edge := range edges {
-				if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, time.Time{}, cr.plugin.source.Name); err != nil || len(tags) == 0 {
+				if !support.Sourced(ctx, e.Session, edge, time.Time{}, cr.plugin.source) {
 					continue
 				}
 				if a, err := e.Session.DB().FindEntityById(ctx, edge.FromEntity.ID); err == nil && a != nil {
@@ -362,7 +362,7 @@ func (cr *companyRounds) createPersonInvestors(e *et.Event, round *companyFundin
 		// check if the Person asset already exists
 		if edges, err := e.Session.DB().IncomingEdges(ctx, ident, time.Time{}, "id"); err == nil {
 			for _, edge := range edges {
-				if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, time.Time{}, cr.plugin.source.Name); err != nil || len(tags) == 0 {
+				if !support.Sourced(ctx, e.Session, edge, time.Time{}, cr.plugin.source) {
 					continue
 				}
 				if a, err := e.Session.DB().FindEntityById(ctx, edge.FromEntity.ID); err == nil && a != nil {

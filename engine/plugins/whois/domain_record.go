@@ -53,74 +53,19 @@ func (r *domrec) check(e *et.Event) error {
 	if record, ok := e.Meta.(*whoisparser.WhoisInfo); ok && record != nil {
 		r.store(e, record, e.Entity, matches)
 	} else {
-		findings = append(findings, r.lookup(e, e.Entity, src, matches)...)
+		dr := e.Entity.Asset.(*oamreg.DomainRecord)
+		findings = support.StoredFindings(e, e.Entity, "DomainRecord: "+dr.Domain, r.plugin.name, matches,
+			map[string][]string{
+				string(oam.FQDN): {"name_server", "whois_server"},
+				string(oam.ContactRecord): {"registrar_contact", "registrant_contact", "admin_contact",
+					"technical_contact", "billing_contact"},
+			}, src)
 	}
 
 	if len(findings) > 0 {
 		r.process(e, findings, src)
 	}
 	return nil
-}
-
-func (r *domrec) lookup(e *et.Event, asset *dbt.Entity, src *et.Source, m *config.Matches) []*support.Finding {
-	var findings []*support.Finding
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 2*time.Minute)
-	defer cancel()
-
-	for _, atype := range r.transforms {
-		if !m.IsMatch(atype) {
-			continue
-		}
-
-		since, err := support.TTLStartTime(e.Session.Config(), string(oam.DomainRecord), atype, r.plugin.name)
-		if err != nil {
-			continue
-		}
-
-		var rtypes []string
-		switch atype {
-		case string(oam.FQDN):
-			rtypes = append(rtypes, "name_server", "whois_server")
-		case string(oam.ContactRecord):
-			rtypes = append(rtypes, "registrar_contact", "registrant_contact", "admin_contact", "technical_contact", "billing_contact")
-		}
-
-		if edges, err := e.Session.DB().OutgoingEdges(ctx, asset, since, rtypes...); err == nil && len(edges) > 0 {
-			for _, edge := range edges {
-				to, err := e.Session.DB().FindEntityById(ctx, edge.ToEntity.ID)
-				if err != nil {
-					continue
-				}
-
-				if !r.oneOfSources(ctx, e, to, src, since) {
-					continue
-				}
-
-				dr := asset.Asset.(*oamreg.DomainRecord)
-				findings = append(findings, &support.Finding{
-					From:     asset,
-					FromName: "DomainRecord: " + dr.Domain,
-					To:       to,
-					ToName:   to.Asset.Key(),
-					Rel:      edge.Relation,
-				})
-			}
-		}
-	}
-
-	return findings
-}
-
-func (r *domrec) oneOfSources(ctx context.Context, e *et.Event, asset *dbt.Entity, src *et.Source, since time.Time) bool {
-	if tags, err := e.Session.DB().FindEntityTags(ctx, asset, since, src.Name); err == nil && len(tags) > 0 {
-		for _, tag := range tags {
-			if _, ok := tag.Property.(*general.SourceProperty); ok {
-				return true
-			}
-		}
-	}
-	return false
 }
 
 func (r *domrec) store(e *et.Event, resp *whoisparser.WhoisInfo, asset *dbt.Entity, m *config.Matches) {

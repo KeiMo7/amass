@@ -100,14 +100,11 @@ func (r *autsys) lookup(e *et.Event, nb *dbt.Entity, since time.Time) *dbt.Entit
 	}
 
 	for _, edge := range edges {
-		if tags, err := e.Session.DB().FindEdgeTags(ctx, edge, since, r.plugin.source.Name); err == nil && len(tags) > 0 {
-			for _, tag := range tags {
-				if _, ok := tag.Property.(*general.SourceProperty); ok {
-					if as, err := e.Session.DB().FindEntityById(ctx, edge.FromEntity.ID); err == nil && as != nil {
-						return as
-					}
-				}
-			}
+		if !support.Sourced(ctx, e.Session, edge, since, r.plugin.source) {
+			continue
+		}
+		if as, err := e.Session.DB().FindEntityById(ctx, edge.FromEntity.ID); err == nil && as != nil {
+			return as
 		}
 	}
 	return nil

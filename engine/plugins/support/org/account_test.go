@@ -10,6 +10,7 @@ import (
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/plugintest"
+	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	oamacct "github.com/owasp-amass/open-asset-model/account"
 	oamfin "github.com/owasp-amass/open-asset-model/financial"
@@ -41,7 +42,7 @@ func TestOrgCheckingAccountIsSharedBySources(t *testing.T) {
 		t.Fatalf("account edges = %v, %v", edges, err)
 	}
 	for _, src := range []*et.Source{srcA, srcB} {
-		if !sourcedEdge(ctx, sess, edges[0], time.Time{}, src) {
+		if !support.Sourced(ctx, sess, edges[0], time.Time{}, src) {
 			t.Errorf("%s does not vouch for the account edge", src.Name)
 		}
 	}

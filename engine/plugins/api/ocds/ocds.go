@@ -13,7 +13,6 @@ import (
 	"fmt"
 	"io"
 	"log/slog"
-	"net/http"
 	"net/url"
 	"os"
 	"path/filepath"
@@ -61,12 +60,6 @@ type publisher struct {
 	BulkURL    string `json:"bulk_url"`
 	BulkFormat string `json:"bulk_format"`
 	Enabled    bool   `json:"enabled"`
-}
-
-// bulkEntry is one publisher's cached bulk export on disk.
-type bulkEntry struct {
-	path    string
-	fetched time.Time
 }
 
 // bulkApplies reports whether a publisher's bulk export should be fetched for
@@ -442,69 +435,18 @@ func (h *handler) queryBulk(e *et.Event, orgent *dbt.Entity, name string, pub pu
 // it when it is missing or older than bulkTTL. The file is shared across the
 // organizations of a run.
 func (o *ocds) ensureBulk(e *et.Event, pub publisher) (string, error) {
-	o.bulkMu.Lock()
-	defer o.bulkMu.Unlock()
-
-	if ent := o.bulk[pub.Key]; ent != nil && time.Since(ent.fetched) < bulkTTL {
-		if _, err := os.Stat(ent.path); err == nil {
-			return ent.path, nil
-		}
-	}
-
 	dir := filepath.Join(os.TempDir(), "amass-ocds")
 	if err := os.MkdirAll(dir, 0o755); err != nil {
 		return "", err
 	}
+
 	dst := filepath.Join(dir, "ocds-"+pub.Key+bulkExt(pub))
-	if err := o.download(e, pub.BulkURL, dst); err != nil {
+	o.bulkMu.Lock()
+	defer o.bulkMu.Unlock()
+	if err := support.CachedDownload(e, pub.BulkURL, dst, bulkTTL, bulkDownloadTimeout, 0); err != nil {
 		return "", err
 	}
-
-	if o.bulk == nil {
-		o.bulk = map[string]*bulkEntry{}
-	}
-	o.bulk[pub.Key] = &bulkEntry{path: dst, fetched: time.Now()}
 	return dst, nil
-}
-
-// download streams a URL to dst through the session's HTTP client, writing to a
-// temporary file first so a partial download never replaces a good one.
-func (o *ocds) download(e *et.Event, u, dst string) error {
-	_ = support.WaitLimit(e.Session.Ctx(), o.rlimit)
-	e.Session.NetSem().Acquire()
-	defer e.Session.NetSem().Release()
-
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), bulkDownloadTimeout)
-	defer cancel()
-
-	req, err := http.NewRequestWithContext(ctx, http.MethodGet, u, nil)
-	if err != nil {
-		return err
-	}
-	resp, err := e.Session.Clients().General.Do(req)
-	if err != nil {
-		return err
-	}
-	defer func() { _ = resp.Body.Close() }()
-	if resp.StatusCode != http.StatusOK {
-		return fmt.Errorf("status %s", resp.Status)
-	}
-
-	tmp := dst + ".tmp"
-	f, err := os.Create(tmp)
-	if err != nil {
-		return err
-	}
-	if _, err := io.Copy(f, resp.Body); err != nil {
-		_ = f.Close()
-		_ = os.Remove(tmp)
-		return err
-	}
-	if err := f.Close(); err != nil {
-		_ = os.Remove(tmp)
-		return err
-	}
-	return os.Rename(tmp, dst)
 }
 
 // bulkGzipped reports whether a publisher's bulk export is gzip-compressed.

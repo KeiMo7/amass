@@ -18,9 +18,7 @@ package routing
 import (
 	"context"
 	"fmt"
-	"io"
 	"log/slog"
-	"net"
 	"net/netip"
 	"net/url"
 	"strconv"
@@ -259,27 +257,7 @@ func (r *routingRecords) whois(ctx context.Context, query string) (string, error
 	ctx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 
-	host, port, err := net.SplitHostPort(r.catalog.IRRWhois)
-	if err != nil {
-		return "", err
-	}
-	conn, err := amassnet.NewDialContext(10*time.Second)(ctx, "tcp", net.JoinHostPort(host, port))
-	if err != nil {
-		return "", err
-	}
-	defer func() { _ = conn.Close() }()
-	if dl, ok := ctx.Deadline(); ok {
-		_ = conn.SetDeadline(dl)
-	}
-
-	if _, err := io.WriteString(conn, query+"\r\n"); err != nil {
-		return "", err
-	}
-	data, err := io.ReadAll(io.LimitReader(conn, whoisReadLimit))
-	if err != nil && len(data) == 0 {
-		return "", err
-	}
-	return string(data), nil
+	return amassnet.WhoisQuery(ctx, r.catalog.IRRWhois, query+"\r\n", 10*time.Second, whoisReadLimit)
 }
 
 // rpki checks the netblock against RPKI for each AS that announces it, and

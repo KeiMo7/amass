@@ -40,10 +40,9 @@ type ocds struct {
 	source  *et.Source
 	log     *slog.Logger
 	handler *handler
-	// bulkMu guards bulk, the per-publisher cache of downloaded bulk OCDS
-	// exports, so a large file is fetched once per TTL and reused.
+	// bulkMu serializes bulk export downloads, so organizations from one
+	// country seen together fetch the export once.
 	bulkMu sync.Mutex
-	bulk   map[string]*bulkEntry
 }
 
 type handler struct {

@@ -8,7 +8,6 @@ import (
 	"context"
 	"errors"
 	"fmt"
-	"io"
 	"log/slog"
 	"net"
 	"net/netip"
@@ -148,30 +147,16 @@ func (bt *bgpTools) whois(ctx context.Context, ipstr string) (*bgpToolsRecord, e
 		return nil, err
 	}
 
-	dial := amassnet.NewDialContext(3 * time.Second)
-	addr := net.JoinHostPort(host, strconv.Itoa(bt.port))
-
 	_ = support.WaitLimit(ctx, bt.rlimit)
 	ctx, cancel := context.WithTimeout(ctx, 10*time.Second)
 	defer cancel()
 
-	conn, err := dial(ctx, "tcp", addr)
+	data, err := amassnet.WhoisQuery(ctx, net.JoinHostPort(host, strconv.Itoa(bt.port)),
+		fmt.Sprintf("begin\n%s\nend", ipstr), 3*time.Second, 0)
 	if err != nil {
-		return nil, fmt.Errorf("failed to establish a connection with the WHOIS server: %v", err)
+		return nil, err
 	}
-	defer func() { _ = conn.Close() }()
-
-	n, err := io.WriteString(conn, fmt.Sprintf("begin\n%s\nend", ipstr))
-	if err != nil || n == 0 {
-		return nil, fmt.Errorf("failed to send the request to the WHOIS server: %v", err)
-	}
-
-	data, err := io.ReadAll(conn)
-	if err != nil {
-		return nil, fmt.Errorf("error reading the response from the WHOIS server: %v", err)
-	}
-
-	return parseRecord(string(data))
+	return parseRecord(data)
 }
 
 // parseRecord reads the first line of a bgp.tools WHOIS answer that starts

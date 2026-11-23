@@ -62,9 +62,7 @@ type Args struct {
 		Active       bool
 		Alterations  bool
 		BruteForcing bool
-		DemoMode     bool
 		ListSources  bool
-		NoAlts       bool
 		NoColor      bool
 		NoRecursive  bool
 		Passive      bool
@@ -125,7 +123,6 @@ func defineOptionFlags(fs *flag.FlagSet, args *Args) {
 	fs.BoolVar(&args.Help, "help", false, "Show the program usage message")
 	fs.BoolVar(&args.Options.Active, "active", false, "Attempt zone transfers and certificate name grabs")
 	fs.BoolVar(&args.Options.BruteForcing, "brute", false, "Execute brute forcing after searches")
-	fs.BoolVar(&args.Options.DemoMode, "demo", false, "Censor output to make it suitable for demonstrations")
 	fs.BoolVar(&args.Options.ListSources, "list", false, "Print the names of all available data sources")
 	fs.BoolVar(&args.Options.Alterations, "alts", false, "Enable generation of altered names")
 	fs.BoolVar(&args.Options.NoColor, "nocolor", false, "Disable colorized output")

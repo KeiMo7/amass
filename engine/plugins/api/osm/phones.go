@@ -10,13 +10,12 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
-	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	"github.com/owasp-amass/open-asset-model/contact"
@@ -85,7 +84,7 @@ func (h *phones) check(e *et.Event) error {
 }
 
 func (h *phones) query(e *et.Event, orgent *dbt.Entity, name string) {
-	body, err := h.request(e, name)
+	body, err := h.plugin.overpass(e, buildQuery(name))
 	if err != nil {
 		msg := fmt.Sprintf("failed to query Overpass for %s: %s", name, err)
 		e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
@@ -104,38 +103,11 @@ func (h *phones) query(e *et.Event, orgent *dbt.Entity, name string) {
 		el := &elements[i]
 		// Only features whose name is the organization's, to avoid attaching a
 		// same-named place's phone.
-		if !sameName(name, el.Tags["name"]) {
+		if !semantics.SameOrgName(name, el.Tags["name"]) {
 			continue
 		}
 		h.store(e, orgent, el, seen)
 	}
-}
-
-func (h *phones) request(e *et.Event, name string) (string, error) {
-	query := buildQuery(name)
-
-	_ = support.WaitLimit(e.Session.Ctx(), h.plugin.rlimit)
-	e.Session.NetSem().Acquire()
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 60*time.Second)
-	defer cancel()
-
-	resp, err := amasshttp.RequestWebPage(ctx, e.Session.Clients().General, &amasshttp.Request{
-		URL:    h.plugin.api,
-		Method: "POST",
-		Header: amasshttp.Header{"Content-Type": []string{"application/x-www-form-urlencoded"}},
-		Body:   "data=" + url.QueryEscape(query),
-	})
-	e.Session.NetSem().Release()
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("status %s", resp.Status)
-	}
-	if resp.Body == "" {
-		return "", errors.New("empty body")
-	}
-	return resp.Body, nil
 }
 
 func (h *phones) store(e *et.Event, orgent *dbt.Entity, el *element, seen map[string]bool) {
@@ -238,29 +210,4 @@ func overpassString(s string) string {
 		}
 	}
 	return b.String()
-}
-
-// sameName reports whether an OSM feature name is the organization's, comparing
-// on normalized text so casing and punctuation do not matter.
-func sameName(orgName, feature string) bool {
-	a, b := normalize(orgName), normalize(feature)
-	return a != "" && a == b
-}
-
-// normalize lowercases a name and collapses runs of non-alphanumeric characters
-// to a single space.
-func normalize(s string) string {
-	var b strings.Builder
-	space := false
-	for _, r := range strings.ToLower(s) {
-		switch {
-		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
-			b.WriteRune(r)
-			space = false
-		case !space:
-			b.WriteByte(' ')
-			space = true
-		}
-	}
-	return strings.TrimSpace(b.String())
 }

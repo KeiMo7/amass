@@ -10,6 +10,8 @@ import (
 	"sort"
 	"strings"
 	"time"
+
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 )
 
 // Organization-name disambiguation, shared by every tool and lens that takes an
@@ -236,38 +238,10 @@ func tokenMatches(t, u string) bool {
 	return tol > 0 && editDistance(t, u) <= tol
 }
 
-// orgLegalForms are trailing company-form tokens dropped before comparison, so
-// a name matches whether or not its legal suffix is given.
-var orgLegalForms = map[string]bool{
-	"inc": true, "incorporated": true, "corp": true, "corporation": true,
-	"co": true, "company": true, "llc": true, "llp": true, "lp": true,
-	"ltd": true, "limited": true, "plc": true, "pllc": true, "gmbh": true,
-	"ag": true, "sa": true, "nv": true, "bv": true, "sarl": true, "srl": true,
-	"spa": true, "pty": true, "pte": true, "oy": true, "ab": true, "as": true,
-	"kk": true, "sas": true, "pbc": true, "de": true, "cv": true, "rl": true,
-}
-
-// normOrg lowercases a name, reduces runs of non-alphanumeric characters to a
-// single space, and drops trailing legal-form tokens.
-func normOrg(s string) string {
-	var b strings.Builder
-	space := false
-	for _, r := range strings.ToLower(s) {
-		switch {
-		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
-			b.WriteRune(r)
-			space = false
-		case !space:
-			b.WriteByte(' ')
-			space = true
-		}
-	}
-	words := strings.Fields(b.String())
-	for len(words) > 1 && orgLegalForms[words[len(words)-1]] {
-		words = words[:len(words)-1]
-	}
-	return strings.Join(words, " ")
-}
+// normOrg is the form a typed name and the stored names are ranked in: the
+// shared organization name key, with punctuation read as spaces so the words
+// of "Colgate-Palmolive" are matched one by one.
+func normOrg(s string) string { return semantics.PlainText(semantics.OrgNameKey(s)) }
 
 func orgTokens(norm string) []string { return strings.Fields(norm) }
 

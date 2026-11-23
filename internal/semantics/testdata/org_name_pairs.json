@@ -40,6 +40,8 @@
     {"a": "Acme Oy", "b": "Acme  Oy.", "want": "exact"},
     {"a": "Acme Oy", "b": "Acme Services Oy", "want": "none"},
     {"a": "Planungsgruppe M+M AG", "b": "Planungsgruppe M+M AG", "want": "exact"},
-    {"a": "Apple Inc.", "b": "APPLE INC", "want": "exact"}
+    {"a": "Apple Inc.", "b": "APPLE INC", "want": "exact"},
+    {"a": "Colgate University", "b": "Colgate  University.", "want": "exact"},
+    {"a": "Colgate University", "b": "Colgate Inn", "want": "none"}
   ]
 }

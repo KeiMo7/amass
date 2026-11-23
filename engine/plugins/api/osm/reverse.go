@@ -9,14 +9,13 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/url"
 	"strings"
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	orgsupport "github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
-	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	"github.com/owasp-amass/open-asset-model/contact"
@@ -101,7 +100,7 @@ func (h *reverse) checkAddress(e *et.Event) error {
 }
 
 func (h *reverse) queryPhone(e *et.Event, phoneent *dbt.Entity, ph *contact.Phone) {
-	body, err := h.request(e, phoneQuery(ph.E164))
+	body, err := h.plugin.overpass(e, phoneQuery(ph.E164))
 	if err != nil {
 		h.logError(e, fmt.Sprintf("failed to query Overpass for %s: %s", ph.E164, err))
 		return
@@ -129,7 +128,7 @@ func (h *reverse) queryPhone(e *et.Event, phoneent *dbt.Entity, ph *contact.Phon
 }
 
 func (h *reverse) queryAddress(e *et.Event, locent *dbt.Entity, loc *contact.StreetAddress) {
-	body, err := h.request(e, addressQuery(loc))
+	body, err := h.plugin.overpass(e, addressQuery(loc))
 	if err != nil {
 		h.logError(e, fmt.Sprintf("failed to query Overpass for %s: %s", loc.Address, err))
 		return
@@ -196,31 +195,6 @@ func (h *reverse) link(e *et.Event, el *element, label string, seedent *dbt.Enti
 		"to", el.url(), slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
 }
 
-func (h *reverse) request(e *et.Event, query string) (string, error) {
-	_ = support.WaitLimit(e.Session.Ctx(), h.plugin.rlimit)
-	e.Session.NetSem().Acquire()
-	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 60*time.Second)
-	defer cancel()
-
-	resp, err := amasshttp.RequestWebPage(ctx, e.Session.Clients().General, &amasshttp.Request{
-		URL:    h.plugin.api,
-		Method: "POST",
-		Header: amasshttp.Header{"Content-Type": []string{"application/x-www-form-urlencoded"}},
-		Body:   "data=" + url.QueryEscape(query),
-	})
-	e.Session.NetSem().Release()
-	if err != nil {
-		return "", err
-	}
-	if resp.StatusCode != 200 {
-		return "", fmt.Errorf("status %s", resp.Status)
-	}
-	if resp.Body == "" {
-		return "", errors.New("empty body")
-	}
-	return resp.Body, nil
-}
-
 func (h *reverse) logError(e *et.Event, msg string) {
 	e.Session.Log().Error(msg, slog.Group("plugin", "name", h.plugin.name, "handler", h.name))
 }
@@ -282,20 +256,14 @@ func featureHasPhone(el *element, wantDigits string) bool {
 // location's street and, when known, house number: a conservative check so a
 // feature merely on the same street is not taken for the same address.
 func featureAtAddress(el *element, loc *contact.StreetAddress) bool {
-	if !normEq(el.Tags["addr:street"], loc.StreetName) {
+	street := semantics.PlainText(loc.StreetName)
+	if street == "" || semantics.PlainText(el.Tags["addr:street"]) != street {
 		return false
 	}
-	if n := strings.TrimSpace(loc.BuildingNumber); n != "" {
-		return normEq(el.Tags["addr:housenumber"], n)
+	if n := semantics.PlainText(loc.BuildingNumber); n != "" {
+		return semantics.PlainText(el.Tags["addr:housenumber"]) == n
 	}
 	return true
-}
-
-// normEq compares two strings with the same normalization the forward handler
-// uses, so casing and punctuation do not matter.
-func normEq(a, b string) bool {
-	na, nb := normalize(a), normalize(b)
-	return na != "" && na == nb
 }
 
 // digitsOnly returns the digits of s, dropping every other character.

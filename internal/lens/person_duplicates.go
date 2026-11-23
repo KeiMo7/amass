@@ -13,6 +13,7 @@ import (
 	"time"
 
 	"github.com/owasp-amass/amass/v5/internal/graph"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 )
 
 // Person records already converge on their parsed full name (the entity key),
@@ -144,7 +145,7 @@ func FindPersonDuplicates(ctx context.Context, g graph.Graph) (PersonDuplicateRe
 	// cost and keeps the link walks to persons that could actually match.
 	byFamily := map[string][]graph.Asset{}
 	for _, p := range people {
-		if fam := personNorm(graph.ContentString(p, "family_name")); fam != "" {
+		if fam := semantics.PlainText(graph.ContentString(p, "family_name")); fam != "" {
 			byFamily[fam] = append(byFamily[fam], p)
 		}
 	}
@@ -169,7 +170,7 @@ func ComparePersons(ctx context.Context, g graph.Graph, seedIDs, candidateIDs []
 		if err != nil || p.Type != "Person" {
 			continue
 		}
-		if fam := personNorm(graph.ContentString(p, "family_name")); fam != "" {
+		if fam := semantics.PlainText(graph.ContentString(p, "family_name")); fam != "" {
 			byFamily[fam] = append(byFamily[fam], p)
 		}
 	}
@@ -267,9 +268,9 @@ func newPersonProfile(ctx context.Context, g graph.Graph, p graph.Asset) *person
 		asset:  p,
 		id:     p.ID,
 		full:   graph.ContentString(p, "full_name"),
-		family: personNorm(graph.ContentString(p, "family_name")),
-		first:  personNorm(graph.ContentString(p, "first_name")),
-		middle: personNorm(graph.ContentString(p, "middle_name")),
+		family: semantics.PlainText(graph.ContentString(p, "family_name")),
+		first:  semantics.PlainText(graph.ContentString(p, "first_name")),
+		middle: semantics.PlainText(graph.ContentString(p, "middle_name")),
 		orgs:   map[string]bool{},
 		idents: map[string]bool{},
 	}
@@ -378,22 +379,4 @@ func intersects(a, b map[string]bool) bool {
 // matches "john").
 func initialOf(short, full string) bool {
 	return len(short) == 1 && len(full) >= 1 && short[0] == full[0]
-}
-
-// personNorm lowercases a name part and collapses non-alphanumeric runs to a
-// single space, so renderings compare without casing or punctuation noise.
-func personNorm(s string) string {
-	var b strings.Builder
-	space := false
-	for _, r := range strings.ToLower(s) {
-		switch {
-		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
-			b.WriteRune(r)
-			space = false
-		case !space:
-			b.WriteByte(' ')
-			space = true
-		}
-	}
-	return strings.TrimSpace(b.String())
 }

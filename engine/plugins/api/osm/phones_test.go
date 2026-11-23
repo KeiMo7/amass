@@ -35,24 +35,6 @@ func TestParseOverpass(t *testing.T) {
 	}
 }
 
-func TestSameName(t *testing.T) {
-	cases := []struct {
-		org, feature string
-		want         bool
-	}{
-		{"Colgate University", "Colgate University", true},
-		{"Colgate University", "COLGATE UNIVERSITY", true},
-		{"Colgate University", "Colgate  University.", true},
-		{"Colgate University", "Colgate Inn", false}, // a same-town, different place
-		{"Colgate University", "", false},
-	}
-	for _, c := range cases {
-		if got := sameName(c.org, c.feature); got != c.want {
-			t.Errorf("sameName(%q,%q) = %v, want %v", c.org, c.feature, got, c.want)
-		}
-	}
-}
-
 func TestBuildQueryEscapes(t *testing.T) {
 	q := buildQuery("A.B (C)")
 	// Regex metacharacters in the name are escaped so they match literally.

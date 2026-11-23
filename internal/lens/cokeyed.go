@@ -95,7 +95,7 @@ func BrandKey(name string) string {
 // It is exported so the person-name-key backfill stores exactly the value the
 // sweep groups by.
 func PersonNameKey(familyName string) string {
-	return personNorm(familyName)
+	return semantics.PlainText(familyName)
 }
 
 // coKeyedCohortIDs returns the union of the entity ids of assetType that share

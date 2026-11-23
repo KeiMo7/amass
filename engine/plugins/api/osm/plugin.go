@@ -22,11 +22,14 @@ package osm
 import (
 	"context"
 	"errors"
+	"fmt"
 	"log/slog"
+	"net/url"
 	"time"
 
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	et "github.com/owasp-amass/amass/v5/engine/types"
+	amasshttp "github.com/owasp-amass/amass/v5/internal/net/http"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	"github.com/owasp-amass/open-asset-model/general"
@@ -133,4 +136,30 @@ func (o *openstreetmap) createRelation(ctx context.Context, session et.Session, 
 		Confidence: conf,
 	})
 	return err
+}
+
+// overpass posts an Overpass QL query and returns the response body.
+func (o *openstreetmap) overpass(e *et.Event, query string) (string, error) {
+	_ = support.WaitLimit(e.Session.Ctx(), o.rlimit)
+	e.Session.NetSem().Acquire()
+	ctx, cancel := context.WithTimeout(e.Session.Ctx(), 60*time.Second)
+	defer cancel()
+
+	resp, err := amasshttp.RequestWebPage(ctx, e.Session.Clients().General, &amasshttp.Request{
+		URL:    o.api,
+		Method: "POST",
+		Header: amasshttp.Header{"Content-Type": []string{"application/x-www-form-urlencoded"}},
+		Body:   "data=" + url.QueryEscape(query),
+	})
+	e.Session.NetSem().Release()
+	if err != nil {
+		return "", err
+	}
+	if resp.StatusCode != 200 {
+		return "", fmt.Errorf("status %s", resp.Status)
+	}
+	if resp.Body == "" {
+		return "", errors.New("empty body")
+	}
+	return resp.Body, nil
 }

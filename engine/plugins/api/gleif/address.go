@@ -15,6 +15,7 @@ import (
 	"github.com/owasp-amass/amass/v5/engine/plugins/support"
 	"github.com/owasp-amass/amass/v5/engine/plugins/support/org"
 	et "github.com/owasp-amass/amass/v5/engine/types"
+	"github.com/owasp-amass/amass/v5/internal/semantics"
 	dbt "github.com/owasp-amass/asset-db/types"
 	oam "github.com/owasp-amass/open-asset-model"
 	"github.com/owasp-amass/open-asset-model/contact"
@@ -175,35 +176,17 @@ func recordAtAddress(seed *contact.StreetAddress, rec *LEIRecord) bool {
 // addressLineMatches reports whether the record address's street line contains
 // the seed's street, and its house number when the seed names one.
 func addressLineMatches(seed *contact.StreetAddress, ad *LEIAddress) bool {
-	street := normText(seed.StreetName)
+	street := semantics.PlainText(seed.StreetName)
 	if street == "" {
 		return false
 	}
 
-	line := normText(strings.Join(ad.AddressLines, " ") + " " + ad.AddressNumber)
+	line := semantics.PlainText(strings.Join(ad.AddressLines, " ") + " " + ad.AddressNumber)
 	if !strings.Contains(line, street) {
 		return false
 	}
-	if n := normText(seed.BuildingNumber); n != "" && !strings.Contains(line, n) {
+	if n := semantics.PlainText(seed.BuildingNumber); n != "" && !strings.Contains(line, n) {
 		return false
 	}
 	return true
-}
-
-// normText lowercases s and collapses runs of non-alphanumeric characters to a
-// single space, so street lines compare without casing or punctuation noise.
-func normText(s string) string {
-	var b strings.Builder
-	space := false
-	for _, r := range strings.ToLower(s) {
-		switch {
-		case (r >= 'a' && r <= 'z') || (r >= '0' && r <= '9'):
-			b.WriteRune(r)
-			space = false
-		case !space:
-			b.WriteByte(' ')
-			space = true
-		}
-	}
-	return strings.TrimSpace(b.String())
 }

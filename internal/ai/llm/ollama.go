@@ -18,9 +18,12 @@ import (
 )
 
 // DefaultOllamaContextTokens is large enough for the OAM catalog planner
-// prompt (about 3,500 tokens) plus a structured reply. Ollama's own default
-// context can be smaller and silently truncates long prompts.
-const DefaultOllamaContextTokens = 8192
+// prompt (about 3,500 tokens) plus a structured reply, and for a chunk of a
+// document. Ollama's own default context can be smaller and silently
+// truncates long prompts. Ollama reloads a model whenever a request asks for
+// a different context size, so every caller uses this one size and a model
+// loaded for one is kept for the next.
+const DefaultOllamaContextTokens = 16384
 
 // DefaultOllamaKeepAlive keeps the model loaded between the separate CLI
 // runs of an interactive session, avoiding a reload on every question.

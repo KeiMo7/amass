@@ -105,6 +105,26 @@ type DocumentModelSettings struct {
 	// leaves it at that, a positive value caps it lower, -1 submits none
 	// while findings are still stored.
 	MaxLeads int `yaml:"max_leads,omitempty" json:"max_leads,omitempty"`
+	// Hold bounds how long a supervised enumeration whose engine work is
+	// done stays open while the document model still has documents to read,
+	// so their leads reach the run (default 15m; 0 ends the run when the
+	// engine is done). The hold also ends once the documents left would not
+	// be read within it. Documents left unread are read by the next run or
+	// read_documents.
+	Hold string `yaml:"hold,omitempty" json:"hold,omitempty"`
+}
+
+// HoldDuration returns Hold, and false when it is not set.
+func (d *DocumentModelSettings) HoldDuration() (time.Duration, bool) {
+	if d == nil || strings.TrimSpace(d.Hold) == "" {
+		return 0, false
+	}
+
+	v, err := time.ParseDuration(strings.TrimSpace(d.Hold))
+	if err != nil {
+		return 0, false
+	}
+	return v, true
 }
 
 // DocumentModelProviders are the providers the document model may use.
@@ -139,6 +159,12 @@ func (d *DocumentModelSettings) Validate() error {
 	}
 	if d.MaxTokens != 0 && (d.MaxTokens < 256 || d.MaxTokens > 32768) {
 		return fmt.Errorf("options.ai.documents.max_tokens must be 0 or 256..32768")
+	}
+	if d.Hold != "" {
+		v, err := time.ParseDuration(strings.TrimSpace(d.Hold))
+		if err != nil || v < 0 || v > 2*time.Hour {
+			return fmt.Errorf("options.ai.documents.hold must be 0..2h")
+		}
 	}
 	return nil
 }

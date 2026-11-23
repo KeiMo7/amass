@@ -138,7 +138,7 @@ func run(group string, in io.Reader, out, errout io.Writer, args []string) error
 		"Maximum tokens per model reply (0 = provider default; Anthropic default 4096)")
 	fs.StringVar(&temperatureFlag, "temperature", "",
 		"Model temperature 0..2 (empty = provider default; 0 is most reproducible)")
-	fs.IntVar(&contextTokens, "context-tokens", 0, "Ollama context window in tokens (0 = 8192)")
+	fs.IntVar(&contextTokens, "context-tokens", 0, "Ollama context window in tokens (0 = 16384)")
 	fs.BoolVar(&think, "think", false, "Let an Ollama reasoning model think before answering (slower; off by default)")
 	fs.BoolVar(&showTrace, "trace", false, "Print stage timings and model usage to stderr after ask")
 	fs.BoolVar(&mcpOperator, "operator", false,

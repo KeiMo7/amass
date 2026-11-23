@@ -306,6 +306,29 @@ func TestCompanionSkipsFailedDocuments(t *testing.T) {
 	}
 }
 
+// The run is held for the documents left only while, at this run's reading
+// pace, they could be read within the hold.
+func TestCompanionHoldEndsWhenDocumentsOutlastIt(t *testing.T) {
+	st := &companionRun{doneAt: time.Now().Add(-2 * time.Minute), remaining: 6,
+		readTime: 10 * time.Minute, readDocs: 5}
+	// 2 minutes held, 6 documents at 2 minutes each: 14 minutes in all
+	if st.outlastsHold(15 * time.Minute) {
+		t.Error("documents that fit within the hold ended it")
+	}
+	st.remaining = 7
+	if !st.outlastsHold(15 * time.Minute) {
+		t.Error("documents that outlast the hold kept the run open")
+	}
+	if st.outlastsHold(0) {
+		t.Error("a companion without a hold estimated one")
+	}
+
+	unknown := &companionRun{doneAt: time.Now(), remaining: 100}
+	if unknown.outlastsHold(time.Minute) {
+		t.Error("the hold ended before any document set a pace")
+	}
+}
+
 // The run's own target written as its domain label or acronym is not a lead;
 // other organizations, and other kinds of lead, are.
 func TestSelfReference(t *testing.T) {

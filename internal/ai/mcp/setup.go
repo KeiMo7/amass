@@ -70,6 +70,17 @@ func NewOperator(cfg *config.Config, g oamrepo.Adapter, opts OperatorOptions) (*
 		IdleTimeout: opts.IdleTimeout,
 		MaxDuration: opts.MaxDuration,
 	}
+	// options.ai.documents.hold bounds how long a run is kept open for the
+	// documents left to read; 0 keeps none open
+	hold := collect.DefaultHoldLimit
+	if v, ok := cfg.AI.Documents.HoldDuration(); ok {
+		hold = v
+	}
+	if hold == 0 {
+		m.HoldLimit = -1
+	} else {
+		m.HoldLimit = hold
+	}
 	// With a document model, it reads the documents each run collects while
 	// the run goes on and gives the run the organizations they name as leads.
 	if cfg.AI.DocumentModelEnabled() && journal != "" && g.Repo != nil {
@@ -83,7 +94,7 @@ func NewOperator(cfg *config.Config, g oamrepo.Adapter, opts OperatorOptions) (*
 		dg.WithholdDocumentText = false
 		m.Companions = append(m.Companions, &ai.DocumentCompanion{Graph: dg, Store: g.Repo,
 			Journal: &review.Journal{Path: journal}, Model: model, ModelID: modelID, ModelTimeout: timeout,
-			ChunkChars: cfg.AI.Documents.ChunkChars, MaxLeads: cfg.AI.Documents.MaxLeads})
+			ChunkChars: cfg.AI.Documents.ChunkChars, MaxLeads: cfg.AI.Documents.MaxLeads, Hold: hold})
 	}
 	go func() {
 		ctx, cancel := context.WithTimeout(context.Background(), time.Minute)

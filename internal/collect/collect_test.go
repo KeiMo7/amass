@@ -564,6 +564,17 @@ func TestCompanionsWorkBesideTheRun(t *testing.T) {
 	<-c.began
 	f.progress(run.ID, 5, 5)
 	waitState(t, m, run.ID, StateFinished)
+
+	// a negative hold limit keeps no finished run open
+	m.HoldLimit = -1
+	run, err = m.Start(context.Background(),
+		NewPlan(graph.AssetSelector{Type: "FQDN", Field: "name", Value: "c.example"}, Passive), "tester")
+	if err != nil {
+		t.Fatal(err)
+	}
+	<-c.began
+	f.progress(run.ID, 5, 5)
+	waitState(t, m, run.ID, StateFinished)
 }
 
 // finishingCompanion records the runs it finished.

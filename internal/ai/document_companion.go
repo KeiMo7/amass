@@ -88,6 +88,11 @@ type DocumentCompanion struct {
 	MaxLeads int
 	// Schema gives the relationship semantics; nil uses the OAM catalog.
 	Schema graph.SchemaCatalog
+	// Hold is the longest a run whose engine work is done is kept open for
+	// this companion (options.ai.documents.hold). With it, the companion
+	// stops asking to keep the run open once the documents left would not
+	// be read within it; 0 makes no such estimate.
+	Hold time.Duration
 }
 
 // companionRun is the companion's state for one run.
@@ -97,6 +102,10 @@ type companionRun struct {
 	remaining int
 	lastStart time.Time
 	doneAt    time.Time
+	// readTime is the time spent reading readDocs documents in this run,
+	// to estimate how long the documents left would take
+	readTime  time.Duration
+	readDocs  int
 	nudge     chan struct{}
 	roots     map[string]graph.Asset
 	seen      map[string]bool
@@ -170,8 +179,26 @@ func (c *DocumentCompanion) Begin(ctx context.Context, run collect.Run, act coll
 			default:
 			}
 		}
-		return st.inPass || st.remaining > 0 || !st.lastStart.After(st.doneAt)
+
+		pending := st.inPass || st.remaining > 0 || !st.lastStart.After(st.doneAt)
+		if pending && st.outlastsHold(c.Hold) {
+			return false
+		}
+		return pending
 	}
+}
+
+// outlastsHold reports whether the documents left, at the pace documents
+// were read in this run, would not be read within the hold: holding the run
+// open for them would end it at the limit anyway, with them unread. They are
+// read by the next run instead. Without a pace or a hold it reports false.
+func (st *companionRun) outlastsHold(hold time.Duration) bool {
+	if hold <= 0 || st.remaining == 0 || st.readDocs == 0 {
+		return false
+	}
+
+	per := st.readTime / time.Duration(st.readDocs)
+	return time.Since(st.doneAt)+per*time.Duration(st.remaining) > hold
 }
 
 // Finish implements collect.Finisher: when the run ends, each lead it was
@@ -260,6 +287,7 @@ func (c *DocumentCompanion) pass(ctx context.Context, run collect.Run, act colle
 			root, st.roots[domain] = r, r
 		}
 
+		started := time.Now()
 		res, err := ReadDocuments(ctx, c.Graph, c.Store, c.Journal, root, DocumentRunOptions{Model: c.Model,
 			ModelID: c.ModelID, ModelTimeout: c.ModelTimeout, ChunkChars: c.ChunkChars, Max: batch,
 			Fetcher: c.Fetcher, Schema: c.Schema, OnChunk: func() { count(act, ActivityChunksRead, 1) },
@@ -269,6 +297,12 @@ func (c *DocumentCompanion) pass(ctx context.Context, run collect.Run, act colle
 				count(act, ActivityDocumentErrors, 1)
 			}
 			continue
+		}
+		if n := res.Read + res.Failed; n > 0 {
+			st.mu.Lock()
+			st.readTime += time.Since(started)
+			st.readDocs += n
+			st.mu.Unlock()
 		}
 		count(act, ActivityDocumentsRead, res.Read)
 		count(act, ActivityDocumentFailures, res.Failed)

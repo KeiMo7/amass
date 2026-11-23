@@ -125,7 +125,8 @@ type Manager struct {
 	MaxRunning   int
 	Now          func() time.Time
 	// Companions work beside every supervised run; HoldLimit bounds how long
-	// their pending work keeps a finished run open (default 15 minutes).
+	// their pending work keeps a finished run open (0: 15 minutes; negative:
+	// never).
 	Companions []Companion
 	HoldLimit  time.Duration
 
@@ -464,7 +465,7 @@ func (m *Manager) poll(ctx context.Context, token uuid.UUID, id string, pending 
 				settled = 0
 			}
 			switch {
-			case settled >= settledPolls && pending != nil && pending() &&
+			case settled >= settledPolls && m.HoldLimit >= 0 && pending != nil && pending() &&
 				(holdFrom.IsZero() || now.Sub(holdFrom) < orDefault(m.HoldLimit, DefaultHoldLimit)):
 				// the engine is done, but a companion is still working (an
 				// unread document may yet give a lead): keep the run open

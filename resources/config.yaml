@@ -130,6 +130,11 @@ options:
   #     # many the engine confirms and to the run's size; a number caps it;
   #     # -1 submits none (findings are still stored):
   #     max_leads: 0
+  #     # How long a finished enumeration stays open while documents are
+  #     # still being read, so their leads reach it (0 = not at all). It ends
+  #     # sooner once the documents left could not be read in time; the next
+  #     # run reads them:
+  #     hold: 15m
 
 transformations:
   Account->ALL:

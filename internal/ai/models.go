@@ -107,8 +107,10 @@ func ValidateModelEndpoint(endpoint string, allowHTTP bool) error {
 }
 
 // DefaultDocumentContextTokens is the document model's Ollama context window:
-// room for a chunk of a document, the instructions and the reply.
-const DefaultDocumentContextTokens = 16384
+// room for a chunk of a document, the instructions and the reply. It is the
+// size every Ollama caller asks for, so the document model and the main model
+// share one loaded model when they are the same.
+const DefaultDocumentContextTokens = llm.DefaultOllamaContextTokens
 
 // DefaultDocumentReplyTokens caps one document model reply when
 // options.ai.documents.max_tokens is not set: room for many findings from one

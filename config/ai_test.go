@@ -9,6 +9,7 @@ import (
 	"path/filepath"
 	"strings"
 	"testing"
+	"time"
 )
 
 func TestAISettingsYAMLAndEnvironmentPrecedence(t *testing.T) {
@@ -204,9 +205,32 @@ func TestAIKeySet(t *testing.T) {
 		{Enabled: true, Provider: "ollama", Model: "m", MaxLeads: -2},
 		{Enabled: true, Provider: "ollama", Model: "m", ContextTokens: 1024},
 		{Enabled: true, Provider: "ollama", Model: "m", ChunkChars: 100},
+		{Enabled: true, Provider: "ollama", Model: "m", Hold: "-1m"},
+		{Enabled: true, Provider: "ollama", Model: "m", Hold: "3h"},
+		{Enabled: true, Provider: "ollama", Model: "m", Hold: "soon"},
 	} {
 		if bad.Validate() == nil {
 			t.Errorf("%+v was accepted", bad)
 		}
+	}
+}
+
+// The hold is unset unless given; 0 is a hold of none, not unset.
+func TestDocumentModelHold(t *testing.T) {
+	var nilSettings *DocumentModelSettings
+	if _, ok := nilSettings.HoldDuration(); ok {
+		t.Error("settings that are absent report a hold")
+	}
+	for in, want := range map[string]time.Duration{"0": 0, "5m": 5 * time.Minute, " 90s ": 90 * time.Second} {
+		d := DocumentModelSettings{Enabled: true, Provider: "ollama", Model: "m", Hold: in}
+		if err := d.Validate(); err != nil {
+			t.Errorf("hold %q: %v", in, err)
+		}
+		if got, ok := d.HoldDuration(); !ok || got != want {
+			t.Errorf("hold %q = %v, %v; want %v", in, got, ok, want)
+		}
+	}
+	if _, ok := (&DocumentModelSettings{}).HoldDuration(); ok {
+		t.Error("an empty hold is reported set")
 	}
 }

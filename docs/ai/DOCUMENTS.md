@@ -122,9 +122,14 @@ for MCP-started runs:
   engine is done, reading at most `Batch` (3) documents per domain target per
   pass.
 - **Holding the run open:** the collect manager holds the run open up to
-  `HoldLimit` (15 minutes) while a pass is running or documents remain. A
-  model that fails every document is treated as unavailable and doesn't hold
-  the run.
+  `HoldLimit` (`options.ai.documents.hold`, default 15 minutes; 0 sets a
+  negative `HoldLimit`, which holds no run) while a pass is running or
+  documents remain. A model that fails every document is treated as
+  unavailable and doesn't hold the run. The companion also times its reading
+  (`readTime` over `readDocs`) and stops reporting work pending once the
+  documents left, at that pace, would outlast the hold (`outlastsHold`):
+  holding on would end the run at the limit with them unread anyway. The next
+  run or `read_documents` reads them.
 - **Activity:** `documents_read`, `chunks_read`, `statements`,
   `document_failures` (and by kind), `document_errors`, `documents_stale`,
   `leads` and `leads_waiting`.

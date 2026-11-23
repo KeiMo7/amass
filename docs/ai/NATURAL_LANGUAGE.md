@@ -154,7 +154,7 @@ OpenAI-compatible `/v1` endpoint. With the native API Amass can:
   by default, which on a CPU-only host such as Docker Desktop on macOS can
   take minutes per request. Pass `-think` (or `ai.think: true`,
   `AMASS_LLM_THINK=true`) to turn it back on;
-- set the context window (`-context-tokens`, default 8192). The planner
+- set the context window (`-context-tokens`, default 16384). The planner
   prompt for the full OAM catalog is about 3,500 tokens, and a smaller
   window silently truncates it;
 - constrain the goal planner's reply to a JSON schema that enumerates the

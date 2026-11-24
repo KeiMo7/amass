@@ -6,6 +6,7 @@ package v1
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -28,6 +29,8 @@ const MaxBulkItems = 1000
 
 type Client struct {
 	base       string
+	username   string
+	password   string
 	httpClient *http.Client
 	wsClient   *websocket.Conn
 	done       chan struct{}
@@ -58,12 +61,69 @@ type BulkAddAssetsResponse struct {
 }
 
 // NewClient returns a pointer to a Client struct for the specified server URL.
-func NewClient(url string) (*Client, error) {
+// If the URL embeds user information (e.g. http://user:pass@host:4000), those
+// credentials are extracted and used for HTTP Basic Authentication on every
+// request, including the WebSocket upgrade.
+func NewClient(rawurl string) (*Client, error) {
+	username, password, stripped := stripUserInfo(rawurl)
 	return &Client{
-		base:       url + "/api/v1",
+		base:       stripped + "/api/v1",
+		username:   username,
+		password:   password,
 		httpClient: amasshttp.DefaultClient,
 		done:       make(chan struct{}),
 	}, nil
+}
+
+// NewAuthenticatedClient returns a Client that presents the provided username
+// and password via HTTP Basic Authentication.
+func NewAuthenticatedClient(rawurl, username, password string) (*Client, error) {
+	c, err := NewClient(rawurl)
+	if err != nil {
+		return nil, err
+	}
+	c.username = username
+	c.password = password
+	return c, nil
+}
+
+// stripUserInfo removes any userinfo component from the URL and returns it
+// alongside the sanitized URL. It never errors on a parse failure so that
+// existing, already-validated call sites keep their behavior.
+func stripUserInfo(rawurl string) (user, pass, stripped string) {
+	u, err := url.Parse(rawurl)
+	if err != nil || u.User == nil {
+		return "", "", rawurl
+	}
+	user = u.User.Username()
+	if p, ok := u.User.Password(); ok {
+		pass = p
+	}
+	u.User = nil
+	return user, pass, u.String()
+}
+
+// authHeader returns the Basic Auth header values when credentials are
+// configured. It returns an empty header map otherwise so the historic
+// credential-free local workflow is unchanged.
+func (c *Client) authHeader(extra amasshttp.Header) amasshttp.Header {
+	h := amasshttp.Header{}
+	for k, v := range extra {
+		h[k] = v
+	}
+	if c.username != "" || c.password != "" {
+		h["Authorization"] = []string{basicAuthValue(c.username, c.password)}
+	}
+	return h
+}
+
+func basicAuthValue(username, password string) string {
+	return "Basic " + base64.StdEncoding.EncodeToString([]byte(username+":"+password))
+}
+
+// BaseURL returns the API base URL with any embedded userinfo removed.
+func (c *Client) BaseURL() string {
+	return c.base
 }
 
 // Close terminates any open connections associated with the client.
@@ -91,7 +151,7 @@ func (c *Client) CreateSession(ctx context.Context, config *config.Config) (uuid
 		Method: http.MethodPost,
 		Body:   string(raw),
 		URL:    c.base + "/sessions",
-		Header: amasshttp.Header{"Content-Type": []string{"application/json"}},
+		Header: c.authHeader(amasshttp.Header{"Content-Type": []string{"application/json"}}),
 	})
 	if err != nil {
 		return uuid.UUID{}, err
@@ -115,7 +175,10 @@ func (c *Client) CreateSession(ctx context.Context, config *config.Config) (uuid
 
 // Lists the active session and associated tokens on the server.
 func (c *Client) ListSessions(ctx context.Context) ([]uuid.UUID, error) {
-	resp, err := amasshttp.RequestWebPage(ctx, c.httpClient, &amasshttp.Request{URL: c.base + "/sessions/list"})
+	resp, err := amasshttp.RequestWebPage(ctx, c.httpClient, &amasshttp.Request{
+		URL:    c.base + "/sessions/list",
+		Header: c.authHeader(nil),
+	})
 	if err != nil {
 		return nil, err
 	}
@@ -149,6 +212,7 @@ func (c *Client) TerminateSession(ctx context.Context, token uuid.UUID) error {
 	resp, err := amasshttp.RequestWebPage(ctx, c.httpClient, &amasshttp.Request{
 		Method: http.MethodDelete,
 		URL:    c.base + "/sessions/" + token.String(),
+		Header: c.authHeader(nil),
 	})
 	if err != nil {
 		return err
@@ -167,7 +231,7 @@ func (c *Client) TerminateSession(ctx context.Context, token uuid.UUID) error {
 // Retrieves statistics for the session associated with the provided token.
 func (c *Client) SessionStats(ctx context.Context, token uuid.UUID) (*et.SessionStats, error) {
 	resp, err := amasshttp.RequestWebPage(ctx, c.httpClient,
-		&amasshttp.Request{URL: c.base + "/sessions/" + token.String() + "/stats"})
+		&amasshttp.Request{URL: c.base + "/sessions/" + token.String() + "/stats", Header: c.authHeader(nil)})
 	if err != nil {
 		return nil, err
 	}
@@ -192,7 +256,7 @@ func (c *Client) SessionScope(ctx context.Context, token uuid.UUID, atype oam.As
 	sessionID := token.String()
 	atypestr := strings.ToLower(string(atype))
 	u := fmt.Sprintf("%s/sessions/%s/scope/%s", c.base, sessionID, atypestr)
-	resp, err := amasshttp.RequestWebPage(ctx, c.httpClient, &amasshttp.Request{URL: u})
+	resp, err := amasshttp.RequestWebPage(ctx, c.httpClient, &amasshttp.Request{URL: u, Header: c.authHeader(nil)})
 	if err != nil {
 		return nil, err
 	}
@@ -226,7 +290,7 @@ func (c *Client) CreateAsset(ctx context.Context, token uuid.UUID, asset oam.Ass
 		URL:    u,
 		Body:   string(raw),
 		Method: http.MethodPost,
-		Header: amasshttp.Header{"Content-Type": []string{"application/json"}},
+		Header: c.authHeader(amasshttp.Header{"Content-Type": []string{"application/json"}}),
 	})
 	if err != nil {
 		return "", err
@@ -278,7 +342,7 @@ func (c *Client) CreateAssetsBulk(ctx context.Context, token uuid.UUID, atype st
 		URL:    u,
 		Body:   string(body),
 		Method: http.MethodPost,
-		Header: amasshttp.Header{"Content-Type": []string{"application/json"}},
+		Header: c.authHeader(amasshttp.Header{"Content-Type": []string{"application/json"}}),
 	})
 	if err != nil {
 		return 0, err
@@ -316,8 +380,18 @@ func (c *Client) Subscribe(ctx context.Context, token uuid.UUID) (<-chan string,
 	sessionID := token.String()
 	u.Path += "/sessions/" + sessionID + "/ws/logs"
 
-	conn, _, err := websocket.DefaultDialer.DialContext(ctx, u.String(), nil)
+	dialHeader := http.Header{}
+	if c.username != "" || c.password != "" {
+		dialHeader.Set("Authorization", basicAuthValue(c.username, c.password))
+	}
+
+	conn, resp, err := websocket.DefaultDialer.DialContext(ctx, u.String(), dialHeader)
 	if err != nil {
+		// Surface the HTTP status of a rejected upgrade so callers can
+		// distinguish 401/404 from transport failures.
+		if resp != nil {
+			return nil, fmt.Errorf("websocket dial rejected: status=%s", resp.Status)
+		}
 		return nil, err
 	}
 	c.wsClient = conn

@@ -19,6 +19,8 @@
 //
 // @BasePath        /api/v1
 //
+// @securityDefinitions.basic  BasicAuth
+//
 // @tag.name        system
 // @tag.description System endpoints (health, etc.)
 // @tag.name        sessions

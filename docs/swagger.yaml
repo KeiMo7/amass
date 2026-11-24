@@ -546,6 +546,10 @@ paths:
       summary: List active sessions
       tags:
       - sessions
+securityDefinitions:
+  BasicAuth:
+    type: basic
+    description: HTTP Basic Authentication using an engine credential id and secret.
 swagger: "2.0"
 tags:
 - description: System endpoints (health, etc.)

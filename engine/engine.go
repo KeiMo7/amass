@@ -21,6 +21,15 @@ import (
 	et "github.com/owasp-amass/amass/v5/engine/types"
 )
 
+// Environment variables consumed by the engine control plane at startup.
+const (
+	// EnvEngineAddr sets the control-plane listen address (default ":4000").
+	EnvEngineAddr = "AMASS_ENGINE_ADDR"
+	// EnvEngineCreds points at the YAML credential file. When unset the
+	// server runs in loopback-only open mode and refuses non-loopback binds.
+	EnvEngineCreds = "AMASS_ENGINE_CREDENTIALS"
+)
+
 type Engine struct {
 	Log        *slog.Logger
 	Dispatcher et.Dispatcher
@@ -49,10 +58,17 @@ func NewEngine(l *slog.Logger) (*Engine, error) {
 		return nil, err
 	}
 
-	srv, err := server.NewServer(l, dis, mgr)
+	srvCfg := server.Config{
+		Addr:           os.Getenv(EnvEngineAddr),
+		CredentialFile: os.Getenv(EnvEngineCreds),
+	}
+	srv, err := server.NewServer(l, dis, mgr, srvCfg)
 	if err != nil || srv == nil {
 		dis.Shutdown()
 		mgr.Shutdown()
+		if err != nil {
+			return nil, err
+		}
 		return nil, errors.New("failed to create the API server")
 	}
 

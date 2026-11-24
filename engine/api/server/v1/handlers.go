@@ -11,10 +11,12 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"time"
 
 	"github.com/google/uuid"
 	"github.com/gorilla/mux"
 	"github.com/owasp-amass/amass/v5/config"
+	"github.com/owasp-amass/amass/v5/engine/api/auth"
 	et "github.com/owasp-amass/amass/v5/engine/types"
 	oam "github.com/owasp-amass/open-asset-model"
 )
@@ -64,19 +66,59 @@ var (
 )
 
 type V1Handlers struct {
-	ctx context.Context
-	log *slog.Logger
-	dis et.Dispatcher
-	mgr et.SessionManager
+	ctx   context.Context
+	log   *slog.Logger
+	dis   et.Dispatcher
+	mgr   et.SessionManager
+	store *auth.Store
+	// accessCheckInterval bounds how quickly a log stream notices an
+	// expired credential or terminated session without an explicit event.
+	accessCheckInterval time.Duration
 }
 
-func NewV1Handlers(ctx context.Context, dis et.Dispatcher, mgr et.SessionManager, log *slog.Logger) (*V1Handlers, error) {
+func NewV1Handlers(ctx context.Context, dis et.Dispatcher, mgr et.SessionManager, store *auth.Store, log *slog.Logger) (*V1Handlers, error) {
 	return &V1Handlers{
-		ctx: ctx,
-		log: log,
-		dis: dis,
-		mgr: mgr,
+		ctx:                 ctx,
+		log:                 log,
+		dis:                 dis,
+		mgr:                 mgr,
+		store:               store,
+		accessCheckInterval: defaultAccessCheckInterval,
 	}, nil
+}
+
+// SetAccessCheckInterval overrides the periodic re-validation interval used
+// by log streams. It is intended for operational tuning and testing.
+func (v *V1Handlers) SetAccessCheckInterval(d time.Duration) {
+	if d > 0 {
+		v.accessCheckInterval = d
+	}
+}
+
+// authorizeSession resolves the session from the path and enforces the
+// principal's session scope. The two denial outcomes are deliberately
+// identical on the wire: a session that exists but is outside the credential's
+// scope returns exactly the same status and body as a session that does not
+// exist, so callers cannot probe for session identifiers.
+func (v *V1Handlers) authorizeSession(w http.ResponseWriter, r *http.Request) (et.Session, bool) {
+	sid := mux.Vars(r)["session_token"]
+
+	token, err := uuid.Parse(sid)
+	if err != nil {
+		writeError(w, http.StatusBadRequest, "invalid session token", err)
+		return nil, false
+	}
+
+	principal := auth.PrincipalFromContext(r.Context())
+	sess := v.mgr.GetSession(token)
+
+	// Check scope first and collapse it onto the not-found response. The
+	// ordering must not be observable to the caller.
+	if sess == nil || principal == nil || !principal.CanAccessSession(token) {
+		writeError(w, http.StatusNotFound, "session not found", ErrNotFound)
+		return nil, false
+	}
+	return sess, true
 }
 
 // HealthCheck godoc
@@ -103,8 +145,14 @@ func (v *V1Handlers) HealthCheck(w http.ResponseWriter, r *http.Request) {
 // @Param        config  body      config.Config  true  "Engine configuration"
 // @Success      201     {object}  CreateSessionResponse
 // @Failure      400     {object}  ErrorResponse  "Invalid JSON or invalid configuration"
+// @Failure      401     {object}  ErrorResponse  "Missing, forged, expired or revoked credentials"
+// @Failure      403     {object}  ErrorResponse  "Read-only credential cannot create a session"
 // @Failure      500     {object}  ErrorResponse  "Failed to create session"
+// @Security     BasicAuth
 // @Router       /sessions [post]
+// @Failure      401     {object}  ErrorResponse  "Missing, forged, expired or revoked credentials"
+// @Failure      403     {object}  ErrorResponse  "Read-only credential cannot perform this action"
+// @Security     BasicAuth
 func (v *V1Handlers) CreateSessionHandler(w http.ResponseWriter, r *http.Request) {
 	raw, err := readRawJSON(r)
 	if err != nil {
@@ -147,16 +195,24 @@ func (v *V1Handlers) CreateSessionHandler(w http.ResponseWriter, r *http.Request
 // @Success      200  {object}  ListSessionsResponse
 // @Failure      404  {object}  ErrorResponse  "Zero sessions found"
 // @Router       /sessions/list [get]
+// @Failure      401     {object}  ErrorResponse  "Missing, forged, expired or revoked credentials"
+// @Security     BasicAuth
 func (v *V1Handlers) ListSessionsHandler(w http.ResponseWriter, r *http.Request) {
+	principal := auth.PrincipalFromContext(r.Context())
+
 	sessions := v.mgr.GetSessions()
-	if len(sessions) == 0 {
-		writeError(w, http.StatusNotFound, "zero sessions found", ErrNotFound)
-		return
-	}
 
 	var resp ListSessionsResponse
 	for _, sess := range sessions {
-		resp.SessionTokens = append(resp.SessionTokens, sess.ID().String())
+		id := sess.ID()
+		if principal != nil && !principal.CanAccessSession(id) {
+			continue
+		}
+		resp.SessionTokens = append(resp.SessionTokens, id.String())
+	}
+	if len(resp.SessionTokens) == 0 {
+		writeError(w, http.StatusNotFound, "zero sessions found", ErrNotFound)
+		return
 	}
 
 	writeJSON(w, http.StatusOK, resp)
@@ -172,25 +228,16 @@ func (v *V1Handlers) ListSessionsHandler(w http.ResponseWriter, r *http.Request)
 // @Failure      400  {object}  ErrorResponse  "Invalid session token"
 // @Failure      404  {object}  ErrorResponse  "Session not found"
 // @Router       /sessions/{session_token} [delete]
+// @Failure      401     {object}  ErrorResponse  "Missing, forged, expired or revoked credentials"
+// @Failure      403     {object}  ErrorResponse  "Read-only credential cannot perform this action"
+// @Security     BasicAuth
 func (v *V1Handlers) TerminateSessionHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	sid := vars["session_token"]
-
-	// Check if the session token is valid
-	token, err := uuid.Parse(sid)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid session token", err)
-		return
-	}
-	// Check if the session exists
-	// and if the session is not already terminated
-	sess := v.mgr.GetSession(token)
-	if sess == nil {
-		writeError(w, http.StatusNotFound, "session not found", ErrNotFound)
+	sess, ok := v.authorizeSession(w, r)
+	if !ok {
 		return
 	}
 
-	go v.mgr.CancelSession(token)
+	go v.mgr.CancelSession(sess.ID())
 	w.WriteHeader(http.StatusNoContent)
 }
 
@@ -205,21 +252,11 @@ func (v *V1Handlers) TerminateSessionHandler(w http.ResponseWriter, r *http.Requ
 // @Failure      400  {object}  ErrorResponse  "Invalid session token"
 // @Failure      404  {object}  ErrorResponse  "Session not found"
 // @Router       /sessions/{session_token}/stats [get]
+// @Failure      401     {object}  ErrorResponse  "Missing, forged, expired or revoked credentials"
+// @Security     BasicAuth
 func (v *V1Handlers) GetStatsHandler(w http.ResponseWriter, r *http.Request) {
-	vars := mux.Vars(r)
-	sid := vars["session_token"]
-
-	// Check if the session token is valid
-	token, err := uuid.Parse(sid)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid session token", err)
-		return
-	}
-	// Check if the session exists
-	// and if the session is not already terminated
-	sess := v.mgr.GetSession(token)
-	if sess == nil {
-		writeError(w, http.StatusNotFound, "session not found", ErrNotFound)
+	sess, ok := v.authorizeSession(w, r)
+	if !ok {
 		return
 	}
 	stats := sess.Stats()
@@ -241,22 +278,14 @@ func (v *V1Handlers) GetStatsHandler(w http.ResponseWriter, r *http.Request) {
 // @Failure      400  {object}  ErrorResponse  "Invalid session token"
 // @Failure      404  {object}  ErrorResponse  "Session not found or scope not found for asset type"
 // @Router       /sessions/{session_token}/scope/{asset_type} [get]
+// @Failure      401     {object}  ErrorResponse  "Missing, forged, expired or revoked credentials"
+// @Security     BasicAuth
 func (v *V1Handlers) GetScopeHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	sid := vars["session_token"]
 	assetType := strings.ToLower(strings.TrimSpace(vars["asset_type"]))
 
-	// Check if the session token is valid
-	token, err := uuid.Parse(sid)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid session token", err)
-		return
-	}
-	// Check if the session exists
-	// and if the session is not already terminated
-	sess := v.mgr.GetSession(token)
-	if sess == nil {
-		writeError(w, http.StatusNotFound, "session not found", ErrNotFound)
+	sess, ok := v.authorizeSession(w, r)
+	if !ok {
 		return
 	}
 
@@ -324,22 +353,15 @@ func (v *V1Handlers) GetScopeHandler(w http.ResponseWriter, r *http.Request) {
 // @Failure      404            {object}  ErrorResponse  "Session not found"
 // @Failure      500            {object}  ErrorResponse  "Failed to submit the asset"
 // @Router       /sessions/{session_token}/assets/{asset_type} [post]
+// @Failure      401     {object}  ErrorResponse  "Missing, forged, expired or revoked credentials"
+// @Failure      403     {object}  ErrorResponse  "Read-only credential cannot perform this action"
+// @Security     BasicAuth
 func (v *V1Handlers) AddAssetTypedHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	sid := vars["session_token"]
 	assetType := strings.ToLower(strings.TrimSpace(vars["asset_type"]))
 
-	// Check if the session token is valid
-	token, err := uuid.Parse(sid)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid session token", err)
-		return
-	}
-	// Check if the session exists
-	// and if the session is not already terminated
-	sess := v.mgr.GetSession(token)
-	if sess == nil {
-		writeError(w, http.StatusNotFound, "session not found", ErrNotFound)
+	sess, ok := v.authorizeSession(w, r)
+	if !ok {
 		return
 	}
 
@@ -387,22 +409,15 @@ func (v *V1Handlers) AddAssetTypedHandler(w http.ResponseWriter, r *http.Request
 // @Failure      413            {object}  ErrorResponse  "Too many items in bulk request"
 // @Failure      500            {object}  BulkAddAssetsResponse  "Server failure (response includes ingested/stored/failed)"
 // @Router       /sessions/{session_token}/assets/{asset_type}:bulk [post]
+// @Failure      401     {object}  ErrorResponse  "Missing, forged, expired or revoked credentials"
+// @Failure      403     {object}  ErrorResponse  "Read-only credential cannot perform this action"
+// @Security     BasicAuth
 func (v *V1Handlers) AddAssetsBulkHandler(w http.ResponseWriter, r *http.Request) {
 	vars := mux.Vars(r)
-	sid := vars["session_token"]
 	assetType := strings.ToLower(strings.TrimSpace(vars["asset_type"]))
 
-	// Check if the session token is valid
-	token, err := uuid.Parse(sid)
-	if err != nil {
-		writeError(w, http.StatusBadRequest, "invalid session token", err)
-		return
-	}
-	// Check if the session exists
-	// and if the session is not already terminated
-	sess := v.mgr.GetSession(token)
-	if sess == nil {
-		writeError(w, http.StatusNotFound, "session not found", ErrNotFound)
+	sess, ok := v.authorizeSession(w, r)
+	if !ok {
 		return
 	}
 

@@ -170,7 +170,13 @@ func CLIWorkflow(cmdName string, clArgs []string) {
 		url = cfg.EngineAPI.URL
 	}
 
-	c, err := client.NewClient(url)
+	var c *client.Client
+	var err error
+	if cfg.EngineAPI != nil && (cfg.EngineAPI.Username != "" || cfg.EngineAPI.Password != "") {
+		c, err = client.NewAuthenticatedClient(url, cfg.EngineAPI.Username, cfg.EngineAPI.Password)
+	} else {
+		c, err = client.NewClient(url)
+	}
 	if err != nil {
 		_, _ = afmt.R.Fprintf(color.Error, "Failed to create an Amass engine API client: %v\n", err)
 		os.Exit(1)
